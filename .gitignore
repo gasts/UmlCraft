@@ -1,0 +1,5 @@
+/target
+*.asta
+*.bak
+.vs/
+.idea/

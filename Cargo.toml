@@ -1,0 +1,39 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+umlcraft-model = { path = "crates/umlcraft-model" }
+umlcraft-format = { path = "crates/umlcraft-format" }
+
+# gpui-kit pins the matching GPUI release (gpui-pre) together with gpui-component.
+gpui-kit = "=0.8.0"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+indexmap = { version = "2", features = ["serde"] }
+thiserror = "2"
+anyhow = "1"
+pretty_assertions = "1"
+rust-i18n = "4"
+sys-locale = "0.3"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.dev]
+# GPUI is slow unoptimized; optimize dependencies, keep our crates fast to build.
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 2

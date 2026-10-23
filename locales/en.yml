@@ -1,0 +1,51 @@
+toolbar:
+  undo: Undo
+  redo: Redo
+  theme: Light/Dark
+  language: Deutsch
+panel:
+  model: Model
+  properties: Properties
+prop:
+  name: Name
+  type: Kind
+  visibility: Visibility
+  owner: Owner
+  documentation: Documentation
+  bounds: Position and size
+  nothing_selected: Nothing selected
+status:
+  diagram: Diagram
+  modified: Modified
+  saved: Unchanged
+  hint: "Wheel: scroll · Ctrl+wheel: zoom · middle button: pan"
+edit:
+  move: Move
+  delete: Delete
+kind:
+  model: Project
+  package: Package
+  class: Class
+  interface: Interface
+  enumeration: Enumeration
+  dataType: Data type
+  enumerationLiteral: Enumeration literal
+  attribute: Attribute
+  operation: Operation
+  parameter: Parameter
+  actor: Actor
+  useCase: Use case
+  extensionPoint: Extension point
+  interaction: Interaction
+  lifeline: Lifeline
+  message: Message
+  combinedFragment: Combined fragment
+  interactionOperand: Operand
+  association: Association
+  generalization: Generalization
+  realization: Realization
+  dependency: Dependency
+  include: Include
+  extend: Extend
+  comment: Note
+  diagram: Diagram

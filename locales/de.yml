@@ -1,0 +1,51 @@
+toolbar:
+  undo: Rückgängig
+  redo: Wiederholen
+  theme: Hell/Dunkel
+  language: English
+panel:
+  model: Modell
+  properties: Eigenschaften
+prop:
+  name: Name
+  type: Art
+  visibility: Sichtbarkeit
+  owner: Besitzer
+  documentation: Dokumentation
+  bounds: Position und Größe
+  nothing_selected: Nichts ausgewählt
+status:
+  diagram: Diagramm
+  modified: Geändert
+  saved: Unverändert
+  hint: "Mausrad: verschieben · Strg+Mausrad: zoomen · mittlere Taste: Ansicht ziehen"
+edit:
+  move: Verschieben
+  delete: Löschen
+kind:
+  model: Projekt
+  package: Paket
+  class: Klasse
+  interface: Schnittstelle
+  enumeration: Aufzählung
+  dataType: Datentyp
+  enumerationLiteral: Aufzählungswert
+  attribute: Attribut
+  operation: Operation
+  parameter: Parameter
+  actor: Akteur
+  useCase: Anwendungsfall
+  extensionPoint: Erweiterungspunkt
+  interaction: Interaktion
+  lifeline: Lebenslinie
+  message: Nachricht
+  combinedFragment: Kombiniertes Fragment
+  interactionOperand: Operand
+  association: Assoziation
+  generalization: Generalisierung
+  realization: Realisierung
+  dependency: Abhängigkeit
+  include: Include
+  extend: Extend
+  comment: Notiz
+  diagram: Diagramm

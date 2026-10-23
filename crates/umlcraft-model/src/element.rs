@@ -1,0 +1,796 @@
+//! Model elements: the semantic part of a UML model, independent of any diagram.
+
+use std::fmt;
+use std::str::FromStr;
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::diagram::DiagramKind;
+use crate::id::Id;
+
+fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
+}
+
+/// Everything about an element except its place in the ownership tree.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ElementData {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub visibility: Visibility,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stereotypes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tagged_values: Vec<TaggedValue>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub documentation: String,
+    #[serde(flatten)]
+    pub kind: ElementKind,
+}
+
+impl ElementData {
+    pub fn new(name: impl Into<String>, kind: ElementKind) -> Self {
+        Self {
+            name: name.into(),
+            visibility: Visibility::default(),
+            stereotypes: Vec::new(),
+            tagged_values: Vec::new(),
+            documentation: String::new(),
+            kind,
+        }
+    }
+
+    pub fn with_visibility(mut self, visibility: Visibility) -> Self {
+        self.visibility = visibility;
+        self
+    }
+
+    pub fn with_stereotype(mut self, stereotype: impl Into<String>) -> Self {
+        self.stereotypes.push(stereotype.into());
+        self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaggedValue {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Visibility {
+    #[default]
+    Public,
+    Protected,
+    Package,
+    Private,
+}
+
+impl Visibility {
+    /// UML notation symbol (`+`, `#`, `~`, `-`).
+    pub fn symbol(self) -> char {
+        match self {
+            Self::Public => '+',
+            Self::Protected => '#',
+            Self::Package => '~',
+            Self::Private => '-',
+        }
+    }
+
+    pub fn from_symbol(symbol: char) -> Option<Self> {
+        match symbol {
+            '+' => Some(Self::Public),
+            '#' => Some(Self::Protected),
+            '~' => Some(Self::Package),
+            '-' => Some(Self::Private),
+            _ => None,
+        }
+    }
+}
+
+/// A multiplicity range such as `1`, `0..1` or `1..*`. `upper == None` means unlimited.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Multiplicity {
+    pub lower: u32,
+    pub upper: Option<u32>,
+}
+
+impl Multiplicity {
+    pub const ONE: Self = Self { lower: 1, upper: Some(1) };
+    pub const OPTIONAL: Self = Self { lower: 0, upper: Some(1) };
+    pub const MANY: Self = Self { lower: 0, upper: None };
+    pub const ONE_OR_MORE: Self = Self { lower: 1, upper: None };
+}
+
+impl fmt::Display for Multiplicity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match (self.lower, self.upper) {
+            (0, None) => f.write_str("*"),
+            (l, Some(u)) if l == u => write!(f, "{l}"),
+            (l, Some(u)) => write!(f, "{l}..{u}"),
+            (l, None) => write!(f, "{l}..*"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("invalid multiplicity: {0:?}")]
+pub struct ParseMultiplicityError(pub String);
+
+impl FromStr for Multiplicity {
+    type Err = ParseMultiplicityError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let err = || ParseMultiplicityError(s.to_owned());
+        let parse_bound = |b: &str| -> Result<Option<u32>, ParseMultiplicityError> {
+            match b.trim() {
+                "*" => Ok(None),
+                n => n.parse().map(Some).map_err(|_| err()),
+            }
+        };
+        let result = match s.trim().split_once("..") {
+            Some((lower, upper)) => {
+                Self { lower: parse_bound(lower)?.ok_or_else(err)?, upper: parse_bound(upper)? }
+            }
+            None => match parse_bound(s)? {
+                None => Self::MANY,
+                Some(n) => Self { lower: n, upper: Some(n) },
+            },
+        };
+        match result.upper {
+            Some(upper) if upper < result.lower || upper == 0 => Err(err()),
+            _ => Ok(result),
+        }
+    }
+}
+
+impl Serialize for Multiplicity {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for Multiplicity {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        s.parse().map_err(serde::de::Error::custom)
+    }
+}
+
+/// Type of an attribute, parameter or operation result: either a classifier in the model or
+/// free text (e.g. `int`, or a type that is not modeled).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TypeRef {
+    Element(Id),
+    Text(String),
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClassifierProps {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub is_abstract: bool,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub is_leaf: bool,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub is_active: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttributeProps {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub type_ref: Option<TypeRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multiplicity: Option<Multiplicity>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub default_value: String,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub is_static: bool,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub is_derived: bool,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub is_read_only: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationProps {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub return_type: Option<TypeRef>,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub is_static: bool,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub is_abstract: bool,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub is_query: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ParameterDirection {
+    #[default]
+    In,
+    Out,
+    InOut,
+    Return,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParameterProps {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub type_ref: Option<TypeRef>,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub direction: ParameterDirection,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multiplicity: Option<Multiplicity>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub default_value: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LifelineProps {
+    /// Classifier this lifeline is an instance of.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub represents: Option<Id>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MessageSort {
+    #[default]
+    Synchronous,
+    Asynchronous,
+    Reply,
+    Create,
+    Destroy,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageProps {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub sort: MessageSort,
+    /// Sending lifeline.
+    pub from: Id,
+    /// Receiving lifeline.
+    pub to: Id,
+    /// Operation invoked by this message, if it is modeled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<Id>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub arguments: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub return_value: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InteractionOperator {
+    #[default]
+    Alt,
+    Opt,
+    Loop,
+    Par,
+    Break,
+    Critical,
+    Neg,
+    Assert,
+    Strict,
+    Seq,
+    Ignore,
+    Consider,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CombinedFragmentProps {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub operator: InteractionOperator,
+    /// Lifelines covered by the fragment.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub covered: Vec<Id>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionOperandProps {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub guard: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Navigability {
+    #[default]
+    Unspecified,
+    Navigable,
+    NonNavigable,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Aggregation {
+    #[default]
+    None,
+    Shared,
+    Composite,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssociationEnd {
+    pub participant: Id,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub role: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multiplicity: Option<Multiplicity>,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub navigability: Navigability,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub aggregation: Aggregation,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub visibility: Visibility,
+}
+
+impl AssociationEnd {
+    pub fn new(participant: Id) -> Self {
+        Self {
+            participant,
+            role: String::new(),
+            multiplicity: None,
+            navigability: Navigability::default(),
+            aggregation: Aggregation::default(),
+            visibility: Visibility::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssociationProps {
+    pub ends: [AssociationEnd; 2],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeneralizationProps {
+    pub specific: Id,
+    pub general: Id,
+}
+
+/// Realization, dependency: `client` depends on / realizes `supplier`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectedProps {
+    pub client: Id,
+    pub supplier: Id,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IncludeProps {
+    pub including: Id,
+    pub addition: Id,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtendProps {
+    pub extension: Id,
+    pub extended: Id,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extension_points: Vec<Id>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub condition: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentProps {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub body: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub annotated: Vec<Id>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagramProps {
+    pub diagram: DiagramKind,
+}
+
+/// The metaclass of an element together with its metaclass-specific properties.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ElementKind {
+    /// Root of the ownership tree; exactly one per model.
+    Model,
+    Package,
+    Class(ClassifierProps),
+    Interface(ClassifierProps),
+    Enumeration(ClassifierProps),
+    DataType(ClassifierProps),
+    EnumerationLiteral,
+    Attribute(AttributeProps),
+    Operation(OperationProps),
+    Parameter(ParameterProps),
+    Actor(ClassifierProps),
+    UseCase(ClassifierProps),
+    ExtensionPoint,
+    Interaction,
+    Lifeline(LifelineProps),
+    Message(MessageProps),
+    CombinedFragment(CombinedFragmentProps),
+    InteractionOperand(InteractionOperandProps),
+    Association(AssociationProps),
+    Generalization(GeneralizationProps),
+    Realization(DirectedProps),
+    Dependency(DirectedProps),
+    Include(IncludeProps),
+    Extend(ExtendProps),
+    Comment(CommentProps),
+    Diagram(DiagramProps),
+}
+
+/// How an element refers to another element, and what the target must be.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum RefRole {
+    AssociationEnd,
+    Specific,
+    General,
+    Client,
+    Supplier,
+    Including,
+    Addition,
+    Extension,
+    Extended,
+    MessageEnd,
+    Type,
+    Represents,
+    Operation,
+    Covered,
+    ExtensionPoint,
+    Annotated,
+}
+
+impl RefRole {
+    /// A strong reference cannot dangle: deleting the target deletes the referrer as well.
+    /// A weak reference is unlinked instead (see [`ElementKind::unlink`]).
+    pub fn is_strong(self) -> bool {
+        matches!(
+            self,
+            Self::AssociationEnd
+                | Self::Specific
+                | Self::General
+                | Self::Client
+                | Self::Supplier
+                | Self::Including
+                | Self::Addition
+                | Self::Extension
+                | Self::Extended
+                | Self::MessageEnd
+        )
+    }
+
+    /// Whether an element of `target` kind may be referenced in this role.
+    pub fn accepts(self, target: &ElementKind) -> bool {
+        match self {
+            Self::AssociationEnd
+            | Self::Specific
+            | Self::General
+            | Self::Type
+            | Self::Represents => target.is_classifier(),
+            Self::Including | Self::Addition | Self::Extension | Self::Extended => {
+                matches!(target, ElementKind::UseCase(_))
+            }
+            Self::MessageEnd | Self::Covered => matches!(target, ElementKind::Lifeline(_)),
+            Self::Operation => matches!(target, ElementKind::Operation(_)),
+            Self::ExtensionPoint => matches!(target, ElementKind::ExtensionPoint),
+            Self::Client | Self::Supplier | Self::Annotated => {
+                !matches!(target, ElementKind::Model | ElementKind::Diagram(_))
+            }
+        }
+    }
+}
+
+impl ElementKind {
+    pub fn class() -> Self {
+        Self::Class(ClassifierProps::default())
+    }
+
+    pub fn interface() -> Self {
+        Self::Interface(ClassifierProps::default())
+    }
+
+    pub fn actor() -> Self {
+        Self::Actor(ClassifierProps::default())
+    }
+
+    pub fn use_case() -> Self {
+        Self::UseCase(ClassifierProps::default())
+    }
+
+    pub fn attribute(type_ref: Option<TypeRef>) -> Self {
+        Self::Attribute(AttributeProps { type_ref, ..Default::default() })
+    }
+
+    pub fn operation(return_type: Option<TypeRef>) -> Self {
+        Self::Operation(OperationProps { return_type, ..Default::default() })
+    }
+
+    pub fn association(a: Id, b: Id) -> Self {
+        Self::Association(AssociationProps {
+            ends: [AssociationEnd::new(a), AssociationEnd::new(b)],
+        })
+    }
+
+    pub fn generalization(specific: Id, general: Id) -> Self {
+        Self::Generalization(GeneralizationProps { specific, general })
+    }
+
+    pub fn message(sort: MessageSort, from: Id, to: Id) -> Self {
+        Self::Message(MessageProps {
+            sort,
+            from,
+            to,
+            operation: None,
+            arguments: String::new(),
+            return_value: String::new(),
+        })
+    }
+
+    pub fn diagram(diagram: DiagramKind) -> Self {
+        Self::Diagram(DiagramProps { diagram })
+    }
+
+    /// Stable, lower camel case metaclass name, as used in files.
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Self::Model => "model",
+            Self::Package => "package",
+            Self::Class(_) => "class",
+            Self::Interface(_) => "interface",
+            Self::Enumeration(_) => "enumeration",
+            Self::DataType(_) => "dataType",
+            Self::EnumerationLiteral => "enumerationLiteral",
+            Self::Attribute(_) => "attribute",
+            Self::Operation(_) => "operation",
+            Self::Parameter(_) => "parameter",
+            Self::Actor(_) => "actor",
+            Self::UseCase(_) => "useCase",
+            Self::ExtensionPoint => "extensionPoint",
+            Self::Interaction => "interaction",
+            Self::Lifeline(_) => "lifeline",
+            Self::Message(_) => "message",
+            Self::CombinedFragment(_) => "combinedFragment",
+            Self::InteractionOperand(_) => "interactionOperand",
+            Self::Association(_) => "association",
+            Self::Generalization(_) => "generalization",
+            Self::Realization(_) => "realization",
+            Self::Dependency(_) => "dependency",
+            Self::Include(_) => "include",
+            Self::Extend(_) => "extend",
+            Self::Comment(_) => "comment",
+            Self::Diagram(_) => "diagram",
+        }
+    }
+
+    pub fn is_classifier(&self) -> bool {
+        matches!(
+            self,
+            Self::Class(_)
+                | Self::Interface(_)
+                | Self::Enumeration(_)
+                | Self::DataType(_)
+                | Self::Actor(_)
+                | Self::UseCase(_)
+        )
+    }
+
+    pub fn is_relationship(&self) -> bool {
+        matches!(
+            self,
+            Self::Association(_)
+                | Self::Generalization(_)
+                | Self::Realization(_)
+                | Self::Dependency(_)
+                | Self::Include(_)
+                | Self::Extend(_)
+        )
+    }
+
+    fn is_namespace(&self) -> bool {
+        matches!(self, Self::Model | Self::Package)
+    }
+
+    /// Ownership rules: may an element of this kind own an element of `child` kind?
+    pub fn can_own(&self, child: &ElementKind) -> bool {
+        use ElementKind as K;
+        match child {
+            K::Model => false,
+            K::Package => self.is_namespace(),
+            K::Class(_) | K::Interface(_) | K::Enumeration(_) | K::DataType(_) => {
+                self.is_namespace() || matches!(self, K::Class(_) | K::Interface(_))
+            }
+            K::Actor(_) | K::UseCase(_) => self.is_namespace(),
+            K::Attribute(_) | K::Operation(_) => matches!(
+                self,
+                K::Class(_)
+                    | K::Interface(_)
+                    | K::Enumeration(_)
+                    | K::DataType(_)
+                    | K::Actor(_)
+                    | K::UseCase(_)
+            ),
+            K::EnumerationLiteral => matches!(self, K::Enumeration(_)),
+            K::Parameter(_) => matches!(self, K::Operation(_)),
+            K::ExtensionPoint => matches!(self, K::UseCase(_)),
+            K::Interaction => self.is_namespace() || matches!(self, K::Class(_) | K::UseCase(_)),
+            K::Lifeline(_) => matches!(self, K::Interaction),
+            K::Message(_) | K::CombinedFragment(_) => {
+                matches!(self, K::Interaction | K::InteractionOperand(_))
+            }
+            K::InteractionOperand(_) => matches!(self, K::CombinedFragment(_)),
+            K::Association(_)
+            | K::Generalization(_)
+            | K::Realization(_)
+            | K::Dependency(_)
+            | K::Include(_)
+            | K::Extend(_) => self.is_namespace() || self.is_classifier(),
+            K::Comment(_) => !matches!(self, K::Diagram(_) | K::Comment(_)),
+            K::Diagram(_) => {
+                self.is_namespace() || self.is_classifier() || matches!(self, K::Interaction)
+            }
+        }
+    }
+
+    /// All references to other elements, with their role.
+    pub fn references(&self) -> Vec<(Id, RefRole)> {
+        let type_ref = |t: &Option<TypeRef>| match t {
+            Some(TypeRef::Element(id)) => vec![(*id, RefRole::Type)],
+            _ => Vec::new(),
+        };
+        match self {
+            Self::Attribute(p) => type_ref(&p.type_ref),
+            Self::Operation(p) => type_ref(&p.return_type),
+            Self::Parameter(p) => type_ref(&p.type_ref),
+            Self::Lifeline(p) => {
+                p.represents.map(|id| (id, RefRole::Represents)).into_iter().collect()
+            }
+            Self::Message(p) => {
+                let mut refs = vec![(p.from, RefRole::MessageEnd), (p.to, RefRole::MessageEnd)];
+                refs.extend(p.operation.map(|id| (id, RefRole::Operation)));
+                refs
+            }
+            Self::CombinedFragment(p) => {
+                p.covered.iter().map(|&id| (id, RefRole::Covered)).collect()
+            }
+            Self::Association(p) => {
+                p.ends.iter().map(|end| (end.participant, RefRole::AssociationEnd)).collect()
+            }
+            Self::Generalization(p) => {
+                vec![(p.specific, RefRole::Specific), (p.general, RefRole::General)]
+            }
+            Self::Realization(p) | Self::Dependency(p) => {
+                vec![(p.client, RefRole::Client), (p.supplier, RefRole::Supplier)]
+            }
+            Self::Include(p) => {
+                vec![(p.including, RefRole::Including), (p.addition, RefRole::Addition)]
+            }
+            Self::Extend(p) => {
+                let mut refs =
+                    vec![(p.extension, RefRole::Extension), (p.extended, RefRole::Extended)];
+                refs.extend(p.extension_points.iter().map(|&id| (id, RefRole::ExtensionPoint)));
+                refs
+            }
+            Self::Comment(p) => p.annotated.iter().map(|&id| (id, RefRole::Annotated)).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Whether this element holds a strong reference to `target`.
+    pub fn refers_strongly_to(&self, target: Id) -> bool {
+        self.references().iter().any(|&(id, role)| id == target && role.is_strong())
+    }
+
+    /// Removes every weak reference to `target`. Type references become free text with the
+    /// target's former name, so the attribute still reads the same. Returns whether anything
+    /// changed. Strong references are left alone; their owner has to be deleted instead.
+    pub fn unlink(&mut self, target: Id, target_name: &str) -> bool {
+        let unlink_type = |t: &mut Option<TypeRef>| {
+            if *t == Some(TypeRef::Element(target)) {
+                *t = Some(TypeRef::Text(target_name.to_owned()));
+                true
+            } else {
+                false
+            }
+        };
+        let unlink_vec = |v: &mut Vec<Id>| {
+            let len = v.len();
+            v.retain(|&id| id != target);
+            v.len() != len
+        };
+        let unlink_opt = |o: &mut Option<Id>| {
+            if *o == Some(target) {
+                *o = None;
+                true
+            } else {
+                false
+            }
+        };
+        match self {
+            Self::Attribute(p) => unlink_type(&mut p.type_ref),
+            Self::Operation(p) => unlink_type(&mut p.return_type),
+            Self::Parameter(p) => unlink_type(&mut p.type_ref),
+            Self::Lifeline(p) => unlink_opt(&mut p.represents),
+            Self::Message(p) => unlink_opt(&mut p.operation),
+            Self::CombinedFragment(p) => unlink_vec(&mut p.covered),
+            Self::Extend(p) => unlink_vec(&mut p.extension_points),
+            Self::Comment(p) => unlink_vec(&mut p.annotated),
+            _ => false,
+        }
+    }
+
+    pub fn as_generalization(&self) -> Option<&GeneralizationProps> {
+        match self {
+            Self::Generalization(p) => Some(p),
+            _ => None,
+        }
+    }
+
+    pub fn as_diagram(&self) -> Option<DiagramKind> {
+        match self {
+            Self::Diagram(p) => Some(p.diagram),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn multiplicity_roundtrip() {
+        for (text, expected, canonical) in [
+            ("1", Multiplicity::ONE, "1"),
+            ("0..1", Multiplicity::OPTIONAL, "0..1"),
+            ("*", Multiplicity::MANY, "*"),
+            ("0..*", Multiplicity::MANY, "*"),
+            ("1..*", Multiplicity::ONE_OR_MORE, "1..*"),
+            (" 2 .. 5 ", Multiplicity { lower: 2, upper: Some(5) }, "2..5"),
+        ] {
+            let parsed: Multiplicity = text.parse().unwrap();
+            assert_eq!(parsed, expected, "{text}");
+            assert_eq!(parsed.to_string(), canonical);
+        }
+        for bad in ["", "x", "3..1", "*..2", "0", "1..", "-1"] {
+            assert!(bad.parse::<Multiplicity>().is_err(), "{bad:?} should not parse");
+        }
+    }
+
+    #[test]
+    fn unlink_turns_type_into_text() {
+        let target = Id::from_u128(7);
+        let mut kind = ElementKind::attribute(Some(TypeRef::Element(target)));
+        assert!(kind.unlink(target, "Customer"));
+        assert_eq!(kind, ElementKind::attribute(Some(TypeRef::Text("Customer".into()))));
+        assert!(!kind.unlink(target, "Customer"));
+    }
+
+    #[test]
+    fn ownership_rules() {
+        assert!(ElementKind::Package.can_own(&ElementKind::class()));
+        assert!(ElementKind::class().can_own(&ElementKind::attribute(None)));
+        assert!(!ElementKind::attribute(None).can_own(&ElementKind::class()));
+        assert!(!ElementKind::Package.can_own(&ElementKind::Model));
+        assert!(ElementKind::Interaction.can_own(&ElementKind::Lifeline(LifelineProps::default())));
+    }
+}

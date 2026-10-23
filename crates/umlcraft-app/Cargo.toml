@@ -1,0 +1,22 @@
+[package]
+name = "umlcraft-app"
+description = "UmlCraft desktop application (GPUI)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "umlcraft"
+path = "src/main.rs"
+
+[dependencies]
+umlcraft-model.workspace = true
+umlcraft-format.workspace = true
+gpui-kit.workspace = true
+anyhow.workspace = true
+rust-i18n.workspace = true
+sys-locale.workspace = true
+
+[lints]
+workspace = true
