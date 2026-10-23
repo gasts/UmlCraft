@@ -42,7 +42,7 @@ importing `.asta` files and exporting them through an installed Astah.
   rebuilds packages, classifiers, features, relationships, notes and the class, use case and
   sequence diagrams with positions, sizes, waypoints, message order and combined fragments.
   What the API cannot express is reported. In a test with Astah Professional 12 this worked
-  without a license file; see [docs/architecture.md](docs/architecture.md#astah-export).
+  without a license file.
 
 This completes milestone 1. Next: further diagram kinds (activity, state) and image export.
 
