@@ -3,6 +3,7 @@ toolbar:
   redo: Wiederholen
   theme: Hell/Dunkel
   language: English
+  zoom_reset: "Zoom auf 100 % zurücksetzen (Strg+0)"
 panel:
   model: Modell
   properties: Eigenschaften

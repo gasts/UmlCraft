@@ -48,6 +48,8 @@ impl MainView {
                 }
             }),
             cx.observe(&tree, |this, tree, cx| this.on_tree_changed(tree, cx)),
+            // Toolbar and status bar show the zoom.
+            cx.observe(&canvas, |_, _, cx| cx.notify()),
             cx.observe_in(&workspace, window, |this, _, window, cx| {
                 this.sync_from_workspace(window, cx);
             }),
@@ -155,6 +157,7 @@ impl MainView {
     fn toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ws = self.workspace.read(cx);
         let (can_undo, can_redo) = (ws.doc.can_undo(), ws.doc.can_redo());
+        let zoom = (self.canvas.read(cx).zoom() * 100.0).round();
         let canvas = self.canvas.clone();
         let canvas2 = self.canvas.clone();
         let canvas3 = self.canvas.clone();
@@ -185,11 +188,16 @@ impl MainView {
             .child(Button::new("zoom-out").ghost().small().label("−").on_click(move |_, _, cx| {
                 canvas.update(cx, |c, cx| c.zoom_by(1.0 / 1.2, cx));
             }))
-            .child(Button::new("zoom-reset").ghost().small().label("100 %").on_click(
-                move |_, _, cx| {
-                    canvas2.update(cx, |c, cx| c.reset_zoom(cx));
-                },
-            ))
+            .child(
+                Button::new("zoom-reset")
+                    .ghost()
+                    .small()
+                    .label(format!("{zoom} %"))
+                    .tooltip(t!("toolbar.zoom_reset"))
+                    .on_click(move |_, _, cx| {
+                        canvas2.update(cx, |c, cx| c.reset_zoom(cx));
+                    }),
+            )
             .child(Button::new("zoom-in").ghost().small().label("+").on_click(move |_, _, cx| {
                 canvas3.update(cx, |c, cx| c.zoom_by(1.2, cx));
             }))

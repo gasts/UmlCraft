@@ -69,9 +69,26 @@ pub struct EdgeShape {
     pub line: LineStyle,
     pub source_marker: EndMarker,
     pub target_marker: EndMarker,
-    pub label: Option<String>,
-    pub source_label: Option<String>,
-    pub target_label: Option<String>,
+    pub labels: Vec<EdgeLabel>,
+}
+
+/// Height of an edge label line (11 pt text) in logical units.
+pub const LABEL_HEIGHT: f32 = 14.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LabelAlign {
+    Left,
+    Center,
+    Right,
+}
+
+/// A text placed next to an edge. `anchor.y` is the top of the text; `anchor.x` is its left
+/// edge, center or right edge depending on `align`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EdgeLabel {
+    pub text: String,
+    pub anchor: Point,
+    pub align: LabelAlign,
 }
 
 /// Builds the scene. `moved` previews a node being dragged: (presentation, dx, dy).
@@ -225,10 +242,9 @@ fn edge_for(
         line: LineStyle::Solid,
         source_marker: EndMarker::None,
         target_marker: EndMarker::None,
-        label: None,
-        source_label: None,
-        target_label: None,
+        labels: Vec::new(),
     };
+    let (mut label, mut source_label, mut target_label) = (None, None, None);
     let diamond = |a: Aggregation| match a {
         Aggregation::None => EndMarker::None,
         Aggregation::Shared => EndMarker::HollowDiamond,
@@ -253,8 +269,8 @@ fn edge_for(
                     .join(" ");
                 (!text.is_empty()).then_some(text)
             };
-            edge.source_label = end_label(&a.role, a.multiplicity);
-            edge.target_label = end_label(&b.role, b.multiplicity);
+            source_label = end_label(&a.role, a.multiplicity);
+            target_label = end_label(&b.role, b.multiplicity);
         }
         Some(ElementKind::Generalization(_)) => edge.target_marker = EndMarker::HollowTriangle,
         Some(ElementKind::Realization(_)) => {
@@ -268,12 +284,12 @@ fn edge_for(
         Some(ElementKind::Include(_)) => {
             edge.line = LineStyle::Dashed;
             edge.target_marker = EndMarker::OpenArrow;
-            edge.label = Some("«include»".into());
+            label = Some("«include»".to_owned());
         }
         Some(ElementKind::Extend(_)) => {
             edge.line = LineStyle::Dashed;
             edge.target_marker = EndMarker::OpenArrow;
-            edge.label = Some("«extend»".into());
+            label = Some("«extend»".to_owned());
         }
         Some(ElementKind::Message(p)) => match p.sort {
             MessageSort::Asynchronous => edge.target_marker = EndMarker::OpenArrow,
@@ -285,7 +301,59 @@ fn edge_for(
         },
         _ => edge.line = LineStyle::Dashed,
     }
+
+    let pts = &edge.points;
+    let n = pts.len();
+    edge.labels.extend(label.map(|text| middle_label(text, pts[n / 2 - 1], pts[n / 2])));
+    edge.labels.extend(source_label.map(|text| end_label(text, pts[0], pts[1])));
+    edge.labels.extend(target_label.map(|text| end_label(text, pts[n - 1], pts[n - 2])));
     edge
+}
+
+/// Below this slope a segment counts as horizontal (resp. vertical) for label placement.
+const STRAIGHT: f32 = 0.2;
+
+/// Places an end label (role, multiplicity) next to the segment `tip`–`from`, a little away
+/// from the node at `tip`, on the side of the line it does not run into.
+fn end_label(text: String, tip: Point, from: Point) -> EdgeLabel {
+    const GAP: f32 = 10.0;
+    let len = tip.distance(from).max(1.0);
+    let (ux, uy) = ((from.x - tip.x) / len, (from.y - tip.y) / len);
+    let base = Point::new(tip.x + ux * GAP, tip.y + uy * GAP);
+    if ux.abs() >= uy.abs() {
+        // Mostly horizontal: the text extends away from the node, above the line unless the
+        // line rises noticeably in that direction.
+        let align = if ux >= 0.0 { LabelAlign::Left } else { LabelAlign::Right };
+        let y = if uy < -STRAIGHT { base.y + 3.0 } else { base.y - LABEL_HEIGHT - 3.0 };
+        EdgeLabel { text, anchor: Point::new(base.x, y), align }
+    } else {
+        // Mostly vertical: beside the line, right of it unless the line leans to the right.
+        let (x, align) = if ux > STRAIGHT {
+            (base.x - 6.0, LabelAlign::Right)
+        } else {
+            (base.x + 6.0, LabelAlign::Left)
+        };
+        let y = if uy >= 0.0 { base.y } else { base.y - LABEL_HEIGHT };
+        EdgeLabel { text, anchor: Point::new(x, y), align }
+    }
+}
+
+/// Places a name or stereotype label at the middle of the segment `a`–`b`.
+fn middle_label(text: String, a: Point, b: Point) -> EdgeLabel {
+    let mid = Point::new((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
+    if (b.x - a.x).abs() >= (b.y - a.y).abs() {
+        EdgeLabel {
+            text,
+            anchor: Point::new(mid.x, mid.y - LABEL_HEIGHT - 3.0),
+            align: LabelAlign::Center,
+        }
+    } else {
+        EdgeLabel {
+            text,
+            anchor: Point::new(mid.x + 6.0, mid.y - LABEL_HEIGHT / 2.0),
+            align: LabelAlign::Left,
+        }
+    }
 }
 
 /// Where the line from the center of `rect` toward `toward` leaves the rectangle.
@@ -359,6 +427,48 @@ mod tests {
             .unwrap();
         let Figure::Classifier { compartments, .. } = &customer.figure else { unreachable!() };
         assert_eq!(compartments[0], vec!["- name : String".to_owned()]);
+    }
+
+    #[test]
+    fn association_end_labels_sit_above_a_horizontal_line() {
+        let (doc, ids) = order_system();
+        let scene = build(doc.model(), ids.class_diagram, None);
+        let association = scene.edges.iter().find(|e| e.labels.len() == 2).unwrap();
+        // Order (source, right) → Customer (target, left): the line slopes from y ≈ 128.7 to 126.3.
+        let pts = &association.points;
+        let [star, role] = [&association.labels[0], &association.labels[1]];
+        assert_eq!(star.text, "*");
+        assert_eq!(role.text, "customer 1");
+        for (label, end) in [(star, pts[0]), (role, pts[pts.len() - 1])] {
+            let clearance = end.y - (label.anchor.y + LABEL_HEIGHT);
+            assert!(clearance >= 2.5, "{label:?} is only {clearance} above the line");
+        }
+        // Each label extends from its node into the gap between the classes.
+        assert_eq!(role.align, LabelAlign::Left);
+        assert!((role.anchor.x - 250.0).abs() < 0.5);
+        assert_eq!(star.align, LabelAlign::Right);
+        assert!((star.anchor.x - 370.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn end_labels_avoid_sloped_and_vertical_lines() {
+        let text = || "1".to_owned();
+        // Line rising to the right of the node: label goes below it.
+        let l = end_label(text(), Point::new(0.0, 100.0), Point::new(100.0, 50.0));
+        assert_eq!(l.align, LabelAlign::Left);
+        assert!(l.anchor.y > 100.0 - 10.0 * 0.45);
+        // Vertical line going down: label right of it, starting below the tip.
+        let l = end_label(text(), Point::new(50.0, 0.0), Point::new(50.0, 100.0));
+        assert_eq!((l.align, l.anchor), (LabelAlign::Left, Point::new(56.0, 10.0)));
+        // Vertical line leaning right: label moves to the left side.
+        let l = end_label(text(), Point::new(50.0, 0.0), Point::new(90.0, 100.0));
+        assert_eq!(l.align, LabelAlign::Right);
+        assert!(l.anchor.x < 50.0 + 10.0 * 0.38);
+        // Middle labels: centered above horizontal, beside vertical segments.
+        let m = middle_label(text(), Point::new(0.0, 0.0), Point::new(100.0, 0.0));
+        assert_eq!((m.align, m.anchor), (LabelAlign::Center, Point::new(50.0, -17.0)));
+        let m = middle_label(text(), Point::new(0.0, 0.0), Point::new(0.0, 100.0));
+        assert_eq!((m.align, m.anchor), (LabelAlign::Left, Point::new(6.0, 43.0)));
     }
 
     #[test]

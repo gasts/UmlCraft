@@ -7,7 +7,7 @@ use gpui_kit::component::ActiveTheme;
 use gpui_kit::*;
 use umlcraft_model::{Id, Point as MPoint, Rect};
 
-use crate::scene::{self, EdgeShape, EndMarker, Figure, LineStyle, NodeShape, Scene};
+use crate::scene::{self, EdgeShape, EndMarker, Figure, LabelAlign, LineStyle, NodeShape, Scene};
 use crate::workspace::Workspace;
 use crate::{DeleteSelection, ResetZoom};
 
@@ -593,36 +593,17 @@ impl Painter<'_> {
         let n = pts.len();
         self.marker(pts[n - 1], pts[n - 2], edge.target_marker);
         self.marker(pts[0], pts[1], edge.source_marker);
-        let muted = self.c.text;
-        if let Some(label) = &edge.label {
-            let mid = MPoint::new(
-                (pts[n / 2 - 1].x + pts[n / 2].x) / 2.0,
-                (pts[n / 2 - 1].y + pts[n / 2].y) / 2.0,
-            );
-            self.text(
-                label,
-                mid.x - 60.0,
-                mid.y - 18.0,
-                11.0,
-                false,
-                false,
-                muted,
-                TextAlign::Center,
-                Some(120.0),
-            );
-        }
-        let end_label = |tip: MPoint, from: MPoint| {
-            let (dx, dy) = (from.x - tip.x, from.y - tip.y);
-            let len = (dx * dx + dy * dy).sqrt().max(1.0);
-            MPoint::new(tip.x + dx / len * 22.0 + 6.0, tip.y + dy / len * 22.0 - 6.0)
-        };
-        if let Some(label) = &edge.source_label {
-            let p = end_label(pts[0], pts[1]);
-            self.text(label, p.x, p.y, 11.0, false, false, muted, TextAlign::Left, None);
-        }
-        if let Some(label) = &edge.target_label {
-            let p = end_label(pts[n - 1], pts[n - 2]);
-            self.text(label, p.x, p.y, 11.0, false, false, muted, TextAlign::Left, None);
+        // Wide enough for any role name; alignment does the actual placement.
+        const BOX: f32 = 200.0;
+        let text = self.c.text;
+        for label in &edge.labels {
+            let MPoint { x, y } = label.anchor;
+            let (left, align, width) = match label.align {
+                LabelAlign::Left => (x, TextAlign::Left, None),
+                LabelAlign::Center => (x - BOX / 2.0, TextAlign::Center, Some(BOX)),
+                LabelAlign::Right => (x - BOX, TextAlign::Right, Some(BOX)),
+            };
+            self.text(&label.text, left, y, 11.0, false, false, text, align, width);
         }
     }
 

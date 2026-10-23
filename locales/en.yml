@@ -3,6 +3,7 @@ toolbar:
   redo: Redo
   theme: Light/Dark
   language: Deutsch
+  zoom_reset: "Reset zoom to 100 % (Ctrl+0)"
 panel:
   model: Model
   properties: Properties
