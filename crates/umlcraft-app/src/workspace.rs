@@ -1,56 +1,373 @@
-use umlcraft_model::{Document, Id};
+use std::path::{Path, PathBuf};
+
+use rust_i18n::t;
+use umlcraft_model::{
+    DiagramKind, Document, ElementData, ElementKind, Id, Model, ModelError, Point, Rect, Visibility,
+};
+use umlcraft_notation::palette::{self, EdgeTool, NodeTool, Tool};
+use umlcraft_notation::scene::{self, Alignment};
 
 /// The open project and what the user is looking at. Shared by all panels as a GPUI entity.
 pub struct Workspace {
     pub doc: Document,
+    pub path: Option<PathBuf>,
+    /// Diagrams open as tabs, in tab order.
+    pub open_diagrams: Vec<Id>,
     pub active_diagram: Option<Id>,
+    /// Element shown in the properties panel and highlighted in the model tree.
     pub selected_element: Option<Id>,
-    pub selected_presentation: Option<Id>,
+    /// Selected presentations of the active diagram; the first one is the alignment reference.
+    pub selection: Vec<Id>,
+    pub tool: Tool,
+    /// Last problem to show in the status bar, e.g. a refused connection.
+    pub message: Option<String>,
 }
 
 impl Workspace {
-    pub fn new(doc: Document, active_diagram: Option<Id>) -> Self {
-        Self { doc, active_diagram, selected_element: None, selected_presentation: None }
+    pub fn new(doc: Document, path: Option<PathBuf>) -> Self {
+        let first_diagram = first_diagram(doc.model());
+        Self {
+            doc,
+            path,
+            open_diagrams: first_diagram.into_iter().collect(),
+            active_diagram: first_diagram,
+            selected_element: None,
+            selection: Vec::new(),
+            tool: Tool::Select,
+            message: None,
+        }
+    }
+
+    pub fn file_name(&self) -> Option<String> {
+        self.path.as_deref().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned())
+    }
+
+    /// Opens `diagram` as a tab (if needed) and activates it.
+    pub fn open_diagram(&mut self, diagram: Id) {
+        if self.doc.model().view(diagram).is_none() {
+            return;
+        }
+        if !self.open_diagrams.contains(&diagram) {
+            self.open_diagrams.push(diagram);
+        }
+        if self.active_diagram != Some(diagram) {
+            self.active_diagram = Some(diagram);
+            self.selection.clear();
+            self.tool = Tool::Select;
+        }
+    }
+
+    pub fn close_diagram(&mut self, diagram: Id) {
+        let Some(ix) = self.open_diagrams.iter().position(|&d| d == diagram) else { return };
+        self.open_diagrams.remove(ix);
+        if self.active_diagram == Some(diagram) {
+            let next = self.open_diagrams.get(ix).or(self.open_diagrams.last()).copied();
+            self.active_diagram = next;
+            self.selection.clear();
+        }
     }
 
     pub fn clear_selection(&mut self) {
         self.selected_element = None;
-        self.selected_presentation = None;
+        self.selection.clear();
     }
 
-    /// Selects a presentation on the active diagram, and the element it shows.
-    pub fn select_presentation(&mut self, presentation: Id) {
-        let element = self
-            .active_diagram
-            .and_then(|d| self.doc.model().view(d))
-            .and_then(|v| v.get(presentation))
-            .and_then(|p| p.element);
-        self.selected_presentation = Some(presentation);
-        self.selected_element = element;
+    fn element_of(&self, presentation: Id) -> Option<Id> {
+        let view = self.doc.model().view(self.active_diagram?)?;
+        view.get(presentation)?.element
     }
 
-    /// Selects an element and, if the active diagram shows it, its first presentation.
+    /// Replaces the selection with the given presentations of the active diagram.
+    pub fn select(&mut self, presentations: Vec<Id>) {
+        self.selected_element = presentations.first().and_then(|&p| self.element_of(p));
+        self.selection = presentations;
+    }
+
+    /// Adds or removes one presentation (Ctrl/Shift click).
+    pub fn toggle(&mut self, presentation: Id) {
+        if let Some(ix) = self.selection.iter().position(|&p| p == presentation) {
+            self.selection.remove(ix);
+        } else {
+            self.selection.push(presentation);
+        }
+        self.selected_element = self.selection.first().and_then(|&p| self.element_of(p));
+    }
+
+    /// Selects an element (e.g. from the tree) and its presentation on the active diagram.
     pub fn select_element(&mut self, element: Id) {
         self.selected_element = Some(element);
-        self.selected_presentation = self
+        self.selection = self
             .active_diagram
             .and_then(|d| self.doc.model().view(d))
             .and_then(|v| v.presentations_of(element).next())
-            .map(|p| p.id);
+            .map(|p| vec![p.id])
+            .unwrap_or_default();
     }
 
-    /// Drops selections that no longer exist, e.g. after undo.
-    pub fn validate_selection(&mut self) {
+    pub fn select_all(&mut self) {
+        let all = self
+            .active_diagram
+            .and_then(|d| self.doc.model().view(d))
+            .map(|v| v.presentations().iter().filter(|p| !p.is_edge()).map(|p| p.id).collect())
+            .unwrap_or_default();
+        self.select(all);
+    }
+
+    /// Selected node presentations with their bounds, in selection order.
+    pub fn selected_nodes(&self) -> Vec<(Id, Rect)> {
+        let Some(view) = self.active_diagram.and_then(|d| self.doc.model().view(d)) else {
+            return Vec::new();
+        };
+        self.selection
+            .iter()
+            .filter_map(|&p| view.get(p).and_then(|pr| pr.bounds()).map(|b| (p, b)))
+            .collect()
+    }
+
+    /// Drops tabs and selections that no longer exist, e.g. after undo.
+    pub fn validate(&mut self) {
         let model = self.doc.model();
-        if self.active_diagram.is_some_and(|d| model.view(d).is_none()) {
-            self.active_diagram = model.views().map(|(d, _)| d).next();
+        self.open_diagrams.retain(|&d| model.view(d).is_some());
+        if self.active_diagram.is_none_or(|d| model.view(d).is_none()) {
+            self.active_diagram = self.open_diagrams.first().copied();
         }
         if self.selected_element.is_some_and(|e| !model.contains(e)) {
             self.selected_element = None;
         }
         let view = self.active_diagram.and_then(|d| model.view(d));
-        if self.selected_presentation.is_some_and(|p| view.is_none_or(|v| v.get(p).is_none())) {
-            self.selected_presentation = None;
+        self.selection.retain(|&p| view.is_some_and(|v| v.get(p).is_some()));
+    }
+
+    fn report<T>(&mut self, result: Result<T, ModelError>) -> Option<T> {
+        match result {
+            Ok(value) => {
+                self.message = None;
+                Some(value)
+            }
+            Err(err) => {
+                self.message = Some(err.to_string());
+                None
+            }
         }
     }
+
+    /// Creates an element with `tool` at `origin` on the active diagram and selects it.
+    pub fn create_node(&mut self, tool: NodeTool, origin: Point) {
+        let Some(diagram) = self.active_diagram else { return };
+        let base = name_base(&format!("kind.{}", tool.key()), tool == NodeTool::UseCase);
+        let label = t!("edit.create").to_string();
+        let result =
+            self.doc.edit(label, |tx| palette::create_node(tx, diagram, tool, origin, &base));
+        if let Some((element, node)) = self.report(result) {
+            self.selection = vec![node];
+            self.selected_element = Some(element);
+        }
+    }
+
+    pub fn connect(&mut self, tool: EdgeTool, source: Id, target: Id) {
+        let Some(diagram) = self.active_diagram else { return };
+        let label = t!("edit.connect").to_string();
+        let result = self.doc.edit(label, |tx| palette::connect(tx, diagram, tool, source, target));
+        if let Some(edge) = self.report(result) {
+            self.select(vec![edge]);
+        }
+    }
+
+    /// Moves the selected nodes by (`dx`, `dy`) as one undo step.
+    pub fn move_selection(&mut self, dx: f32, dy: f32) {
+        let Some(diagram) = self.active_diagram else { return };
+        let nodes = self.selected_nodes();
+        if nodes.is_empty() || (dx == 0.0 && dy == 0.0) {
+            return;
+        }
+        let label = t!("edit.move").to_string();
+        let result = self.doc.edit(label, |tx| {
+            nodes.iter().try_for_each(|&(p, b)| tx.set_bounds(diagram, p, b.translate(dx, dy)))
+        });
+        self.report(result);
+    }
+
+    pub fn set_bounds(&mut self, presentation: Id, bounds: Rect) {
+        let Some(diagram) = self.active_diagram else { return };
+        let label = t!("edit.resize").to_string();
+        let result = self.doc.edit(label, |tx| tx.set_bounds(diagram, presentation, bounds));
+        self.report(result);
+    }
+
+    pub fn align_selection(&mut self, alignment: Alignment) {
+        let Some(diagram) = self.active_diagram else { return };
+        let nodes = self.selected_nodes();
+        if nodes.len() < 2 {
+            return;
+        }
+        let rects: Vec<Rect> = nodes.iter().map(|&(_, r)| r).collect();
+        let aligned = scene::align(&rects, alignment);
+        let label = t!("edit.align").to_string();
+        let result = self.doc.edit(label, |tx| {
+            nodes.iter().zip(aligned).try_for_each(|(&(p, _), r)| tx.set_bounds(diagram, p, r))
+        });
+        self.report(result);
+    }
+
+    /// Deletes the elements behind the selection from the model; purely graphical items
+    /// (note anchors) are removed from the diagram.
+    pub fn delete_selection(&mut self) {
+        let Some(diagram) = self.active_diagram else { return };
+        let Some(view) = self.doc.model().view(diagram) else { return };
+        let mut elements = Vec::new();
+        let mut graphics = Vec::new();
+        for &p in &self.selection {
+            match view.get(p).map(|pr| pr.element) {
+                Some(Some(e)) => elements.push(e),
+                Some(None) => graphics.push(p),
+                None => {}
+            }
+        }
+        if elements.is_empty() && graphics.is_empty() {
+            return;
+        }
+        let label = t!("edit.delete").to_string();
+        let result = self.doc.edit(label, |tx| {
+            for p in graphics {
+                if tx.model().view(diagram).and_then(|v| v.get(p)).is_some() {
+                    tx.remove_presentation(diagram, p)?;
+                }
+            }
+            for e in elements {
+                // An earlier delete may have cascaded to this one already.
+                if tx.model().contains(e) {
+                    tx.delete(e)?;
+                }
+            }
+            Ok(())
+        });
+        if self.report(result).is_some() {
+            self.clear_selection();
+        }
+    }
+
+    /// Removes the selected presentations from the diagram only; the elements stay.
+    pub fn remove_selection_from_diagram(&mut self) {
+        let Some(diagram) = self.active_diagram else { return };
+        let selection = self.selection.clone();
+        let label = t!("edit.remove_from_diagram").to_string();
+        let result = self.doc.edit(label, |tx| {
+            for p in selection {
+                if tx.model().view(diagram).and_then(|v| v.get(p)).is_some() {
+                    tx.remove_presentation(diagram, p)?;
+                }
+            }
+            Ok(())
+        });
+        if self.report(result).is_some() {
+            self.clear_selection();
+        }
+    }
+}
+
+/// What the model tree's "New" menu can add to an element.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NewItem {
+    Element(NodeTool),
+    Attribute,
+    Operation,
+    Diagram(DiagramKind),
+}
+
+impl NewItem {
+    /// Whether the menu should offer this item for an element of `kind`.
+    pub fn applies_to(self, kind: &ElementKind) -> bool {
+        match self {
+            Self::Element(tool) => kind.can_own(&tool.element_kind()),
+            Self::Attribute => kind.can_own(&ElementKind::attribute(None)),
+            Self::Operation => kind.can_own(&ElementKind::operation(None)),
+            // Sequence diagrams bring their own interaction, which namespaces can own.
+            Self::Diagram(DiagramKind::Sequence) => kind.can_own(&ElementKind::Interaction),
+            Self::Diagram(d) => kind.can_own(&ElementKind::diagram(d)),
+        }
+    }
+
+    /// Translation key of the item's name.
+    pub fn key(self) -> String {
+        match self {
+            Self::Element(tool) => format!("kind.{}", tool.key()),
+            Self::Attribute => "kind.attribute".into(),
+            Self::Operation => "kind.operation".into(),
+            Self::Diagram(DiagramKind::Class) => "diagram.class".into(),
+            Self::Diagram(DiagramKind::UseCase) => "diagram.useCase".into(),
+            Self::Diagram(DiagramKind::Sequence) => "diagram.sequence".into(),
+        }
+    }
+}
+
+impl Workspace {
+    /// Adds a new element below `owner` (model only, no diagram) and selects it. Diagrams are
+    /// opened right away.
+    pub fn add_item(&mut self, owner: Id, item: NewItem) {
+        let keep_words = matches!(item, NewItem::Diagram(_) | NewItem::Element(NodeTool::UseCase));
+        let base = name_base(&item.key(), keep_words);
+        let label = t!("edit.create").to_string();
+        let result = self.doc.edit(label, |tx| {
+            let name = palette::unique_name(tx.model(), owner, &base);
+            match item {
+                NewItem::Element(tool) => {
+                    let name = if tool == NodeTool::Note { String::new() } else { name };
+                    tx.create(owner, ElementData::new(name, tool.element_kind()))
+                }
+                NewItem::Attribute => tx.create(
+                    owner,
+                    ElementData::new(name, ElementKind::attribute(None))
+                        .with_visibility(Visibility::Private),
+                ),
+                NewItem::Operation => {
+                    tx.create(owner, ElementData::new(name, ElementKind::operation(None)))
+                }
+                NewItem::Diagram(DiagramKind::Sequence) => {
+                    let interaction =
+                        tx.create(owner, ElementData::new(name.clone(), ElementKind::Interaction))?;
+                    let kind = ElementKind::diagram(DiagramKind::Sequence);
+                    tx.create(interaction, ElementData::new(name, kind))
+                }
+                NewItem::Diagram(kind) => {
+                    tx.create(owner, ElementData::new(name, ElementKind::diagram(kind)))
+                }
+            }
+        });
+        if let Some(id) = self.report(result) {
+            if matches!(item, NewItem::Diagram(_)) {
+                self.open_diagram(id);
+            }
+            self.select_element(id);
+        }
+    }
+
+    /// Changes an element's data as one undo step, e.g. from the properties panel.
+    pub fn update_element(&mut self, id: Id, f: impl FnOnce(&mut ElementData)) {
+        let label = t!("edit.properties").to_string();
+        let result = self.doc.edit(label, |tx| tx.update(id, f));
+        self.report(result);
+    }
+
+    /// Deletes one element from the model (with everything that depends on it).
+    pub fn delete_element(&mut self, id: Id) {
+        let label = t!("edit.delete").to_string();
+        let result = self.doc.edit(label, |tx| tx.delete(id));
+        if self.report(result).is_some() {
+            self.validate();
+            if self.selected_element.is_none() {
+                self.selection.clear();
+            }
+        }
+    }
+}
+
+/// Base for generated names. Class-like names join the words ("Class1"); use cases and diagrams
+/// keep them and get a space before the number ("Use case 1"), the way people write them.
+pub fn name_base(key: &str, keep_words: bool) -> String {
+    let text = t!(key).to_string();
+    if keep_words { format!("{text} ") } else { text.replace(' ', "") }
+}
+
+fn first_diagram(model: &Model) -> Option<Id> {
+    model.subtree(model.root()).into_iter().find(|&id| model.view(id).is_some())
 }

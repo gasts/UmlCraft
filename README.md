@@ -10,9 +10,13 @@ von `.asta`-Dateien (nur lesen).
   Rasterfang, Undo/Redo, Hell/Dunkel, DE/EN.
 - **M1** Modellkern (`umlcraft-model`) mit validierten, umkehrbaren Operationen und
   Transaktionen; JSON-Projektformat (`umlcraft-format`).
+- **M2** Editor-Shell: Menüleiste, Diagramm-Tabs, Werkzeugpalette je Diagrammart mit
+  Verbindungsregeln, Rahmen- und Mehrfachauswahl, Größe ändern, Ausrichten, Einpassen,
+  bearbeitbares Eigenschaftenpanel, Kontextmenü im Modellbaum, Neu/Öffnen/Speichern/Zuletzt
+  geöffnet mit Rückfrage bei ungespeicherten Änderungen.
 
-Nächste Schritte: Editor-Shell (M2), danach Klassen-, Use-Case- und Sequenzdiagramm (M3–M5) und der
-`.asta`-Import (M6).
+Nächste Schritte: Klassen-, Use-Case- und Sequenzdiagramm im Detail (M3–M5) und der `.asta`-Import
+(M6).
 
 ## Bauen und starten
 
@@ -30,6 +34,7 @@ cargo test --workspace
 | --- | --- |
 | `crates/umlcraft-model` | Metamodell, Diagramme/Presentations, `Op`, `Document`/`Tx` (Undo/Redo) |
 | `crates/umlcraft-format` | `.ucraft`-Dateien: JSON, stabil sortiert, versioniert |
+| `crates/umlcraft-notation` | UML-Notation ohne UI: Szene, Treffertest, Paletten, Verbindungsregeln |
 | `crates/umlcraft-app` | GPUI-Anwendung (`gpui-kit` 0.8) |
 
 Details: [docs/architektur.md](docs/architektur.md).

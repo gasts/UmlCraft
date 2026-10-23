@@ -1,42 +1,71 @@
-//! Main window: toolbar, model browser, diagram canvas, properties and status bar.
+//! Main window: menu bar, toolbar, model tree, diagram tabs with palette and canvas,
+//! properties panel and status bar. Also owns file handling (new, open, save, recent files).
 
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::list::ListItem;
+use gpui_kit::component::menu::{AppMenuBar, PopupMenu};
+use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::tree::{TreeEvent, TreeItem, TreeState, tree};
 use gpui_kit::component::{
-    ActiveTheme, Disableable, Sizable, StyledExt, Theme, ThemeMode, h_flex, h_resizable,
-    resizable_panel, v_flex,
+    ActiveTheme, Disableable, GlobalState, Selectable, Sizable, StyledExt, Theme, ThemeMode,
+    h_flex, h_resizable, resizable_panel, v_flex,
 };
 use gpui_kit::*;
 use rust_i18n::t;
+use umlcraft_format::FILE_EXTENSION;
 use umlcraft_model::sample::order_system;
-use umlcraft_model::{Element, Id, Model};
+use umlcraft_model::{DiagramKind, Document, ElementData, ElementKind, Id, Model};
+use umlcraft_notation::palette::{self, NodeTool, Tool};
+use umlcraft_notation::scene::Alignment;
 
 use crate::canvas::DiagramCanvas;
-use crate::workspace::Workspace;
-use crate::{Redo, ToggleLanguage, ToggleTheme, Undo};
+use crate::labels;
+use crate::properties::PropertiesPanel;
+use crate::settings::Settings;
+use crate::workspace::{NewItem, Workspace};
+use crate::*;
+
+/// Something to do once the user has dealt with unsaved changes.
+type Continuation = Box<dyn FnOnce(&mut MainView, &mut Window, &mut Context<MainView>)>;
+
+/// What the model tree needs to know about an item to build its context menu.
+struct TreeMeta {
+    id: Id,
+    kind: ElementKind,
+    is_root: bool,
+}
 
 pub struct MainView {
     workspace: Entity<Workspace>,
     canvas: Entity<DiagramCanvas>,
+    properties: Entity<PropertiesPanel>,
     tree: Entity<TreeState>,
-    /// Metaclass label per tree item id, for the row renderer.
-    tree_types: Rc<HashMap<SharedString, String>>,
+    menu_bar: Entity<AppMenuBar>,
+    settings: Settings,
+    tree_meta: Rc<HashMap<SharedString, TreeMeta>>,
     collapsed: HashSet<SharedString>,
     tree_revision: Option<(u64, String)>,
     tree_selection: Option<SharedString>,
+    /// Set once the user agreed to close despite unsaved changes.
+    close_confirmed: bool,
     _subscriptions: Vec<Subscription>,
 }
 
 impl MainView {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let (doc, ids) = order_system();
-        let workspace = cx.new(|_| Workspace::new(doc, Some(ids.class_diagram)));
+    pub fn new(settings: Settings, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        if settings.dark == Some(true) {
+            Theme::change(ThemeMode::Dark, Some(window), cx);
+        }
+        let workspace = cx.new(|_| Workspace::new(blank_document(), None));
         let canvas = cx.new(|cx| DiagramCanvas::new(workspace.clone(), cx));
+        let properties = cx.new(|cx| PropertiesPanel::new(workspace.clone(), window, cx));
         let tree = cx.new(|cx| TreeState::new(cx));
+        install_menus(&settings, cx);
+        let menu_bar = AppMenuBar::new(cx);
 
         let subscriptions = vec![
             cx.subscribe(&tree, |this, _, event: &TreeEvent, _| match event {
@@ -55,30 +84,40 @@ impl MainView {
             }),
         ];
 
+        let weak = cx.entity().downgrade();
+        window.on_window_should_close(cx, move |window, cx| {
+            weak.update(cx, |this, cx| this.should_close(window, cx)).unwrap_or(true)
+        });
+
         let mut view = Self {
             workspace,
             canvas,
+            properties,
             tree,
-            tree_types: Rc::default(),
+            menu_bar,
+            settings,
+            tree_meta: Rc::default(),
             collapsed: HashSet::new(),
             tree_revision: None,
             tree_selection: None,
+            close_confirmed: false,
             _subscriptions: subscriptions,
         };
         view.sync_from_workspace(window, cx);
         view
     }
 
-    /// Keeps tree, selection and window title in line with the workspace.
+    // ----- Workspace ↔ tree and window title -------------------------------------------------
+
     fn sync_from_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.workspace.update(cx, |ws, _| ws.validate_selection());
+        self.workspace.update(cx, |ws, _| ws.validate());
         let ws = self.workspace.read(cx);
         let revision = (ws.doc.revision(), rust_i18n::locale().to_string());
         if self.tree_revision.as_ref() != Some(&revision) {
-            let mut types = HashMap::new();
-            let root =
-                tree_item(ws.doc.model(), ws.doc.model().root(), &self.collapsed, &mut types);
-            self.tree_types = Rc::new(types);
+            let model = ws.doc.model();
+            let mut meta = HashMap::new();
+            let root = tree_item(model, model.root(), &self.collapsed, &mut meta);
+            self.tree_meta = Rc::new(meta);
             self.tree_selection = None;
             self.tree.update(cx, |tree, cx| tree.set_items(vec![root], cx));
             self.tree_revision = Some(revision);
@@ -97,11 +136,11 @@ impl MainView {
 
         let ws = self.workspace.read(cx);
         let model = ws.doc.model();
+        let name = ws.file_name().unwrap_or_else(|| {
+            model.element(model.root()).map(|e| e.name().to_owned()).unwrap_or_default()
+        });
         let dirty = if ws.doc.is_dirty() { "*" } else { "" };
-        window.set_window_title(&format!(
-            "{}{dirty} – UmlCraft",
-            model.element(model.root()).map_or("", Element::name)
-        ));
+        window.set_window_title(&format!("{name}{dirty} – UmlCraft"));
         cx.notify();
     }
 
@@ -111,13 +150,10 @@ impl MainView {
             return;
         }
         self.tree_selection = selected.clone();
-        let Some(id) = selected.and_then(|s| s.parse::<Id>().ok()) else {
-            return;
-        };
+        let Some(id) = selected.and_then(|s| s.parse::<Id>().ok()) else { return };
         self.workspace.update(cx, |ws, cx| {
-            let is_diagram = ws.doc.model().view(id).is_some();
-            if is_diagram {
-                ws.active_diagram = Some(id);
+            if ws.doc.model().view(id).is_some() {
+                ws.open_diagram(id);
                 ws.clear_selection();
             } else {
                 ws.select_element(id);
@@ -126,171 +162,458 @@ impl MainView {
         });
     }
 
-    fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
-        self.workspace.update(cx, |ws, cx| {
-            if ws.doc.undo() {
+    fn tree_command(&mut self, cmd: &TreeCommand, window: &mut Window, cx: &mut Context<Self>) {
+        let target = cmd.target;
+        match cmd.command {
+            TreeCommandKind::New(item) => self.workspace.update(cx, |ws, cx| {
+                ws.add_item(target, item);
                 cx.notify();
+            }),
+            TreeCommandKind::Open => self.workspace.update(cx, |ws, cx| {
+                ws.open_diagram(target);
+                cx.notify();
+            }),
+            TreeCommandKind::Rename => {
+                self.workspace.update(cx, |ws, cx| {
+                    ws.select_element(target);
+                    cx.notify();
+                });
+                self.properties.update(cx, |p, cx| p.focus_name(window, cx));
             }
+            TreeCommandKind::Delete => self.workspace.update(cx, |ws, cx| {
+                ws.delete_element(target);
+                cx.notify();
+            }),
+        }
+    }
+
+    // ----- Files ---------------------------------------------------------------------------
+
+    /// Runs `then` right away, or after asking what to do with unsaved changes.
+    fn confirm_discard(&mut self, window: &mut Window, cx: &mut Context<Self>, then: Continuation) {
+        if !self.workspace.read(cx).doc.is_dirty() {
+            then(self, window, cx);
+            return;
+        }
+        let message = t!("dialog.unsaved").to_string();
+        let detail = t!("dialog.unsaved_detail").to_string();
+        let answers = [
+            t!("dialog.save").to_string(),
+            t!("dialog.discard").to_string(),
+            t!("dialog.cancel").to_string(),
+        ];
+        let answers: Vec<&str> = answers.iter().map(String::as_str).collect();
+        let rx = window.prompt(PromptLevel::Warning, &message, Some(&detail), &answers, cx);
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(answer) = rx.await else { return };
+            this.update_in(cx, move |this, window, cx| match answer {
+                0 => this.save(false, window, cx, Some(then)),
+                1 => then(this, window, cx),
+                _ => {}
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn replace_document(&mut self, doc: Document, path: Option<PathBuf>, cx: &mut Context<Self>) {
+        self.workspace.update(cx, |ws, cx| {
+            *ws = Workspace::new(doc, path);
+            cx.notify();
+        });
+        self.collapsed.clear();
+        self.tree_revision = None;
+    }
+
+    fn new_project(&mut self, _: &NewProject, window: &mut Window, cx: &mut Context<Self>) {
+        self.confirm_discard(
+            window,
+            cx,
+            Box::new(|this, _, cx| this.replace_document(blank_document(), None, cx)),
+        );
+    }
+
+    fn open_sample(&mut self, _: &OpenSample, window: &mut Window, cx: &mut Context<Self>) {
+        self.confirm_discard(
+            window,
+            cx,
+            Box::new(|this, _, cx| this.replace_document(order_system().0, None, cx)),
+        );
+    }
+
+    fn open_project(&mut self, _: &OpenProject, window: &mut Window, cx: &mut Context<Self>) {
+        self.confirm_discard(
+            window,
+            cx,
+            Box::new(|_, window, cx| {
+                let rx = cx.prompt_for_paths(PathPromptOptions {
+                    files: true,
+                    directories: false,
+                    multiple: false,
+                    prompt: None,
+                });
+                cx.spawn_in(window, async move |this, cx| {
+                    let Ok(Ok(Some(paths))) = rx.await else { return };
+                    let Some(path) = paths.into_iter().next() else { return };
+                    this.update_in(cx, |this, window, cx| this.open(path, window, cx)).ok();
+                })
+                .detach();
+            }),
+        );
+    }
+
+    fn open_recent(&mut self, action: &OpenRecent, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(path) = self.settings.recent.get(action.index).cloned() else { return };
+        self.confirm_discard(
+            window,
+            cx,
+            Box::new(move |this, window, cx| this.open(path, window, cx)),
+        );
+    }
+
+    fn open(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        match umlcraft_format::load(&path) {
+            Ok(model) => {
+                self.replace_document(Document::new(model), Some(path.clone()), cx);
+                self.remember(&path, cx);
+            }
+            Err(err) => self.show_error(&t!("dialog.open_failed"), &err.to_string(), window, cx),
+        }
+    }
+
+    fn save_project(&mut self, _: &SaveProject, window: &mut Window, cx: &mut Context<Self>) {
+        self.save(false, window, cx, None);
+    }
+
+    fn save_project_as(&mut self, _: &SaveProjectAs, window: &mut Window, cx: &mut Context<Self>) {
+        self.save(true, window, cx, None);
+    }
+
+    /// Saves to the current file, or asks for one (always with `save_as`). Runs `then` after a
+    /// successful save.
+    fn save(
+        &mut self,
+        save_as: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        then: Option<Continuation>,
+    ) {
+        let ws = self.workspace.read(cx);
+        let current = ws.path.clone();
+        if let Some(path) = current.clone().filter(|_| !save_as) {
+            if self.write(path, window, cx)
+                && let Some(then) = then
+            {
+                then(self, window, cx);
+            }
+            return;
+        }
+        let model = ws.doc.model();
+        let project = model.element(model.root()).map(|e| e.name().to_owned()).unwrap_or_default();
+        let suggested = current
+            .as_deref()
+            .and_then(Path::file_name)
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| format!("{}.{FILE_EXTENSION}", sanitize_file_name(&project)));
+        let directory = current
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .or_else(documents_dir)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let rx = cx.prompt_for_new_path(&directory, Some(&suggested));
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(path))) = rx.await else { return };
+            let path = with_project_extension(path);
+            this.update_in(cx, move |this, window, cx| {
+                if this.write(path, window, cx)
+                    && let Some(then) = then
+                {
+                    then(this, window, cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn write(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        match umlcraft_format::save(self.workspace.read(cx).doc.model(), &path) {
+            Ok(()) => {
+                self.workspace.update(cx, |ws, cx| {
+                    ws.path = Some(path.clone());
+                    ws.doc.mark_saved();
+                    cx.notify();
+                });
+                self.remember(&path, cx);
+                true
+            }
+            Err(err) => {
+                self.show_error(&t!("dialog.save_failed"), &err.to_string(), window, cx);
+                false
+            }
+        }
+    }
+
+    fn remember(&mut self, path: &Path, cx: &mut Context<Self>) {
+        self.settings.add_recent(path);
+        self.settings.save();
+        self.reload_menus(cx);
+    }
+
+    fn show_error(&self, message: &str, detail: &str, window: &mut Window, cx: &mut Context<Self>) {
+        // Only informs; nobody waits for the answer.
+        drop(window.prompt(PromptLevel::Critical, message, Some(detail), &["OK"], cx));
+    }
+
+    fn quit(&mut self, _: &Quit, window: &mut Window, cx: &mut Context<Self>) {
+        self.confirm_discard(window, cx, Box::new(|_, _, cx| cx.quit()));
+    }
+
+    fn should_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.close_confirmed || !self.workspace.read(cx).doc.is_dirty() {
+            return true;
+        }
+        self.confirm_discard(
+            window,
+            cx,
+            Box::new(|this, window, _| {
+                this.close_confirmed = true;
+                window.remove_window();
+            }),
+        );
+        false
+    }
+
+    // ----- Edit and view ---------------------------------------------------------------------
+
+    fn with_workspace(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut Workspace)) {
+        self.workspace.update(cx, |ws, cx| {
+            f(ws);
+            cx.notify();
         });
     }
 
-    fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
-        self.workspace.update(cx, |ws, cx| {
-            if ws.doc.redo() {
-                cx.notify();
-            }
-        });
+    fn align(&mut self, alignment: Alignment, cx: &mut Context<Self>) {
+        self.with_workspace(cx, |ws| ws.align_selection(alignment));
     }
 
     fn toggle_theme(&mut self, _: &ToggleTheme, window: &mut Window, cx: &mut Context<Self>) {
-        let mode = if cx.theme().is_dark() { ThemeMode::Light } else { ThemeMode::Dark };
-        Theme::change(mode, Some(window), cx);
+        let dark = !cx.theme().is_dark();
+        Theme::change(if dark { ThemeMode::Dark } else { ThemeMode::Light }, Some(window), cx);
+        self.settings.dark = Some(dark);
+        self.settings.save();
     }
 
     fn toggle_language(&mut self, _: &ToggleLanguage, window: &mut Window, cx: &mut Context<Self>) {
         let next = if &*rust_i18n::locale() == "de" { "en" } else { "de" };
         rust_i18n::set_locale(next);
+        self.settings.language = Some(next.to_owned());
+        self.settings.save();
+        self.reload_menus(cx);
         self.sync_from_workspace(window, cx);
+        self.properties.update(cx, |_, cx| cx.notify());
         window.refresh();
     }
+
+    fn reload_menus(&mut self, cx: &mut Context<Self>) {
+        install_menus(&self.settings, cx);
+        self.menu_bar.update(cx, |bar, cx| bar.reload(cx));
+    }
+
+    // ----- Rendering -------------------------------------------------------------------------
 
     fn toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ws = self.workspace.read(cx);
         let (can_undo, can_redo) = (ws.doc.can_undo(), ws.doc.can_redo());
+        let can_align = ws.selected_nodes().len() > 1;
         let zoom = (self.canvas.read(cx).zoom() * 100.0).round();
-        let canvas = self.canvas.clone();
-        let canvas2 = self.canvas.clone();
-        let canvas3 = self.canvas.clone();
         let separator = || div().w(px(1.0)).h(px(18.0)).mx_1().bg(cx.theme().border);
+        let action_button = |id: &'static str, label: String, action: Box<dyn Action>| {
+            Button::new(id).ghost().small().label(label).on_click(move |_, window, cx| {
+                window.dispatch_action(action.boxed_clone(), cx);
+            })
+        };
         h_flex()
             .gap_1()
             .px_2()
             .py_1()
             .border_b_1()
             .border_color(cx.theme().border)
+            .child(action_button("save", t!("toolbar.save").into(), Box::new(SaveProject)))
+            .child(separator())
             .child(
-                Button::new("undo")
-                    .ghost()
-                    .small()
-                    .label(t!("toolbar.undo"))
-                    .disabled(!can_undo)
-                    .on_click(|_, window, cx| window.dispatch_action(Box::new(Undo), cx)),
+                action_button("undo", t!("toolbar.undo").into(), Box::new(Undo))
+                    .disabled(!can_undo),
             )
             .child(
-                Button::new("redo")
-                    .ghost()
-                    .small()
-                    .label(t!("toolbar.redo"))
-                    .disabled(!can_redo)
-                    .on_click(|_, window, cx| window.dispatch_action(Box::new(Redo), cx)),
+                action_button("redo", t!("toolbar.redo").into(), Box::new(Redo))
+                    .disabled(!can_redo),
             )
             .child(separator())
-            .child(Button::new("zoom-out").ghost().small().label("−").on_click(move |_, _, cx| {
-                canvas.update(cx, |c, cx| c.zoom_by(1.0 / 1.2, cx));
-            }))
+            .child(action_button("zoom-out", "−".into(), Box::new(ZoomOut)))
             .child(
-                Button::new("zoom-reset")
-                    .ghost()
-                    .small()
-                    .label(format!("{zoom} %"))
-                    .tooltip(t!("toolbar.zoom_reset"))
-                    .on_click(move |_, _, cx| {
-                        canvas2.update(cx, |c, cx| c.reset_zoom(cx));
-                    }),
+                action_button("zoom-reset", format!("{zoom} %"), Box::new(ResetZoom))
+                    .tooltip(t!("toolbar.zoom_reset")),
             )
-            .child(Button::new("zoom-in").ghost().small().label("+").on_click(move |_, _, cx| {
-                canvas3.update(cx, |c, cx| c.zoom_by(1.2, cx));
-            }))
+            .child(action_button("zoom-in", "+".into(), Box::new(ZoomIn)))
+            .child(action_button("zoom-fit", t!("toolbar.zoom_fit").into(), Box::new(ZoomToFit)))
+            .child(separator())
+            .children(
+                [
+                    ("align-left", "⇤", AlignLeft.boxed_clone(), "menu.align_left"),
+                    ("align-center", "↔", AlignCenter.boxed_clone(), "menu.align_center"),
+                    ("align-right", "⇥", AlignRight.boxed_clone(), "menu.align_right"),
+                    ("align-top", "⤒", AlignTop.boxed_clone(), "menu.align_top"),
+                    ("align-middle", "↕", AlignMiddle.boxed_clone(), "menu.align_middle"),
+                    ("align-bottom", "⤓", AlignBottom.boxed_clone(), "menu.align_bottom"),
+                ]
+                .map(|(id, symbol, action, tip)| {
+                    action_button(id, symbol.into(), action).disabled(!can_align).tooltip(t!(tip))
+                }),
+            )
             .child(div().flex_1())
-            .child(
-                Button::new("theme")
-                    .ghost()
-                    .small()
-                    .label(t!("toolbar.theme"))
-                    .on_click(|_, window, cx| window.dispatch_action(Box::new(ToggleTheme), cx)),
-            )
-            .child(
-                Button::new("language")
-                    .ghost()
-                    .small()
-                    .label(t!("toolbar.language"))
-                    .on_click(|_, window, cx| window.dispatch_action(Box::new(ToggleLanguage), cx)),
-            )
+            .child(action_button("theme", t!("toolbar.theme").into(), Box::new(ToggleTheme)))
+            .child(action_button(
+                "language",
+                t!("toolbar.language").into(),
+                Box::new(ToggleLanguage),
+            ))
     }
 
     fn model_browser(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let types = self.tree_types.clone();
+        let meta = self.tree_meta.clone();
+        let menu_meta = self.tree_meta.clone();
         let muted = cx.theme().muted_foreground;
         v_flex().size_full().child(panel_header(t!("panel.model"), cx)).child(
-            div().flex_1().min_h_0().child(tree(&self.tree, move |ix, entry, selected, _, _| {
-                let item = entry.item();
-                let kind = types.get(&item.id).cloned().unwrap_or_default();
-                ListItem::new(ix)
-                    .selected(selected)
-                    .pl(px(8.0 + 14.0 * entry.depth() as f32))
-                    .child(
-                        h_flex()
-                            .gap_2()
-                            .overflow_hidden()
-                            .child(div().text_sm().child(item.label.clone()))
-                            .child(div().text_xs().text_color(muted).child(kind)),
-                    )
-            })),
+            div().flex_1().min_h_0().child(
+                tree(&self.tree, move |ix, entry, selected, _, _| {
+                    let item = entry.item();
+                    let kind = meta.get(&item.id).map(|m| m.kind.type_name()).unwrap_or_default();
+                    ListItem::new(ix)
+                        .selected(selected)
+                        .pl(px(8.0 + 14.0 * entry.depth() as f32))
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .overflow_hidden()
+                                .child(div().text_sm().child(item.label.clone()))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(muted)
+                                        .child(t!(format!("kind.{kind}")).to_string()),
+                                ),
+                        )
+                })
+                .context_menu(move |_, entry, menu, _, _| {
+                    match menu_meta.get(&entry.item().id) {
+                        Some(meta) => tree_menu(meta, menu),
+                        None => menu,
+                    }
+                }),
+            ),
         )
     }
 
-    fn properties(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn diagram_area(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ws = self.workspace.read(cx);
         let model = ws.doc.model();
-        let muted = cx.theme().muted_foreground;
-        let row = |label: SharedString, value: String| {
-            v_flex()
-                .gap_0p5()
-                .child(div().text_xs().text_color(muted).child(label))
-                .child(div().text_sm().child(value))
+        let active_ix =
+            ws.active_diagram.and_then(|a| ws.open_diagrams.iter().position(|&d| d == a));
+        let tabs: Vec<Tab> = ws
+            .open_diagrams
+            .iter()
+            .enumerate()
+            .map(|(ix, &d)| {
+                let name = model.get(d).map(labels::display_name).unwrap_or_default();
+                let workspace = self.workspace.clone();
+                Tab::new().label(name).suffix(
+                    Button::new(("close-tab", ix)).ghost().xsmall().label("×").on_click(
+                        move |_, _, cx| {
+                            cx.stop_propagation();
+                            workspace.update(cx, |ws, cx| {
+                                ws.close_diagram(d);
+                                cx.notify();
+                            });
+                        },
+                    ),
+                )
+            })
+            .collect();
+        let open = ws.open_diagrams.clone();
+        let workspace = self.workspace.clone();
+        let tab_bar = TabBar::new("diagram-tabs")
+            .small()
+            .children(tabs)
+            .selected_index(active_ix.unwrap_or(0))
+            .on_click(move |ix: &usize, _, cx| {
+                if let Some(&d) = open.get(*ix) {
+                    workspace.update(cx, |ws, cx| {
+                        ws.open_diagram(d);
+                        cx.notify();
+                    });
+                }
+            });
+
+        let kind = ws.active_diagram.and_then(|d| model.get(d)).and_then(|e| e.kind().as_diagram());
+        let current_tool = ws.tool;
+        let palette_row =
+            h_flex().gap_1().px_2().py_1().border_b_1().border_color(cx.theme().border).children(
+                kind.map(palette::palette).unwrap_or_default().into_iter().enumerate().map(
+                    |(ix, tool)| {
+                        let workspace = self.workspace.clone();
+                        let label = match tool {
+                            Tool::Node(NodeTool::Note) => t!("tool.note").to_string(),
+                            _ => t!(format!("tool.{}", tool.key())).to_string(),
+                        };
+                        Button::new(("tool", ix))
+                            .ghost()
+                            .xsmall()
+                            .label(label)
+                            .selected(current_tool == tool)
+                            .on_click(move |_, _, cx| {
+                                workspace.update(cx, |ws, cx| {
+                                    ws.tool = tool;
+                                    cx.notify();
+                                });
+                            })
+                    },
+                ),
+            );
+
+        let body = if ws.active_diagram.is_some() {
+            div().flex_1().min_h_0().child(self.canvas.clone()).into_any_element()
+        } else {
+            div()
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_sm()
+                .text_color(cx.theme().muted_foreground)
+                .child(t!("canvas.no_diagram").to_string())
+                .into_any_element()
         };
-        let mut body = v_flex().gap_3().p_3();
-        match ws.selected_element.and_then(|id| model.get(id)) {
-            Some(e) => {
-                body = body
-                    .child(row(t!("prop.name").into(), display_name(e)))
-                    .child(row(t!("prop.type").into(), kind_label(e)))
-                    .child(row(
-                        t!("prop.visibility").into(),
-                        format!("{:?}", e.data().visibility).to_lowercase(),
-                    ))
-                    .child(row(t!("prop.owner").into(), owner_path(model, e.id())));
-                if !e.data().documentation.is_empty() {
-                    body = body.child(row(
-                        t!("prop.documentation").into(),
-                        e.data().documentation.clone(),
-                    ));
-                }
-                let bounds = ws
-                    .selected_presentation
-                    .zip(ws.active_diagram)
-                    .and_then(|(p, d)| model.view(d)?.get(p)?.bounds());
-                if let Some(b) = bounds {
-                    body = body.child(row(
-                        t!("prop.bounds").into(),
-                        format!("x {}, y {}, {} × {}", b.x, b.y, b.width, b.height),
-                    ));
-                }
-            }
-            None => {
-                body = body
-                    .child(div().text_sm().text_color(muted).child(t!("prop.nothing_selected")));
-            }
-        }
-        v_flex().size_full().child(panel_header(t!("panel.properties"), cx)).child(body)
+        v_flex().size_full().child(tab_bar).child(palette_row).child(body)
     }
 
     fn status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ws = self.workspace.read(cx);
-        let model = ws.doc.model();
-        let diagram = ws.active_diagram.and_then(|d| model.get(d)).map(Element::name).unwrap_or("");
         let zoom = (self.canvas.read(cx).zoom() * 100.0).round();
         let state = if ws.doc.is_dirty() { t!("status.modified") } else { t!("status.saved") };
+        let selection = match ws.selection.len() {
+            0 => String::new(),
+            n => format!("{n} {}", t!("status.selected")),
+        };
+        let right = match &ws.message {
+            Some(message) => div().text_color(cx.theme().danger).child(message.clone()),
+            None => div().child(match ws.tool {
+                Tool::Select => t!("status.hint").to_string(),
+                Tool::Node(_) => t!("status.hint_node").to_string(),
+                Tool::Edge(_) => t!("status.hint_edge").to_string(),
+            }),
+        };
         h_flex()
             .gap_4()
             .px_3()
@@ -299,12 +622,76 @@ impl MainView {
             .text_color(cx.theme().muted_foreground)
             .border_t_1()
             .border_color(cx.theme().border)
-            .child(format!("{}: {diagram}", t!("status.diagram")))
+            .child(ws.file_name().unwrap_or_else(|| t!("status.unsaved_file").to_string()))
             .child(format!("{zoom} %"))
             .child(state.to_string())
+            .child(selection)
             .child(div().flex_1())
-            .child(t!("status.hint").to_string())
+            .child(right)
     }
+}
+
+fn tree_menu(meta: &TreeMeta, menu: PopupMenu) -> PopupMenu {
+    let target = meta.id;
+    let command = |command| Box::new(TreeCommand { target, command });
+    let mut menu = menu;
+    if meta.kind.as_diagram().is_some() {
+        menu = menu.menu(t!("menu.open_diagram"), command(TreeCommandKind::Open)).separator();
+    }
+    let items = [
+        NewItem::Element(NodeTool::Package),
+        NewItem::Element(NodeTool::Class),
+        NewItem::Element(NodeTool::Interface),
+        NewItem::Element(NodeTool::Enumeration),
+        NewItem::Element(NodeTool::Actor),
+        NewItem::Element(NodeTool::UseCase),
+        NewItem::Attribute,
+        NewItem::Operation,
+    ];
+    let mut any = false;
+    for item in items.into_iter().filter(|i| i.applies_to(&meta.kind)) {
+        let key = item.key();
+        let label = format!("{} {}", t!("menu.new_prefix"), t!(key.as_str()));
+        menu = menu.menu(label, command(TreeCommandKind::New(item)));
+        any = true;
+    }
+    if any {
+        menu = menu.separator();
+    }
+    let mut any = false;
+    for kind in [DiagramKind::Class, DiagramKind::UseCase, DiagramKind::Sequence] {
+        let item = NewItem::Diagram(kind);
+        if item.applies_to(&meta.kind) {
+            let key = item.key();
+            let label = format!("{} {}", t!("menu.new_prefix"), t!(key.as_str()));
+            menu = menu.menu(label, command(TreeCommandKind::New(item)));
+            any = true;
+        }
+    }
+    if any {
+        menu = menu.separator();
+    }
+    menu = menu.menu(t!("menu.rename"), command(TreeCommandKind::Rename));
+    if !meta.is_root {
+        menu = menu.menu(t!("menu.delete"), command(TreeCommandKind::Delete));
+    }
+    menu
+}
+
+fn tree_item(
+    model: &Model,
+    id: Id,
+    collapsed: &HashSet<SharedString>,
+    meta: &mut HashMap<SharedString, TreeMeta>,
+) -> TreeItem {
+    let e = model.get(id).expect("tree only visits existing elements");
+    let key = SharedString::from(id.to_string());
+    meta.insert(key.clone(), TreeMeta { id, kind: e.kind().clone(), is_root: id == model.root() });
+    let children: Vec<TreeItem> =
+        e.children().iter().map(|&c| tree_item(model, c, collapsed, meta)).collect();
+    TreeItem::new(key.clone(), labels::display_name(e))
+        .expanded(!collapsed.contains(&key))
+        .children(children)
 }
 
 fn panel_header(title: impl Into<SharedString>, cx: &App) -> impl IntoElement {
@@ -319,53 +706,183 @@ fn panel_header(title: impl Into<SharedString>, cx: &App) -> impl IntoElement {
         .child(title.into())
 }
 
-fn kind_label(e: &Element) -> String {
-    let key = format!("kind.{}", e.kind().type_name());
-    t!(key.as_str()).to_string()
+fn menu_item(key: &str, action: impl Action) -> MenuItem {
+    MenuItem::action(t!(key).to_string(), action)
 }
 
-fn display_name(e: &Element) -> String {
-    if e.name().is_empty() { format!("({})", kind_label(e)) } else { e.name().to_owned() }
-}
-
-fn owner_path(model: &Model, id: Id) -> String {
-    let mut names: Vec<&str> =
-        model.ancestors(id).iter().rev().filter_map(|&a| model.get(a)).map(Element::name).collect();
-    if names.is_empty() {
-        names.push("—");
+fn menus(settings: &Settings) -> Vec<Menu> {
+    let mut recent: Vec<MenuItem> = settings
+        .recent
+        .iter()
+        .enumerate()
+        .map(|(index, path)| MenuItem::action(recent_label(path), OpenRecent { index }))
+        .collect();
+    if recent.is_empty() {
+        recent.push(MenuItem::action(t!("menu.no_recent").to_string(), Cancel).disabled(true));
     }
-    names.join(" › ")
+    vec![
+        Menu::new(t!("menu.file").to_string()).items([
+            menu_item("menu.new", NewProject),
+            menu_item("menu.open", OpenProject),
+            MenuItem::submenu(Menu::new(t!("menu.recent").to_string()).items(recent)),
+            MenuItem::separator(),
+            menu_item("menu.save", SaveProject),
+            menu_item("menu.save_as", SaveProjectAs),
+            MenuItem::separator(),
+            menu_item("menu.quit", Quit),
+        ]),
+        Menu::new(t!("menu.edit").to_string()).items([
+            menu_item("toolbar.undo", Undo),
+            menu_item("toolbar.redo", Redo),
+            MenuItem::separator(),
+            menu_item("menu.delete", DeleteSelection),
+            menu_item("menu.remove_from_diagram", RemoveFromDiagram),
+            menu_item("menu.select_all", SelectAll),
+            MenuItem::separator(),
+            MenuItem::submenu(Menu::new(t!("menu.align").to_string()).items([
+                menu_item("menu.align_left", AlignLeft),
+                menu_item("menu.align_center", AlignCenter),
+                menu_item("menu.align_right", AlignRight),
+                menu_item("menu.align_top", AlignTop),
+                menu_item("menu.align_middle", AlignMiddle),
+                menu_item("menu.align_bottom", AlignBottom),
+            ])),
+        ]),
+        Menu::new(t!("menu.view").to_string()).items([
+            menu_item("menu.zoom_in", ZoomIn),
+            menu_item("menu.zoom_out", ZoomOut),
+            menu_item("menu.zoom_reset", ResetZoom),
+            menu_item("toolbar.zoom_fit", ZoomToFit),
+            MenuItem::separator(),
+            menu_item("toolbar.theme", ToggleTheme),
+            menu_item("toolbar.language", ToggleLanguage),
+        ]),
+        Menu::new(t!("menu.help").to_string()).items([menu_item("menu.open_sample", OpenSample)]),
+    ]
 }
 
-fn tree_item(
-    model: &Model,
-    id: Id,
-    collapsed: &HashSet<SharedString>,
-    types: &mut HashMap<SharedString, String>,
-) -> TreeItem {
-    let e = model.get(id).expect("tree only visits existing elements");
-    let key = SharedString::from(id.to_string());
-    types.insert(key.clone(), kind_label(e));
-    let children: Vec<TreeItem> =
-        e.children().iter().map(|&c| tree_item(model, c, collapsed, types)).collect();
-    TreeItem::new(key.clone(), display_name(e))
-        .expanded(!collapsed.contains(&key))
-        .children(children)
+fn install_menus(settings: &Settings, cx: &mut App) {
+    cx.set_menus(menus(settings));
+    let owned = menus(settings).into_iter().map(|m| m.owned()).collect();
+    GlobalState::global_mut(cx).set_app_menus(owned);
+}
+
+/// A new project with one empty class diagram.
+fn blank_document() -> Document {
+    let mut doc = Document::new(Model::new(t!("project.untitled").to_string()));
+    let root = doc.model().root();
+    let name = format!("{}1", crate::workspace::name_base("diagram.class", true));
+    doc.edit("", |tx| {
+        tx.create(root, ElementData::new(name, ElementKind::diagram(DiagramKind::Class)))
+    })
+    .expect("a model can always own a class diagram");
+    doc.clear_history();
+    doc
+}
+
+fn with_project_extension(path: PathBuf) -> PathBuf {
+    if path.extension().is_some_and(|e| e == FILE_EXTENSION) {
+        return path;
+    }
+    let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    name.push(format!(".{FILE_EXTENSION}"));
+    path.with_file_name(name)
+}
+
+/// "name.ucraft — C:\Users\…\folder": file name first, the folder shortened in the middle.
+fn recent_label(path: &Path) -> String {
+    const MAX: usize = 40;
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let dir = path.parent().map(|d| d.display().to_string()).unwrap_or_default();
+    let chars: Vec<char> = dir.chars().collect();
+    let dir = if chars.len() > MAX {
+        let head: String = chars[..12].iter().collect();
+        let tail: String = chars[chars.len() - (MAX - 13)..].iter().collect();
+        format!("{head}…{tail}")
+    } else {
+        dir
+    };
+    format!("{name} — {dir}")
+}
+
+fn sanitize_file_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || " -_".contains(c) { c } else { '_' })
+        .collect();
+    let cleaned = cleaned.trim();
+    if cleaned.is_empty() { "project".to_owned() } else { cleaned.to_owned() }
+}
+
+fn documents_dir() -> Option<PathBuf> {
+    std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join("Documents"))
 }
 
 impl Render for MainView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
+        let canvas = self.canvas.clone();
+        let (c1, c2, c3) = (canvas.clone(), canvas.clone(), canvas.clone());
         v_flex()
             .id("main")
             .key_context("UmlCraft")
             .size_full()
             .bg(theme.background)
             .text_color(theme.foreground)
-            .on_action(cx.listener(Self::undo))
-            .on_action(cx.listener(Self::redo))
+            .on_action(cx.listener(Self::new_project))
+            .on_action(cx.listener(Self::open_project))
+            .on_action(cx.listener(Self::open_recent))
+            .on_action(cx.listener(Self::open_sample))
+            .on_action(cx.listener(Self::save_project))
+            .on_action(cx.listener(Self::save_project_as))
+            .on_action(cx.listener(Self::quit))
+            .on_action(cx.listener(Self::tree_command))
             .on_action(cx.listener(Self::toggle_theme))
             .on_action(cx.listener(Self::toggle_language))
+            .on_action(cx.listener(|this, _: &Undo, _, cx| {
+                this.with_workspace(cx, |ws| {
+                    ws.doc.undo();
+                })
+            }))
+            .on_action(cx.listener(|this, _: &Redo, _, cx| {
+                this.with_workspace(cx, |ws| {
+                    ws.doc.redo();
+                })
+            }))
+            .on_action(cx.listener(|this, _: &DeleteSelection, _, cx| {
+                this.with_workspace(cx, Workspace::delete_selection)
+            }))
+            .on_action(cx.listener(|this, _: &RemoveFromDiagram, _, cx| {
+                this.with_workspace(cx, Workspace::remove_selection_from_diagram)
+            }))
+            .on_action(cx.listener(|this, _: &SelectAll, _, cx| {
+                this.with_workspace(cx, Workspace::select_all)
+            }))
+            .on_action(cx.listener(|this, _: &AlignLeft, _, cx| this.align(Alignment::Left, cx)))
+            .on_action(cx.listener(|this, _: &AlignCenter, _, cx| {
+                this.align(Alignment::HorizontalCenter, cx)
+            }))
+            .on_action(cx.listener(|this, _: &AlignRight, _, cx| this.align(Alignment::Right, cx)))
+            .on_action(cx.listener(|this, _: &AlignTop, _, cx| this.align(Alignment::Top, cx)))
+            .on_action(
+                cx.listener(|this, _: &AlignMiddle, _, cx| {
+                    this.align(Alignment::VerticalCenter, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &AlignBottom, _, cx| this.align(Alignment::Bottom, cx)),
+            )
+            .on_action(move |_: &ZoomIn, _, cx| c1.update(cx, |c, cx| c.zoom_by(1.2, cx)))
+            .on_action(move |_: &ZoomOut, _, cx| c2.update(cx, |c, cx| c.zoom_by(1.0 / 1.2, cx)))
+            .on_action(move |_: &ResetZoom, _, cx| c3.update(cx, |c, cx| c.reset_zoom(cx)))
+            .on_action(move |_: &ZoomToFit, _, cx| canvas.update(cx, |c, cx| c.zoom_to_fit(cx)))
+            .child(
+                div()
+                    .h(px(30.0))
+                    .border_b_1()
+                    .border_color(theme.border)
+                    .child(self.menu_bar.clone()),
+            )
             .child(self.toolbar(cx))
             .child(
                 div().flex_1().min_h_0().child(
@@ -376,15 +893,49 @@ impl Render for MainView {
                                 .size_range(px(160.0)..px(520.0))
                                 .child(self.model_browser(cx)),
                         )
-                        .child(resizable_panel().child(self.canvas.clone()))
+                        .child(resizable_panel().child(self.diagram_area(cx)))
                         .child(
                             resizable_panel()
-                                .size(px(260.0))
-                                .size_range(px(160.0)..px(520.0))
-                                .child(self.properties(cx)),
+                                .size(px(280.0))
+                                .size_range(px(180.0)..px(560.0))
+                                .child(
+                                    v_flex()
+                                        .size_full()
+                                        .child(panel_header(t!("panel.properties"), cx))
+                                        .child(self.properties.clone()),
+                                ),
                         ),
                 ),
             )
             .child(self.status_bar(cx))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // No glob import: gpui_kit's `test` macro would shadow the built-in `#[test]`.
+    use std::path::PathBuf;
+
+    use super::{recent_label, sanitize_file_name, with_project_extension};
+
+    #[test]
+    fn file_names_get_the_project_extension() {
+        assert_eq!(with_project_extension("a/b.ucraft".into()), PathBuf::from("a/b.ucraft"));
+        assert_eq!(with_project_extension("a/b".into()), PathBuf::from("a/b.ucraft"));
+        assert_eq!(with_project_extension("a/v1.2".into()), PathBuf::from("a/v1.2.ucraft"));
+        assert_eq!(sanitize_file_name("Order: System?"), "Order_ System_");
+        assert_eq!(sanitize_file_name("  "), "project");
+    }
+
+    #[test]
+    fn recent_labels_put_the_file_name_first_and_shorten_folders() {
+        let short = PathBuf::from(r"C:\Projekte\shop.ucraft");
+        assert_eq!(recent_label(&short), r"shop.ucraft — C:\Projekte");
+        let long =
+            PathBuf::from(r"C:\Users\ulf\AppData\Local\Temp\claude\abcdef\scratchpad\m2.ucraft");
+        let label = recent_label(&long);
+        assert!(label.starts_with(r"m2.ucraft — C:\Users\ulf…"), "{label}");
+        assert!(label.ends_with(r"abcdef\scratchpad"), "{label}");
+        assert!(label.chars().count() <= "m2.ucraft — ".len() + 40, "{label}");
     }
 }

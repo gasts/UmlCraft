@@ -1,9 +1,61 @@
 toolbar:
+  save: Speichern
   undo: Rückgängig
   redo: Wiederholen
   theme: Hell/Dunkel
   language: English
   zoom_reset: "Zoom auf 100 % zurücksetzen (Strg+0)"
+  zoom_fit: Einpassen
+menu:
+  file: Datei
+  new: Neues Projekt
+  open: Öffnen …
+  recent: Zuletzt geöffnet
+  no_recent: (keine)
+  save: Speichern
+  save_as: Speichern unter …
+  quit: Beenden
+  edit: Bearbeiten
+  delete: Aus dem Modell löschen
+  remove_from_diagram: Aus dem Diagramm entfernen
+  select_all: Alles auswählen
+  align: Ausrichten
+  align_left: Links ausrichten
+  align_center: Horizontal zentrieren
+  align_right: Rechts ausrichten
+  align_top: Oben ausrichten
+  align_middle: Vertikal zentrieren
+  align_bottom: Unten ausrichten
+  view: Ansicht
+  zoom_in: Vergrößern
+  zoom_out: Verkleinern
+  zoom_reset: Originalgröße
+  help: Hilfe
+  open_sample: Beispielprojekt öffnen
+  open_diagram: Diagramm öffnen
+  new_prefix: "Neu:"
+  rename: Umbenennen
+tool:
+  select: Auswahl
+  class: Klasse
+  interface: Schnittstelle
+  enumeration: Aufzählung
+  package: Paket
+  note: Notiz
+  actor: Akteur
+  useCase: Anwendungsfall
+  lifeline: Lebenslinie
+  association: Assoziation
+  generalization: Generalisierung
+  realization: Realisierung
+  dependency: Abhängigkeit
+  include: Include
+  extend: Extend
+  noteAnchor: Notizanker
+diagram:
+  class: Klassendiagramm
+  useCase: Anwendungsfalldiagramm
+  sequence: Sequenzdiagramm
 panel:
   model: Modell
   properties: Eigenschaften
@@ -11,18 +63,47 @@ prop:
   name: Name
   type: Art
   visibility: Sichtbarkeit
+  stereotypes: Stereotypen
+  abstract: Abstrakt
   owner: Besitzer
   documentation: Dokumentation
+  text: Text
   bounds: Position und Größe
   nothing_selected: Nichts ausgewählt
+visibility:
+  public: öffentlich
+  protected: geschützt
+  package: Paket
+  private: privat
 status:
-  diagram: Diagramm
   modified: Geändert
   saved: Unverändert
+  selected: ausgewählt
+  unsaved_file: Nicht gespeichert
   hint: "Mausrad: verschieben · Strg+Mausrad: zoomen · mittlere Taste: Ansicht ziehen"
+  hint_node: "Klicken, um das Element zu platzieren · Esc: abbrechen"
+  hint_edge: "Vom Quell- zum Zielelement ziehen oder nacheinander klicken · Esc: abbrechen"
+canvas:
+  no_diagram: Kein Diagramm geöffnet. Doppelklick oder Kontextmenü im Modellbaum.
+dialog:
+  unsaved: Das Projekt enthält ungespeicherte Änderungen.
+  unsaved_detail: Sollen die Änderungen gespeichert werden?
+  save: Speichern
+  discard: Verwerfen
+  cancel: Abbrechen
+  open_failed: Das Projekt konnte nicht geöffnet werden.
+  save_failed: Das Projekt konnte nicht gespeichert werden.
+project:
+  untitled: Neues Projekt
 edit:
+  create: Anlegen
+  connect: Verbinden
   move: Verschieben
+  resize: Größe ändern
+  align: Ausrichten
   delete: Löschen
+  remove_from_diagram: Aus Diagramm entfernen
+  properties: Eigenschaften ändern
 kind:
   model: Projekt
   package: Paket

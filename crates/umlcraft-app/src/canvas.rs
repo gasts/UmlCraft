@@ -1,28 +1,58 @@
-//! The diagram editor surface: paints a [`Scene`] and handles pan, zoom, selection and dragging.
+//! The diagram editor surface: paints a [`Scene`] and handles tools, selection and dragging.
 
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::*;
 use umlcraft_model::{Id, Point as MPoint, Rect};
+use umlcraft_notation::palette::Tool;
+use umlcraft_notation::scene::{
+    self, EdgeShape, EndMarker, Figure, Handle, LabelAlign, LineStyle, NodeShape, Preview, Scene,
+};
 
-use crate::scene::{self, EdgeShape, EndMarker, Figure, LabelAlign, LineStyle, NodeShape, Scene};
 use crate::workspace::Workspace;
-use crate::{DeleteSelection, ResetZoom};
+use crate::{Cancel, DeleteSelection, RemoveFromDiagram, ResetZoom, SelectAll, ZoomToFit};
 
 const MIN_ZOOM: f32 = 0.25;
 const MAX_ZOOM: f32 = 4.0;
 const GRID: f32 = 20.0;
+/// Smallest node edge when resizing.
+const MIN_NODE: f32 = 20.0;
+/// How close (in screen pixels) the pointer must be to grab a resize handle.
+const HANDLE_GRAB: f32 = 6.0;
+
+/// Snaps a logical coordinate or distance to half the grid.
+fn snap(v: f32) -> f32 {
+    (v / GRID * 2.0).round() * GRID / 2.0
+}
 
 #[derive(Clone, Copy)]
 enum Drag {
-    /// Moving a node; `start` is the logical grab point.
+    /// Moving the selected nodes; `start` is the logical grab point.
     Move {
-        presentation: Id,
         start: MPoint,
         dx: f32,
         dy: f32,
+    },
+    Resize {
+        presentation: Id,
+        handle: Handle,
+        original: Rect,
+        start: MPoint,
+        rect: Rect,
+    },
+    RubberBand {
+        start: MPoint,
+        current: MPoint,
+        extend: bool,
+    },
+    /// Drawing a new connection from `source`. Survives a click on the source itself, so both
+    /// drag-and-drop and click-click work.
+    Connect {
+        source: Id,
+        current: MPoint,
     },
     Pan {
         last: Point<Pixels>,
@@ -35,6 +65,9 @@ pub struct DiagramCanvas {
     zoom: f32,
     /// Screen offset of the logical origin, relative to the canvas bounds.
     pan: MPoint,
+    /// Zoom and pan of diagrams that are not active right now.
+    viewports: HashMap<Id, (f32, MPoint)>,
+    shown_diagram: Option<Id>,
     bounds: Rc<Cell<Bounds<Pixels>>>,
     drag: Option<Drag>,
 }
@@ -47,6 +80,8 @@ impl DiagramCanvas {
             focus_handle: cx.focus_handle(),
             zoom: 1.0,
             pan: MPoint::new(0.0, 0.0),
+            viewports: HashMap::new(),
+            shown_diagram: None,
             bounds: Rc::new(Cell::new(Bounds::default())),
             drag: None,
         }
@@ -70,6 +105,22 @@ impl DiagramCanvas {
         cx.notify();
     }
 
+    /// Fits the whole diagram into the visible area (at most 150 %).
+    pub fn zoom_to_fit(&mut self, cx: &mut Context<Self>) {
+        let ws = self.workspace.read(cx);
+        let content = ws.active_diagram.and_then(|d| ws.doc.model().view(d)?.content_bounds());
+        let b = self.bounds.get();
+        let (w, h) = (f32::from(b.size.width), f32::from(b.size.height));
+        let Some(content) = content.filter(|_| w > 0.0 && h > 0.0) else { return };
+        let margin = 40.0;
+        let fit_w = (w - 2.0 * margin) / content.width.max(1.0);
+        let fit_h = (h - 2.0 * margin) / content.height.max(1.0);
+        self.zoom = fit_w.min(fit_h).clamp(MIN_ZOOM, 1.5);
+        let c = content.center();
+        self.pan = MPoint::new(w / 2.0 - c.x * self.zoom, h / 2.0 - c.y * self.zoom);
+        cx.notify();
+    }
+
     fn zoom_at(&mut self, screen: Point<Pixels>, factor: f32) {
         let anchor = self.to_logical(screen);
         self.zoom = (self.zoom * factor).clamp(MIN_ZOOM, MAX_ZOOM);
@@ -87,41 +138,132 @@ impl DiagramCanvas {
         MPoint::new((local.x - self.pan.x) / self.zoom, (local.y - self.pan.y) / self.zoom)
     }
 
+    /// Keeps a separate zoom and pan per diagram.
+    fn switch_viewport(&mut self, diagram: Option<Id>) {
+        if diagram == self.shown_diagram {
+            return;
+        }
+        if let Some(old) = self.shown_diagram {
+            self.viewports.insert(old, (self.zoom, self.pan));
+        }
+        (self.zoom, self.pan) = diagram
+            .and_then(|d| self.viewports.get(&d).copied())
+            .unwrap_or((1.0, MPoint::new(0.0, 0.0)));
+        self.shown_diagram = diagram;
+        self.drag = None;
+    }
+
+    fn preview(&self, ws: &Workspace) -> Preview {
+        match self.drag {
+            Some(Drag::Move { dx, dy, .. }) => {
+                Preview { moved: ws.selection.iter().copied().collect(), dx, dy, resized: None }
+            }
+            Some(Drag::Resize { presentation, rect, .. }) => {
+                Preview { resized: Some((presentation, rect)), ..Preview::default() }
+            }
+            _ => Preview::default(),
+        }
+    }
+
     fn current_scene(&self, cx: &App) -> Scene {
         let ws = self.workspace.read(cx);
-        let Some(diagram) = ws.active_diagram else {
-            return Scene { nodes: Vec::new(), edges: Vec::new() };
-        };
-        let moved = match self.drag {
-            Some(Drag::Move { presentation, dx, dy, .. }) => Some((presentation, dx, dy)),
-            _ => None,
-        };
-        scene::build(ws.doc.model(), diagram, moved)
+        match ws.active_diagram {
+            Some(diagram) => scene::build(ws.doc.model(), diagram, &self.preview(ws)),
+            None => Scene { nodes: Vec::new(), edges: Vec::new() },
+        }
+    }
+
+    fn node_at(scene: &Scene, p: MPoint) -> Option<Id> {
+        scene.nodes.iter().rev().find(|n| n.rect.contains(p)).map(|n| n.id)
     }
 
     fn on_left_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         self.focus_handle.focus(window, cx);
         let p = self.to_logical(ev.position);
-        let hit = scene::hit_test(&self.current_scene(cx), p, 4.0 / self.zoom);
-        let is_node = |ws: &Workspace, id: Id| {
-            ws.active_diagram
-                .and_then(|d| ws.doc.model().view(d))
-                .and_then(|v| v.get(id))
-                .is_some_and(|pr| !pr.is_edge())
+        let scene = self.current_scene(cx);
+        let (tool, selection) = {
+            let ws = self.workspace.read(cx);
+            (ws.tool, ws.selection.clone())
         };
-        self.workspace.update(cx, |ws, cx| {
-            match hit {
-                Some(id) => ws.select_presentation(id),
-                None => ws.clear_selection(),
+        let extend = ev.modifiers.shift || ev.modifiers.control;
+
+        match tool {
+            Tool::Node(node_tool) => {
+                let origin = MPoint::new(snap(p.x), snap(p.y));
+                self.workspace.update(cx, |ws, cx| {
+                    ws.create_node(node_tool, origin);
+                    ws.tool = Tool::Select;
+                    cx.notify();
+                });
             }
-            cx.notify();
-        });
-        if let Some(id) = hit
-            && is_node(self.workspace.read(cx), id)
-        {
-            self.drag = Some(Drag::Move { presentation: id, start: p, dx: 0.0, dy: 0.0 });
+            Tool::Edge(edge_tool) => match (self.drag, Self::node_at(&scene, p)) {
+                // Second click of click-click mode.
+                (Some(Drag::Connect { source, .. }), Some(target)) if target != source => {
+                    self.drag = None;
+                    self.finish_connect(edge_tool, source, target, cx);
+                }
+                (_, Some(source)) => self.drag = Some(Drag::Connect { source, current: p }),
+                (_, None) => self.drag = None,
+            },
+            Tool::Select => {
+                // A resize handle of the single selected node wins over everything else.
+                if let [single] = selection[..]
+                    && let Some(node) = scene.nodes.iter().find(|n| n.id == single)
+                    && let Some(handle) = Handle::at(node.rect, p, HANDLE_GRAB / self.zoom)
+                {
+                    self.drag = Some(Drag::Resize {
+                        presentation: single,
+                        handle,
+                        original: node.rect,
+                        start: p,
+                        rect: node.rect,
+                    });
+                    cx.notify();
+                    return;
+                }
+                match scene::hit_test(&scene, p, 4.0 / self.zoom) {
+                    Some(id) => {
+                        let already = selection.contains(&id);
+                        self.workspace.update(cx, |ws, cx| {
+                            if extend {
+                                ws.toggle(id);
+                            } else if !already {
+                                ws.select(vec![id]);
+                            }
+                            cx.notify();
+                        });
+                        let is_node = scene.nodes.iter().any(|n| n.id == id);
+                        if is_node && self.workspace.read(cx).selection.contains(&id) {
+                            self.drag = Some(Drag::Move { start: p, dx: 0.0, dy: 0.0 });
+                        }
+                    }
+                    None => {
+                        if !extend {
+                            self.workspace.update(cx, |ws, cx| {
+                                ws.clear_selection();
+                                cx.notify();
+                            });
+                        }
+                        self.drag = Some(Drag::RubberBand { start: p, current: p, extend });
+                    }
+                }
+            }
         }
         cx.notify();
+    }
+
+    fn finish_connect(
+        &mut self,
+        tool: umlcraft_notation::palette::EdgeTool,
+        source: Id,
+        target: Id,
+        cx: &mut Context<Self>,
+    ) {
+        self.workspace.update(cx, |ws, cx| {
+            ws.connect(tool, source, target);
+            ws.tool = Tool::Select;
+            cx.notify();
+        });
     }
 
     fn on_middle_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -131,50 +273,70 @@ impl DiagramCanvas {
     }
 
     fn drag_to(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
-        match self.drag {
-            Some(Drag::Move { presentation, start, .. }) => {
-                let p = self.to_logical(position);
-                // Snap the movement to the grid.
-                let snap = |v: f32| (v / GRID * 2.0).round() * GRID / 2.0;
-                self.drag = Some(Drag::Move {
-                    presentation,
-                    start,
-                    dx: snap(p.x - start.x),
-                    dy: snap(p.y - start.y),
-                });
+        let p = self.to_logical(position);
+        self.drag = match self.drag {
+            Some(Drag::Move { start, .. }) => {
+                Some(Drag::Move { start, dx: snap(p.x - start.x), dy: snap(p.y - start.y) })
             }
+            Some(Drag::Resize { presentation, handle, original, start, .. }) => {
+                let rect =
+                    handle.resize(original, snap(p.x - start.x), snap(p.y - start.y), MIN_NODE);
+                Some(Drag::Resize { presentation, handle, original, start, rect })
+            }
+            Some(Drag::RubberBand { start, extend, .. }) => {
+                Some(Drag::RubberBand { start, current: p, extend })
+            }
+            Some(Drag::Connect { source, .. }) => Some(Drag::Connect { source, current: p }),
             Some(Drag::Pan { last }) => {
                 self.pan =
                     self.pan.offset(f32::from(position.x - last.x), f32::from(position.y - last.y));
-                self.drag = Some(Drag::Pan { last: position });
+                Some(Drag::Pan { last: position })
             }
             None => return,
-        }
+        };
         cx.notify();
     }
 
-    fn end_drag(&mut self, cx: &mut Context<Self>) {
-        if let Some(Drag::Move { presentation, dx, dy, .. }) = self.drag.take()
-            && (dx != 0.0 || dy != 0.0)
-        {
-            self.workspace.update(cx, |ws, cx| {
-                let Some(diagram) = ws.active_diagram else {
-                    return;
-                };
-                let bounds = ws
-                    .doc
-                    .model()
-                    .view(diagram)
-                    .and_then(|v| v.get(presentation))
-                    .and_then(|p| p.bounds());
-                if let Some(b) = bounds {
-                    let label = rust_i18n::t!("edit.move").to_string();
-                    ws.doc
-                        .edit(label, |tx| tx.set_bounds(diagram, presentation, b.translate(dx, dy)))
-                        .expect("moving a node is always valid");
+    fn end_drag(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
+        let p = self.to_logical(position);
+        match self.drag.take() {
+            Some(Drag::Move { dx, dy, .. }) => self.workspace.update(cx, |ws, cx| {
+                ws.move_selection(dx, dy);
+                cx.notify();
+            }),
+            Some(Drag::Resize { presentation, original, rect, .. }) if rect != original => {
+                self.workspace.update(cx, |ws, cx| {
+                    ws.set_bounds(presentation, rect);
                     cx.notify();
+                });
+            }
+            Some(Drag::RubberBand { start, extend, .. }) => {
+                let hits = scene::nodes_in(&self.current_scene(cx), Rect::from_corners(start, p));
+                self.workspace.update(cx, |ws, cx| {
+                    if extend {
+                        let mut selection = ws.selection.clone();
+                        selection.extend(hits.into_iter().filter(|h| !ws.selection.contains(h)));
+                        ws.select(selection);
+                    } else {
+                        ws.select(hits);
+                    }
+                    cx.notify();
+                });
+            }
+            Some(Drag::Connect { source, current }) => {
+                let tool = self.workspace.read(cx).tool;
+                match (tool, Self::node_at(&self.current_scene(cx), p)) {
+                    (Tool::Edge(edge_tool), Some(target)) if target != source => {
+                        self.finish_connect(edge_tool, source, target, cx);
+                    }
+                    // Released on the source: wait for the second click.
+                    (Tool::Edge(_), Some(_)) => {
+                        self.drag = Some(Drag::Connect { source, current });
+                    }
+                    _ => {}
                 }
-            });
+            }
+            _ => {}
         }
         cx.notify();
     }
@@ -192,16 +354,19 @@ impl DiagramCanvas {
         cx.notify();
     }
 
-    fn delete_selection(&mut self, _: &DeleteSelection, _: &mut Window, cx: &mut Context<Self>) {
+    fn cancel(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
+        self.drag = None;
         self.workspace.update(cx, |ws, cx| {
-            let target = ws.selected_element;
-            if let Some(element) = target {
-                let label = rust_i18n::t!("edit.delete").to_string();
-                if ws.doc.edit(label, |tx| tx.delete(element)).is_ok() {
-                    ws.clear_selection();
-                    cx.notify();
-                }
-            }
+            ws.tool = Tool::Select;
+            cx.notify();
+        });
+        cx.notify();
+    }
+
+    fn update_workspace(&mut self, cx: &mut Context<Self>, f: impl FnOnce(&mut Workspace)) {
+        self.workspace.update(cx, |ws, cx| {
+            f(ws);
+            cx.notify();
         });
     }
 }
@@ -607,38 +772,55 @@ impl Painter<'_> {
         }
     }
 
-    fn selection(&mut self, r: Rect) {
-        let outline = r.inflate(3.0);
+    fn selection(&mut self, r: Rect, handles: bool) {
         let s = self.c.selection;
         self.window.paint_quad(quad(
-            self.t.rect(outline),
+            self.t.rect(r.inflate(3.0)),
             px(2.0),
             transparent_black(),
             px(1.5),
             s,
             BorderStyle::Solid,
         ));
-        for (x, y) in [
-            (outline.x, outline.y),
-            (outline.right(), outline.y),
-            (outline.x, outline.bottom()),
-            (outline.right(), outline.bottom()),
-        ] {
-            let handle = Rect::new(
-                x - 3.5 / self.t.zoom,
-                y - 3.5 / self.t.zoom,
-                7.0 / self.t.zoom,
-                7.0 / self.t.zoom,
-            );
-            self.window.paint_quad(fill(self.t.rect(handle), s));
+        if handles {
+            let half = 3.5 / self.t.zoom;
+            for handle in Handle::ALL {
+                let p = handle.position(r);
+                let square = Rect::new(p.x - half, p.y - half, 2.0 * half, 2.0 * half);
+                self.window.paint_quad(quad(
+                    self.t.rect(square),
+                    px(1.0),
+                    self.c.background,
+                    px(1.5),
+                    s,
+                    BorderStyle::Solid,
+                ));
+            }
         }
+    }
+
+    fn rubber_band(&mut self, area: Rect) {
+        let s = self.c.selection;
+        self.window.paint_quad(quad(
+            self.t.rect(area),
+            px(0.0),
+            Hsla { a: 0.08, ..s },
+            px(1.0),
+            s,
+            BorderStyle::Dashed,
+        ));
     }
 }
 
 impl Render for DiagramCanvas {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let (active, tool) = {
+            let ws = self.workspace.read(cx);
+            (ws.active_diagram, ws.tool)
+        };
+        self.switch_viewport(active);
         let scene = self.current_scene(cx);
-        let selected = self.workspace.read(cx).selected_presentation;
+        let selection = self.workspace.read(cx).selection.clone();
         let theme = cx.theme();
         let colors = Colors {
             background: theme.background,
@@ -654,11 +836,10 @@ impl Render for DiagramCanvas {
             selection: theme.blue,
         };
         let font_family = theme.font_family.clone();
-        let (pan, zoom) = (self.pan, self.zoom);
+        let (pan, zoom, drag) = (self.pan, self.zoom, self.drag);
         let bounds_cell = self.bounds.clone();
-        let dragging = self.drag.is_some();
         let this = cx.entity();
-        let _ = window;
+        let cursor = if tool == Tool::Select { CursorStyle::Arrow } else { CursorStyle::Crosshair };
 
         div()
             .id("diagram-canvas")
@@ -667,16 +848,27 @@ impl Render for DiagramCanvas {
             .size_full()
             .overflow_hidden()
             .bg(colors.background)
+            .cursor(cursor)
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_left_down))
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::on_middle_down))
             .on_scroll_wheel(cx.listener(Self::on_scroll))
-            .on_action(cx.listener(Self::delete_selection))
+            .on_action(cx.listener(Self::cancel))
+            .on_action(cx.listener(|this, _: &DeleteSelection, _, cx| {
+                this.update_workspace(cx, Workspace::delete_selection);
+            }))
+            .on_action(cx.listener(|this, _: &RemoveFromDiagram, _, cx| {
+                this.update_workspace(cx, Workspace::remove_selection_from_diagram);
+            }))
+            .on_action(cx.listener(|this, _: &SelectAll, _, cx| {
+                this.update_workspace(cx, Workspace::select_all);
+            }))
             .on_action(cx.listener(|this, _: &ResetZoom, _, cx| this.reset_zoom(cx)))
+            .on_action(cx.listener(|this, _: &ZoomToFit, _, cx| this.zoom_to_fit(cx)))
             .child(
                 canvas(
                     move |bounds, _, _| bounds_cell.set(bounds),
                     move |bounds, (), window, cx| {
-                        if dragging {
+                        if drag.is_some() {
                             let target = this.clone();
                             window.on_mouse_event(move |ev: &MouseMoveEvent, phase, _, cx| {
                                 if phase == DispatchPhase::Bubble {
@@ -684,9 +876,11 @@ impl Render for DiagramCanvas {
                                 }
                             });
                             let target = this.clone();
-                            window.on_mouse_event(move |_: &MouseUpEvent, phase, _, cx| {
-                                if phase == DispatchPhase::Bubble {
-                                    target.update(cx, |c, cx| c.end_drag(cx));
+                            window.on_mouse_event(move |ev: &MouseUpEvent, phase, _, cx| {
+                                if phase == DispatchPhase::Bubble
+                                    && matches!(ev.button, MouseButton::Left | MouseButton::Middle)
+                                {
+                                    target.update(cx, |c, cx| c.end_drag(ev.position, cx));
                                 }
                             });
                         }
@@ -698,11 +892,27 @@ impl Render for DiagramCanvas {
                                 p.node(node);
                             }
                             for edge in &scene.edges {
-                                p.edge(edge, Some(edge.id) == selected);
+                                p.edge(edge, selection.contains(&edge.id));
                             }
-                            if let Some(node) = scene.nodes.iter().find(|n| Some(n.id) == selected)
-                            {
-                                p.selection(node.rect);
+                            let selected_nodes: Vec<&NodeShape> =
+                                scene.nodes.iter().filter(|n| selection.contains(&n.id)).collect();
+                            let handles = selected_nodes.len() == 1 && selection.len() == 1;
+                            for node in selected_nodes {
+                                p.selection(node.rect, handles);
+                            }
+                            match drag {
+                                Some(Drag::RubberBand { start, current, .. }) => {
+                                    p.rubber_band(Rect::from_corners(start, current));
+                                }
+                                Some(Drag::Connect { source, current }) => {
+                                    if let Some(node) = scene.nodes.iter().find(|n| n.id == source)
+                                    {
+                                        let from = scene::border_point(node.rect, current);
+                                        let s = p.c.selection;
+                                        p.line(&[from, current], 1.5, s, LineStyle::Dashed);
+                                    }
+                                }
+                                _ => {}
                             }
                         });
                     },

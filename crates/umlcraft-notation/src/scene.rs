@@ -1,7 +1,6 @@
 //! Turns a diagram view into simple drawable shapes in logical coordinates.
-//!
-//! This is the seed of the planned `umlcraft-notation` crate: it knows UML notation but nothing
-//! about GPUI, so it can move out once the class, use case and sequence notations grow.
+
+use std::collections::HashSet;
 
 use umlcraft_model::{
     Aggregation, ElementKind, Id, MessageSort, Model, Navigability, Point, Presentation, Rect,
@@ -91,17 +90,31 @@ pub struct EdgeLabel {
     pub align: LabelAlign,
 }
 
-/// Builds the scene. `moved` previews a node being dragged: (presentation, dx, dy).
-pub fn build(model: &Model, diagram: Id, moved: Option<(Id, f32, f32)>) -> Scene {
+/// An uncommitted change shown while the user drags: moved nodes and a resized node.
+#[derive(Clone, Debug, Default)]
+pub struct Preview {
+    pub moved: HashSet<Id>,
+    pub dx: f32,
+    pub dy: f32,
+    pub resized: Option<(Id, Rect)>,
+}
+
+impl Preview {
+    pub fn rect(&self, presentation: Id, rect: Rect) -> Rect {
+        match self.resized {
+            Some((id, r)) if id == presentation => r,
+            _ if self.moved.contains(&presentation) => rect.translate(self.dx, self.dy),
+            _ => rect,
+        }
+    }
+}
+
+/// Builds the scene of `diagram`, with `preview` applied.
+pub fn build(model: &Model, diagram: Id, preview: &Preview) -> Scene {
     let Some(view) = model.view(diagram) else {
         return Scene { nodes: Vec::new(), edges: Vec::new() };
     };
-    let rect_of = |p: &Presentation| {
-        p.bounds().map(|r| match moved {
-            Some((id, dx, dy)) if id == p.id => r.translate(dx, dy),
-            _ => r,
-        })
-    };
+    let rect_of = |p: &Presentation| p.bounds().map(|r| preview.rect(p.id, r));
     let nodes = view
         .presentations()
         .iter()
@@ -394,6 +407,110 @@ pub fn hit_test(scene: &Scene, p: Point, tolerance: f32) -> Option<Id> {
     scene.nodes.iter().rev().find(|n| n.rect.contains(p)).map(|n| n.id)
 }
 
+/// Nodes lying completely inside `area`, e.g. a rubber band.
+pub fn nodes_in(scene: &Scene, area: Rect) -> Vec<Id> {
+    scene.nodes.iter().filter(|n| area.contains_rect(&n.rect)).map(|n| n.id).collect()
+}
+
+/// One of the eight resize handles around a selected node.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Handle {
+    TopLeft,
+    Top,
+    TopRight,
+    Right,
+    BottomRight,
+    Bottom,
+    BottomLeft,
+    Left,
+}
+
+impl Handle {
+    pub const ALL: [Handle; 8] = [
+        Self::TopLeft,
+        Self::Top,
+        Self::TopRight,
+        Self::Right,
+        Self::BottomRight,
+        Self::Bottom,
+        Self::BottomLeft,
+        Self::Left,
+    ];
+
+    /// Relative position on the rectangle: (0, 0) top left … (1, 1) bottom right.
+    fn factors(self) -> (f32, f32) {
+        match self {
+            Self::TopLeft => (0.0, 0.0),
+            Self::Top => (0.5, 0.0),
+            Self::TopRight => (1.0, 0.0),
+            Self::Right => (1.0, 0.5),
+            Self::BottomRight => (1.0, 1.0),
+            Self::Bottom => (0.5, 1.0),
+            Self::BottomLeft => (0.0, 1.0),
+            Self::Left => (0.0, 0.5),
+        }
+    }
+
+    pub fn position(self, r: Rect) -> Point {
+        let (fx, fy) = self.factors();
+        Point::new(r.x + r.width * fx, r.y + r.height * fy)
+    }
+
+    /// The handle of `r` within `tolerance` of `p`, if any.
+    pub fn at(r: Rect, p: Point, tolerance: f32) -> Option<Handle> {
+        Self::ALL.into_iter().find(|h| {
+            let hp = h.position(r);
+            (hp.x - p.x).abs() <= tolerance && (hp.y - p.y).abs() <= tolerance
+        })
+    }
+
+    /// `r` resized by dragging this handle by (`dx`, `dy`), never smaller than `min`.
+    pub fn resize(self, r: Rect, dx: f32, dy: f32, min: f32) -> Rect {
+        let (fx, fy) = self.factors();
+        let (mut left, mut top, mut right, mut bottom) = (r.x, r.y, r.right(), r.bottom());
+        if fx == 0.0 {
+            left = (left + dx).min(right - min);
+        } else if fx == 1.0 {
+            right = (right + dx).max(left + min);
+        }
+        if fy == 0.0 {
+            top = (top + dy).min(bottom - min);
+        } else if fy == 1.0 {
+            bottom = (bottom + dy).max(top + min);
+        }
+        Rect::new(left, top, right - left, bottom - top)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Alignment {
+    Left,
+    HorizontalCenter,
+    Right,
+    Top,
+    VerticalCenter,
+    Bottom,
+}
+
+/// New bounds that align `rects` to the first one, like most diagram editors do.
+pub fn align(rects: &[Rect], alignment: Alignment) -> Vec<Rect> {
+    let Some(reference) = rects.first().copied() else { return Vec::new() };
+    rects
+        .iter()
+        .map(|r| {
+            let (x, y) = match alignment {
+                Alignment::Left => (reference.x, r.y),
+                Alignment::HorizontalCenter => (reference.center().x - r.width / 2.0, r.y),
+                Alignment::Right => (reference.right() - r.width, r.y),
+                Alignment::Top => (r.x, reference.y),
+                Alignment::VerticalCenter => (r.x, reference.center().y - r.height / 2.0),
+                Alignment::Bottom => (r.x, reference.bottom() - r.height),
+            };
+            Rect::new(x, y, r.width, r.height)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -410,7 +527,7 @@ mod tests {
     #[test]
     fn sample_class_diagram_scene() {
         let (doc, ids) = order_system();
-        let scene = build(doc.model(), ids.class_diagram, None);
+        let scene = build(doc.model(), ids.class_diagram, &Preview::default());
         assert_eq!(scene.nodes.len(), 3);
         assert_eq!(scene.edges.len(), 2);
         let generalization = scene
@@ -432,7 +549,7 @@ mod tests {
     #[test]
     fn association_end_labels_sit_above_a_horizontal_line() {
         let (doc, ids) = order_system();
-        let scene = build(doc.model(), ids.class_diagram, None);
+        let scene = build(doc.model(), ids.class_diagram, &Preview::default());
         let association = scene.edges.iter().find(|e| e.labels.len() == 2).unwrap();
         // Order (source, right) → Customer (target, left): the line slopes from y ≈ 128.7 to 126.3.
         let pts = &association.points;
@@ -475,10 +592,36 @@ mod tests {
     fn dragging_moves_node_and_attached_edges() {
         let (doc, ids) = order_system();
         let node = doc.model().shown_on(ids.premium)[0].1;
-        let scene = build(doc.model(), ids.class_diagram, Some((node, 0.0, 40.0)));
+        let preview = Preview { moved: HashSet::from([node]), dx: 0.0, dy: 40.0, resized: None };
+        let scene = build(doc.model(), ids.class_diagram, &preview);
         let moved = scene.nodes.iter().find(|n| n.id == node).unwrap();
         assert_eq!(moved.rect.y, 300.0);
         assert!(hit_test(&scene, Point::new(100.0, 310.0), 4.0) == Some(node));
         assert!(hit_test(&scene, Point::new(600.0, 600.0), 4.0).is_none());
+    }
+
+    #[test]
+    fn handles_resize_and_respect_minimum() {
+        let r = Rect::new(10.0, 10.0, 100.0, 50.0);
+        assert_eq!(Handle::at(r, Point::new(111.0, 59.0), 4.0), Some(Handle::BottomRight));
+        assert_eq!(Handle::at(r, Point::new(60.0, 10.0), 4.0), Some(Handle::Top));
+        assert_eq!(Handle::at(r, Point::new(60.0, 35.0), 4.0), None);
+        assert_eq!(
+            Handle::BottomRight.resize(r, 20.0, 10.0, 20.0),
+            Rect::new(10.0, 10.0, 120.0, 60.0)
+        );
+        assert_eq!(Handle::TopLeft.resize(r, -5.0, 100.0, 20.0), Rect::new(5.0, 40.0, 105.0, 20.0));
+        assert_eq!(Handle::Top.resize(r, 30.0, 0.0, 20.0), r, "edge handles ignore the other axis");
+    }
+
+    #[test]
+    fn rubber_band_and_alignment() {
+        let (doc, ids) = order_system();
+        let scene = build(doc.model(), ids.class_diagram, &Preview::default());
+        assert_eq!(nodes_in(&scene, Rect::new(0.0, 0.0, 300.0, 400.0)).len(), 2);
+        let rects = [Rect::new(0.0, 0.0, 100.0, 50.0), Rect::new(200.0, 80.0, 60.0, 30.0)];
+        assert_eq!(align(&rects, Alignment::Right)[1], Rect::new(40.0, 80.0, 60.0, 30.0));
+        assert_eq!(align(&rects, Alignment::VerticalCenter)[1], Rect::new(200.0, 10.0, 60.0, 30.0));
+        assert_eq!(align(&rects, Alignment::Top)[0], rects[0]);
     }
 }

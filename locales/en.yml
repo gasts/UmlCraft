@@ -1,9 +1,61 @@
 toolbar:
+  save: Save
   undo: Undo
   redo: Redo
   theme: Light/Dark
   language: Deutsch
   zoom_reset: "Reset zoom to 100 % (Ctrl+0)"
+  zoom_fit: Fit
+menu:
+  file: File
+  new: New project
+  open: Open …
+  recent: Open recent
+  no_recent: (none)
+  save: Save
+  save_as: Save as …
+  quit: Exit
+  edit: Edit
+  delete: Delete from model
+  remove_from_diagram: Remove from diagram
+  select_all: Select all
+  align: Align
+  align_left: Align left
+  align_center: Center horizontally
+  align_right: Align right
+  align_top: Align top
+  align_middle: Center vertically
+  align_bottom: Align bottom
+  view: View
+  zoom_in: Zoom in
+  zoom_out: Zoom out
+  zoom_reset: Actual size
+  help: Help
+  open_sample: Open sample project
+  open_diagram: Open diagram
+  new_prefix: "New:"
+  rename: Rename
+tool:
+  select: Select
+  class: Class
+  interface: Interface
+  enumeration: Enumeration
+  package: Package
+  note: Note
+  actor: Actor
+  useCase: Use case
+  lifeline: Lifeline
+  association: Association
+  generalization: Generalization
+  realization: Realization
+  dependency: Dependency
+  include: Include
+  extend: Extend
+  noteAnchor: Note anchor
+diagram:
+  class: Class diagram
+  useCase: Use case diagram
+  sequence: Sequence diagram
 panel:
   model: Model
   properties: Properties
@@ -11,18 +63,47 @@ prop:
   name: Name
   type: Kind
   visibility: Visibility
+  stereotypes: Stereotypes
+  abstract: Abstract
   owner: Owner
   documentation: Documentation
+  text: Text
   bounds: Position and size
   nothing_selected: Nothing selected
+visibility:
+  public: public
+  protected: protected
+  package: package
+  private: private
 status:
-  diagram: Diagram
   modified: Modified
   saved: Unchanged
+  selected: selected
+  unsaved_file: Not saved
   hint: "Wheel: scroll · Ctrl+wheel: zoom · middle button: pan"
+  hint_node: "Click to place the element · Esc: cancel"
+  hint_edge: "Drag from source to target or click both · Esc: cancel"
+canvas:
+  no_diagram: No diagram open. Double-click one or use the model tree's context menu.
+dialog:
+  unsaved: The project has unsaved changes.
+  unsaved_detail: Do you want to save them?
+  save: Save
+  discard: Discard
+  cancel: Cancel
+  open_failed: The project could not be opened.
+  save_failed: The project could not be saved.
+project:
+  untitled: New project
 edit:
+  create: Create
+  connect: Connect
   move: Move
+  resize: Resize
+  align: Align
   delete: Delete
+  remove_from_diagram: Remove from diagram
+  properties: Change properties
 kind:
   model: Project
   package: Package

@@ -6590,9 +6590,12 @@ dependencies = [
  "anyhow",
  "gpui-kit",
  "rust-i18n",
+ "serde",
+ "serde_json",
  "sys-locale",
  "umlcraft-format",
  "umlcraft-model",
+ "umlcraft-notation",
 ]
 
 [[package]]
@@ -6615,6 +6618,14 @@ dependencies = [
  "serde",
  "thiserror 2.0.21",
  "uuid",
+]
+
+[[package]]
+name = "umlcraft-notation"
+version = "0.1.0"
+dependencies = [
+ "pretty_assertions",
+ "umlcraft-model",
 ]
 
 [[package]]
