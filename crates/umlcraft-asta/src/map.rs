@@ -21,7 +21,7 @@ use umlcraft_model::{
 };
 use umlcraft_notation::palette;
 use umlcraft_notation::route;
-use umlcraft_notation::scene::{self, border_point_from};
+use umlcraft_notation::scene::{self, Outline};
 
 use crate::jser::{Graph, ObjId, Value};
 
@@ -1713,6 +1713,9 @@ impl Importer<'_> {
             // Header cells belong to Astah's tables and point at the diagram too.
             "FramePresentation" | "LabelPresentation" | "HeaderCellPresentation" => return None,
             "NotePresentation" => self.note(diagram, p)?,
+            "RectPresentation" if kind == DiagramKind::UseCase => {
+                self.system_boundary(diagram, p)?
+            }
             _ => {
                 let model = r.obj(p, "model")?;
                 match self.ids.get(&model) {
@@ -1793,6 +1796,26 @@ impl Importer<'_> {
         self.create(owner, data, Some(comment))
     }
 
+    /// Astah has no system boundary: on a use case diagram it is a rectangle, and a text at its
+    /// top edge gives the name.
+    fn system_boundary(&mut self, diagram: Id, p: ObjId) -> Option<Id> {
+        /// How far below the rectangle's top the name's text may start.
+        const NAME_ZONE: f32 = 40.0;
+        let rect = self.rect(p)?;
+        let texts = self.r.obj(p, "diagram").map(|d| self.r.list(d, "presentation"));
+        let name = texts
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|&t| self.r.class(t) == "TextPresentation")
+            .filter_map(|t| Some((t, self.rect(t)?)))
+            .filter(|(_, b)| rect.contains(b.center()) && b.y - rect.y < NAME_ZONE)
+            .min_by(|(_, a), (_, b)| a.y.total_cmp(&b.y))
+            .map(|(t, _)| self.r.text(t, "text"))
+            .unwrap_or_default();
+        let owner = self.model.get(diagram)?.owner()?;
+        self.create(owner, ElementData::new(name, ElementKind::SystemBoundary), None)
+    }
+
     /// Adds the edge presentation `p`, between presentations added before; returns its id.
     fn edge(
         &mut self,
@@ -1855,9 +1878,21 @@ impl Importer<'_> {
         };
         let curve = presentation.style.line_shape.is_curve();
         let bounds = |id: Id| self.model.view(diagram)?.get(id)?.bounds();
+        // Lines end at the node's ellipse or diamond, as the scene draws them.
+        let outline = |id: Id| {
+            let p = self.model.view(diagram).and_then(|v| v.get(id));
+            p.map_or(Outline::Rect, |p| scene::outline_of(&self.model, p))
+        };
         if let (Some(source_rect), Some(target_rect)) = (bounds(source), bounds(target)) {
-            let geometry =
-                EdgeGeometry { source_rect, target_rect, waypoints, shift, swapped, curve };
+            let geometry = EdgeGeometry {
+                source_rect,
+                target_rect,
+                outlines: [outline(source), outline(target)],
+                waypoints,
+                shift,
+                swapped,
+                curve,
+            };
             if let Shape::Edge { source_anchor, target_anchor, labels, .. } =
                 &mut presentation.shape
             {
@@ -1896,9 +1931,17 @@ impl Importer<'_> {
         };
         let (from, to) =
             (inside(g.source_rect, source_anchor), inside(g.target_rect, target_anchor));
-        let start =
-            border_point_from(g.source_rect, from, g.waypoints.first().copied().unwrap_or(to));
-        let end = border_point_from(g.target_rect, to, g.waypoints.last().copied().unwrap_or(from));
+        let [source_outline, target_outline] = g.outlines;
+        let start = source_outline.border_point(
+            g.source_rect,
+            from,
+            g.waypoints.first().copied().unwrap_or(to),
+        );
+        let end = target_outline.border_point(
+            g.target_rect,
+            to,
+            g.waypoints.last().copied().unwrap_or(from),
+        );
         let mut line = vec![start];
         line.extend(&g.waypoints);
         line.push(end);
@@ -1920,8 +1963,21 @@ impl Importer<'_> {
             (label("roleAPresentation", a_end), label("multiplicityAPresentation", a_end));
         let (role_b, mult_b) =
             (label("roleBPresentation", b_end), label("multiplicityBPresentation", b_end));
-        let mut labels =
-            EdgeLabels { name: label("namePresentation", middle), ..Default::default() };
+        // «include» and «extend» are the stereotype label of the line.
+        let keyword = r.list(p, "stereotypePresentations").first().and_then(|&k| {
+            let at = r.obj(k, "location").and_then(|l| r.point(l))?;
+            let moved = r.obj(k, "localMovement").and_then(|l| r.point(l)).unwrap_or_default();
+            Some(Point::new(
+                at.x + moved.x + g.shift.x - middle.x,
+                at.y + moved.y + g.shift.y - middle.y,
+            ))
+        });
+        let mut labels = EdgeLabels {
+            name: label("namePresentation", middle),
+            keyword: keyword
+                .filter(|_| matches!(r.class(p), "IncludePresentation" | "ExtendPresentation")),
+            ..Default::default()
+        };
         (
             labels.source_role,
             labels.source_multiplicity,
@@ -1952,6 +2008,8 @@ impl Importer<'_> {
 struct EdgeGeometry {
     source_rect: Rect,
     target_rect: Rect,
+    /// Where the line ends at each node, in UmlCraft's order.
+    outlines: [Outline; 2],
     waypoints: Vec<Point>,
     shift: Point,
     swapped: bool,

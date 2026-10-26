@@ -273,7 +273,7 @@ pub fn figure(node: &NodeShape) -> Vec<Primitive> {
             }
             result
         }
-        Figure::Boundary => vec![frame(r, Paint::Translucent)],
+        Figure::Boundary => vec![frame(r, Paint::None)],
         Figure::Lifeline { head: h, icon, line: (top, bottom) } => {
             let x = h.center().x;
             let mut result = vec![line(

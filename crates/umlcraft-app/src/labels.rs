@@ -16,14 +16,19 @@ pub fn kind_label(e: &Element) -> String {
     t!(format!("kind.{key}")).to_string()
 }
 
-/// The element's name, or its kind in parentheses when it has none.
+/// The element's name on one line, or its kind in parentheses when it has none.
 pub fn display_name(e: &Element) -> String {
-    if e.name().is_empty() { format!("({})", kind_label(e)) } else { e.name().to_owned() }
+    if e.name().is_empty() { format!("({})", kind_label(e)) } else { one_line(e.name()) }
 }
 
 /// Like [`display_name`], but unnamed sequence elements and flows show what the diagram shows:
-/// a message its label, a fragment its operator, an operand or flow its guard.
+/// a message its label, a fragment its operator, an operand or flow its guard. Always one line:
+/// line breaks, as in use case names, become spaces.
 pub fn tree_name(model: &Model, e: &Element) -> String {
+    one_line(&shown_name(model, e))
+}
+
+fn shown_name(model: &Model, e: &Element) -> String {
     let guard =
         |g: &str| if g.trim().is_empty() { String::new() } else { format!("[{}]", g.trim()) };
     let shown = match e.kind() {
@@ -63,4 +68,23 @@ pub fn visibility_label(v: Visibility) -> String {
         Visibility::Private => "visibility.private",
     };
     format!("{} {}", v.symbol(), t!(key))
+}
+
+/// `text` with every line break turned into a space.
+fn one_line(text: &str) -> String {
+    text.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::one_line;
+
+    #[test]
+    fn line_breaks_become_spaces() {
+        assert_eq!(
+            one_line("Wareneingang\naus Einkauf \r\n\nbearbeiten"),
+            "Wareneingang aus Einkauf bearbeiten"
+        );
+        assert_eq!(one_line("Kunde"), "Kunde");
+    }
 }

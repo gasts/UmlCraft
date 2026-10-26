@@ -680,6 +680,31 @@ fn sequence_diagram_in_a_package() {
     pretty_assertions::assert_eq!(interactions(&back), interactions(doc.model()));
 }
 
+/// Astah draws a system boundary as a rectangle with its name as a text; both come back as the
+/// boundary.
+#[test]
+fn system_boundary_through_astah() {
+    let (mut doc, ids) = order_system();
+    let d = ids.use_case_diagram;
+    let bounds = Rect::new(180.0, 60.0, 300.0, 360.0);
+    doc.edit("boundary", |tx| {
+        let owner = tx.model().get(d).unwrap().owner().unwrap();
+        let boundary = tx.create(owner, ElementData::new("Shop", ElementKind::SystemBoundary))?;
+        tx.add_node(d, Some(boundary), bounds)
+    })
+    .unwrap();
+    let Some(back) = through_astah(doc.model(), "boundary") else { return };
+    let boundary = back
+        .elements()
+        .find(|e| matches!(e.kind(), ElementKind::SystemBoundary))
+        .expect("the boundary comes back");
+    assert_eq!(boundary.name(), "Shop");
+    let diagram = back.elements().find(|e| e.name() == "Use cases").unwrap().id();
+    let shown = back.view(diagram).unwrap().presentations_of(boundary.id()).next().unwrap();
+    let Shape::Node { bounds: got, .. } = shown.shape else { panic!() };
+    assert!((got.width - bounds.width).abs() < 0.01 && (got.height - bounds.height).abs() < 0.01);
+}
+
 /// Template parameters, leaf operations and what association ends carry besides their role.
 fn templates_and_ends(model: &Model) -> BTreeSet<String> {
     let label = |t: &Option<TypeRef>| type_text(model, t);

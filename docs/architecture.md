@@ -375,8 +375,11 @@ through its official API (`astah-api.jar`):
   `DiagramProps::hide_message_numbers` and `hide_return_values`. The API makes bars white;
   they get their UmlCraft fill (`fill.color`, Astah's yellow by default).
 - Not available in the API and reported as dropped: the query flag of operations, conditions and
-  extension points of extends, return parameters, parameter multiplicity and default values,
-  system boundaries.
+  extension points of extends, return parameters, parameter multiplicity and default values.
+- System boundaries, which Astah does not have, become what Astah users draw instead: a
+  rectangle (`createRect`) and the name as a text (`createText`) centered at its top. The
+  importer turns a rectangle on a use case diagram back into a boundary, named by the text
+  that starts within 40 of its top edge. Boundaries no diagram shows are dropped.
 - Line styles: `line.shape` is set before the points (Astah would otherwise drop or replace
   them); right-angled lines send their corners as drawn (the sidecar's `corners`).
 - Edges: `setAllPoints` gets the source anchor, the waypoints and the target anchor as points;

@@ -10,7 +10,15 @@ today.
 - Texts in SVG images keep even letter spacing in PDFs made with Word.
 - Lines to a use case end at its ellipse, not at the rectangle around it.
 - «include» and «extend» stand beside their line instead of on it, and can be dragged to
-  another place on the diagram.
+  another place on the diagram. A note anchored to the line keeps them on the other side.
+- Use case names too wide for their ellipse wrap at spaces; the ellipse grows in height to
+  hold them.
+- The model tree and lists in the properties panel show names with line breaks on one line.
+- «include» and «extend» from `.asta` files stay where Astah drew them, and names, roles and
+  multiplicities of lines to use cases no longer shift on import.
+- **System boundaries as in Astah**: a thin rectangle without fill, the name in regular type.
+  Astah has no system boundary of its own; the rectangle with a text at its top that Astah
+  users draw instead is imported as a boundary, and boundaries are exported that way.
 
 ## 0.6.0 – 2026-10-26
 

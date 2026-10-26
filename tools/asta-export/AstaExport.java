@@ -142,6 +142,7 @@ public final class AstaExport {
     private final List<String> relationships = new ArrayList<>();
     private final List<String> diagrams = new ArrayList<>();
     private final Set<String> shownComments = new HashSet<>();
+    private final Set<String> shownBoundaries = new HashSet<>();
     /// Default names handed out to unnamed control nodes, by stem.
     private final Map<String, Integer> controlNames = new HashMap<>();
     /// Vertices in orthogonal states and where they belong, placed again after the transaction.
@@ -258,6 +259,10 @@ public final class AstaExport {
                 // Links, too, are made with their presentation.
                 drop("link");
             }
+            if ("systemBoundary".equals(type(e)) && !shownBoundaries.contains(e.get("id"))) {
+                // Astah draws system boundaries as rectangles; they exist only on diagrams.
+                drop("systemBoundary");
+            }
         }
     }
 
@@ -311,8 +316,9 @@ public final class AstaExport {
                     }
                     diagrams.addAll(own.subList(0, Math.min(1, own.size())));
                 }
-                // Comments, instances and links are created with their presentations on diagrams.
-                case "comment", "instance", "link" -> {
+                // Comments, instances, links and system boundaries are created with their
+                // presentations on diagrams.
+                case "comment", "instance", "link", "systemBoundary" -> {
                 }
                 default -> drop(type);
             }
@@ -751,6 +757,9 @@ public final class AstaExport {
             INodePresentation node;
             if ("comment".equals(type)) {
                 node = note(editor, element, at);
+            } else if ("systemBoundary".equals(type)) {
+                attempt(element, () -> systemBoundary(editor, element, r));
+                continue;
             } else if ("instance".equals(type) && editor instanceof ClassDiagramEditor cd) {
                 node = (INodePresentation) attempt(element, () -> instance(cd, element, at));
             } else if (created.get(element) instanceof IElement model
@@ -1284,6 +1293,21 @@ public final class AstaExport {
         INodePresentation note = editor.createNote(text(elements.get(comment), "body"), at);
         common(comment, note.getModel(), Set.of());
         return note;
+    }
+
+    /// Astah has no system boundary; it is drawn as a rectangle with the name as a text,
+    /// centered, its top 7 below the rectangle's (the baseline then lies 24 below).
+    private INodePresentation systemBoundary(BasicDiagramEditor editor, String boundary, Map<String, Object> r)
+            throws Exception {
+        shownBoundaries.add(boundary);
+        double x = num(r, "x"), y = num(r, "y"), width = num(r, "width");
+        INodePresentation rect = editor.createRect(new Point2D.Double(x, y), width, num(r, "height"));
+        String name = name(elements.get(boundary));
+        if (!name.isEmpty()) {
+            INodePresentation text = editor.createText(name, new Point2D.Double(x, y + 7));
+            text.setLocation(new Point2D.Double(x + (width - text.getWidth()) / 2, y + 7));
+        }
+        return rect;
     }
 
     /// The lines of a diagram: relationships first, then note anchors, which may end on them.

@@ -237,7 +237,7 @@ impl Figure {
 
 /// Shapes whose border edges are clipped at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Outline {
+pub enum Outline {
     Rect,
     Ellipse,
     Diamond,
@@ -255,7 +255,7 @@ impl Outline {
     }
 
     /// Where the line from `inside` toward `toward` leaves the outline.
-    fn border_point(self, rect: Rect, inside: Point, toward: Point) -> Point {
+    pub fn border_point(self, rect: Rect, inside: Point, toward: Point) -> Point {
         if self == Self::Rect || rect.width <= 0.0 || rect.height <= 0.0 {
             return border_point_from(rect, inside, toward);
         }
@@ -781,8 +781,52 @@ pub fn build(model: &Model, diagram: Id, preview: &Preview, measure: &dyn TextMe
             .filter(|p| !built.contains(&p.id))
             .filter_map(|p| edge_shape(p, &rects, &outlines)),
     );
+    keywords_away_from_notes(&candidates, &built, &mut edges, measure);
     edges.extend(messages);
     Scene { nodes, edges, sequence }
+}
+
+/// A note anchored to the middle of an include or extend comes from one side of its line; the
+/// «include» or «extend» goes to the other, unless it was placed by hand.
+fn keywords_away_from_notes(
+    candidates: &[&Presentation],
+    lines: &HashSet<Id>,
+    edges: &mut [EdgeShape],
+    measure: &dyn TextMeasure,
+) {
+    let placed = |id: Id| {
+        candidates.iter().any(|p| {
+            p.id == id && matches!(&p.shape, Shape::Edge { labels, .. } if labels.keyword.is_some())
+        })
+    };
+    // Each anchored line with the point the note's line comes from.
+    let notes: Vec<(Id, Point)> = candidates
+        .iter()
+        .filter_map(|p| {
+            let Shape::Edge { source, target, .. } = &p.shape else { return None };
+            let pts = &edges.iter().find(|e| e.id == p.id)?.points;
+            if lines.contains(target) {
+                Some((*target, pts[pts.len() - 2]))
+            } else if lines.contains(source) {
+                Some((*source, pts[1]))
+            } else {
+                None
+            }
+        })
+        .filter(|(line, _)| !placed(*line))
+        .collect();
+    for (line, from) in notes {
+        let Some(edge) = edges.iter_mut().find(|e| e.id == line) else { continue };
+        let (a, b) = route::middle_segment(&edge.points, edge.shape.is_curve());
+        let center = middle(a, b);
+        let Some(label) = edge.labels.iter_mut().find(|l| l.keyword) else { continue };
+        let (half_w, half_h) = (label_width(&label.text, measure) / 2.0, LABEL_HEIGHT / 2.0);
+        let mid = label.anchor.offset(half_w, half_h);
+        let (lx, ly) = (mid.x - center.x, mid.y - center.y);
+        if lx * (from.x - center.x) + ly * (from.y - center.y) > 0.0 {
+            label.anchor = center.offset(-lx - half_w, -ly - half_h);
+        }
+    }
 }
 
 /// The frame Astah may draw around a class or use case diagram (a node presentation of the
@@ -897,16 +941,19 @@ fn layout_element(
             (r, Figure::Actor, vec![row])
         }
         ElementKind::UseCase(_) => layout_use_case(model, id, bounds, measure),
+        // Astah has no system boundary of its own; it is drawn as a rectangle with a text: the
+        // name in regular type, centered, its baseline 24 below the top.
         ElementKind::SystemBoundary => {
-            let line = name_line(13.0, true);
+            let line = name_line(FONT_SIZE, false);
             let r = Rect::new(
                 bounds.x,
                 bounds.y,
                 bounds.width.max(line.width(measure) + 20.0).max(120.0),
                 bounds.height.max(80.0),
             );
+            let top = r.y + 24.0 - FONT_SIZE * crate::draw::BASELINE;
             let row = line
-                .place(Rect::new(r.x, r.y + 6.0, r.width, line_height(13.0)), LabelAlign::Center);
+                .place(Rect::new(r.x, top, r.width, line_height(FONT_SIZE)), LabelAlign::Center);
             (r, Figure::Boundary, vec![row])
         }
         // The sequence layout places lifelines.
@@ -1358,6 +1405,12 @@ pub fn state_regions(model: &Model, p: &Presentation) -> Vec<RegionShape> {
     }
 }
 
+/// The outline lines to node `p` end at. It does not depend on the font.
+pub fn outline_of(model: &Model, p: &Presentation) -> Outline {
+    let Some(bounds) = p.bounds() else { return Outline::Rect };
+    layout_node(model, p, bounds, &ApproxMeasure).figure.outline()
+}
+
 /// Region shapes' dividing lines, as offsets from the state's top (or left) edge in the form
 /// [`Regions::separators`] keeps them.
 pub fn region_separators(r: Rect, regions: &[RegionShape], vertical: bool) -> Vec<f32> {
@@ -1383,10 +1436,14 @@ fn wrap(text: &str, max: f32, size: f32, measure: &dyn TextMeasure) -> Vec<Strin
     lines
 }
 
-/// Use case ellipse as Astah draws it: the bold name centered, one row per line, and with
-/// extension points a line below it, then "extension points" and the points, left-aligned on
-/// the rectangle inscribed in the ellipse. The ellipse is at least as large as Astah makes it
-/// for its content.
+/// Use case ellipse as Astah draws it: the bold name centered, and with extension points a line
+/// below it, then "extension points" and the points, left-aligned on the rectangle inscribed in
+/// the ellipse. The ellipse is at least as large as Astah makes it for its content.
+///
+/// Unlike Astah, which only breaks names where they contain line breaks and widens the ellipse
+/// instead, the name also breaks at spaces to fit the ellipse's width less Astah's padding; the
+/// ellipse widens only for a word that does not fit, and grows in height until the name lies
+/// inside it.
 fn layout_use_case(
     model: &Model,
     id: Id,
@@ -1404,6 +1461,8 @@ fn layout_use_case(
     const DESCENT: f32 = 2.09;
     /// Above and below the text block when the ellipse has extension points.
     const MARGIN: f32 = 18.2214;
+    /// Space kept between a wrapped name and the ellipse.
+    const NAME_GAP: f32 = 4.0;
     let e = model.get(id).expect("caller checked");
     let extension_points: Vec<(Id, &str)> = e
         .children()
@@ -1415,7 +1474,7 @@ fn layout_use_case(
     let width = |line: &Line| line.width(measure).max(line.width_of(&line.text, measure, true));
 
     let h = line_height(FONT_SIZE);
-    let names: Vec<Line> = e
+    let paragraphs: Vec<Line> = e
         .name()
         .split('\n')
         .map(|n| {
@@ -1435,26 +1494,34 @@ fn layout_use_case(
             )
             .collect()
     };
+    // As wide as stored, at least as wide as the longest word plus the padding and the points.
+    let r_width = paragraphs
+        .iter()
+        .map(|l| l.widest_word(measure) + NAME_PAD)
+        .chain(points.iter().map(width))
+        .fold(MIN_SIZE.width.max(bounds.width), f32::max);
+    let names: Vec<Line> =
+        paragraphs.into_iter().flat_map(|l| l.wrapped(r_width - NAME_PAD, measure)).collect();
+    // Lines that still do not fit (Astah measures by the larger of two widths) widen it too.
+    let r_width = names.iter().map(|l| width(l) + NAME_PAD).fold(r_width, f32::max);
     let names_h = h * names.len() as f32;
     let block = if points.is_empty() {
         names_h
     } else {
         names_h - h + SEPARATOR + FIRST_BASELINE + h * (points.len() - 1) as f32 + DESCENT
     };
-    let content = Size::new(
-        names
-            .iter()
-            .map(|l| width(l) + NAME_PAD)
-            .chain(points.iter().map(width))
-            .fold(MIN_SIZE.width, f32::max),
-        if points.is_empty() { MIN_SIZE.height } else { block + 2.0 * MARGIN },
-    );
-    let r = Rect::new(
-        bounds.x,
-        bounds.y,
-        bounds.width.max(content.width),
-        bounds.height.max(content.height),
-    );
+    let height = if points.is_empty() && names.len() > 1 {
+        // The name block with a gap around it inside the ellipse: its corners on or within it.
+        // A single line keeps Astah's height.
+        let widest = names.iter().map(width).fold(0.0, f32::max);
+        let across = ((widest + 2.0 * NAME_GAP) / r_width).min(0.99);
+        MIN_SIZE.height.max((names_h + 2.0 * NAME_GAP) / (1.0 - across * across).sqrt())
+    } else if points.is_empty() {
+        MIN_SIZE.height
+    } else {
+        block + 2.0 * MARGIN
+    };
+    let r = Rect::new(bounds.x, bounds.y, r_width, bounds.height.max(height));
 
     let top = r.center().y - block / 2.0;
     let mut rows: Vec<Row> = names
@@ -2495,6 +2562,12 @@ mod tests {
         let scene = build(doc.model(), d, &Preview::default(), &ApproxMeasure);
         let frame = scene.node(boundary).unwrap();
         assert!(matches!(frame.figure, Figure::Boundary));
+        // As in Astah: the name regular, centered, its baseline 24 below the top.
+        let name = &frame.rows[0];
+        assert!(!name.bold && name.size == FONT_SIZE);
+        let baseline = name.rect.y + FONT_SIZE * crate::draw::BASELINE;
+        assert!((baseline - (frame.rect.y + 24.0)).abs() < 0.01, "{baseline}");
+        assert!((name.rect.center().x - frame.rect.center().x).abs() < 0.01);
         // Inside the frame, away from border and title: not the boundary.
         let inside = Point::new(frame.rect.x + 40.0, frame.rect.bottom() - 40.0);
         assert_ne!(hit_test(&scene, inside, 4.0), Some(boundary));
@@ -2620,6 +2693,99 @@ mod tests {
         doc.edit("delete", |tx| tx.remove_presentations(d, [extend].into_iter().collect()))
             .unwrap();
         assert!(doc.model().view(d).unwrap().get(anchor).is_none());
+    }
+
+    #[test]
+    fn keywords_give_way_to_notes() {
+        use crate::palette::{EdgeTool, NodeTool, connect, create_node};
+        let (mut doc, ids) = order_system();
+        let d = ids.use_case_diagram;
+        let place_order = doc.model().children(doc.model().root())[2];
+        let node = doc.model().shown_on(place_order)[0].1;
+        let extend = doc
+            .edit("extend", |tx| {
+                let (_, other) =
+                    create_node(tx, d, NodeTool::UseCase, Point::new(220.0, 300.0), "Use case ")?;
+                connect(tx, d, EdgeTool::Extend, other, node)
+            })
+            .unwrap();
+        let scene = build(doc.model(), d, &Preview::default(), &ApproxMeasure);
+        let line = scene.edge(extend).unwrap();
+        let (a, b) = route::middle_segment(&line.points, false);
+        let center = middle(a, b);
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let normal = (dy / dx.hypot(dy), -dx / dx.hypot(dy));
+        // A note on either side of the line; the keyword stays on the other.
+        for side in [1.0, -1.0] {
+            let mut doc = doc.clone();
+            let at = center.offset(side * normal.0 * 150.0 - 40.0, side * normal.1 * 150.0 - 20.0);
+            let anchor = doc
+                .edit("note", |tx| {
+                    let (_, n_note) = create_node(tx, d, NodeTool::Note, at, "")?;
+                    connect(tx, d, EdgeTool::NoteAnchor, n_note, extend)
+                })
+                .unwrap();
+            let scene = build(doc.model(), d, &Preview::default(), &ApproxMeasure);
+            let pts = &scene.edge(anchor).unwrap().points;
+            let from = pts[pts.len() - 2];
+            let label = scene.edge(extend).unwrap().labels.iter().find(|l| l.keyword).unwrap();
+            let width = label_width(&label.text, &ApproxMeasure);
+            let mid = label.anchor.offset(width / 2.0, LABEL_HEIGHT / 2.0);
+            let toward =
+                (mid.x - center.x) * (from.x - center.x) + (mid.y - center.y) * (from.y - center.y);
+            assert!(toward < 0.0, "side {side}: {mid:?}, note from {from:?}");
+        }
+    }
+
+    #[test]
+    fn use_case_names_wrap_inside_the_ellipse() {
+        use crate::palette::{NodeTool, create_node};
+        let (mut doc, ids) = order_system();
+        let d = ids.use_case_diagram;
+        let (element, node) = doc
+            .edit("use case", |tx| {
+                create_node(tx, d, NodeTool::UseCase, Point::new(220.0, 300.0), "Use case ")
+            })
+            .unwrap();
+        let bounds = Rect::new(220.0, 300.0, 160.0, 40.0);
+        let name = "Wareneingang aus Einkauf bearbeiten";
+        doc.edit("name", |tx| {
+            tx.set_bounds(d, node, bounds)?;
+            tx.rename(element, name)
+        })
+        .unwrap();
+        // 7 per character.
+        struct PerChar;
+        impl TextMeasure for PerChar {
+            fn width(&self, text: &str, _: f32, _: bool) -> f32 {
+                7.0 * text.chars().count() as f32
+            }
+        }
+        let measure = PerChar;
+        let scene = build(doc.model(), d, &Preview::default(), &measure);
+        let n = scene.node(node).unwrap();
+        let names: Vec<&str> = n.rows.iter().map(|r| r.text.as_str()).collect();
+        // 160 less Astah's 62 leaves 98, 14 characters of 7.
+        assert_eq!(names, ["Wareneingang", "aus Einkauf", "bearbeiten"]);
+        assert_eq!(n.rect.width, 160.0);
+        // Taller, so that the name block's corners lie inside the ellipse.
+        assert!(n.rect.height > 40.0, "{:?}", n.rect);
+        let (c, a, b) = (n.rect.center(), n.rect.width / 2.0, n.rect.height / 2.0);
+        for row in &n.rows {
+            let w = measure.width(&row.text, FONT_SIZE, true);
+            for (x, y) in [(c.x + w / 2.0, row.rect.y), (c.x + w / 2.0, row.rect.bottom())] {
+                let (dx, dy) = ((x - c.x) / a, (y - c.y) / b);
+                assert!(dx * dx + dy * dy <= 1.0, "{} at {y}", row.text);
+            }
+        }
+
+        // A word wider than the space widens the ellipse; line breaks in the name stay.
+        doc.edit("name", |tx| tx.rename(element, "Pinnwandeintragsverwaltung\nöffnen")).unwrap();
+        let scene = build(doc.model(), d, &Preview::default(), &measure);
+        let n = scene.node(node).unwrap();
+        let names: Vec<&str> = n.rows.iter().map(|r| r.text.as_str()).collect();
+        assert_eq!(names, ["Pinnwandeintragsverwaltung", "öffnen"]);
+        assert_eq!(n.rect.width, 26.0 * 7.0 + 62.0);
     }
 
     #[test]

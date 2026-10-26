@@ -384,6 +384,41 @@ fn sample_interaction_uses_and_gate_messages() {
     assert!(gates.contains(&MessageGate::Found) && gates.contains(&MessageGate::Lost));
 }
 
+/// «include» and «extend» stay where Astah drew them. The import moves the whole diagram, so
+/// the labels are compared with the first one: in Astah their tops are at (121.54, 122.16),
+/// (247.25, 122.16), (366.03, 122.16) and, for the extend, (252.80, 306.91).
+#[test]
+fn sample_keywords_where_astah_draws_them() {
+    use umlcraft_notation::scene::{self, ApproxMeasure, Preview};
+    let Some(path) = astah_file("Sample.asta") else { return };
+    let model = umlcraft_asta::import(&path).unwrap().model;
+    let [diagram, ..] = diagrams(&model, DiagramKind::UseCase)[..] else { panic!() };
+    let built = scene::build(&model, diagram.id(), &Preview::default(), &ApproxMeasure);
+    let mut tops: Vec<(String, Point)> = built
+        .edges
+        .iter()
+        .flat_map(|e| e.labels.iter().filter(|l| l.keyword))
+        .map(|l| (l.text.clone(), l.anchor))
+        .collect();
+    tops.sort_by(|a, b| (a.1.y, a.1.x).partial_cmp(&(b.1.y, b.1.x)).unwrap());
+    let first = tops[0].1;
+    let relative: Vec<(&str, Point)> = tops
+        .iter()
+        .map(|(text, at)| (text.as_str(), Point::new(at.x - first.x, at.y - first.y)))
+        .collect();
+    let expected = [
+        ("<<include>>", Point::new(0.0, 0.0)),
+        ("<<include>>", Point::new(125.71, 0.0)),
+        ("<<include>>", Point::new(244.49, 0.0)),
+        ("<<extend>>", Point::new(131.25, 184.75)),
+    ];
+    assert_eq!(relative.len(), expected.len(), "{relative:?}");
+    for ((text, at), (want_text, want)) in relative.iter().zip(expected) {
+        assert_eq!(*text, want_text);
+        assert!(at.distance(want) < 0.01, "{text} at {at:?}, not {want:?}");
+    }
+}
+
 /// Ulf's reference class diagram (`.asta` files are not in Git); its layout must match Astah's.
 #[test]
 fn reference_class_diagram() {
