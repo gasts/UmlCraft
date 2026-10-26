@@ -3,6 +3,15 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
+## Unreleased
+
+- SVG and PNG images fill elements white, as the diagram shows them on screen, instead of
+  Astah's yellow.
+- Texts in SVG images keep even letter spacing in PDFs made with Word.
+- Lines to a use case end at its ellipse, not at the rectangle around it.
+- «include» and «extend» stand beside their line instead of on it, and can be dragged to
+  another place on the diagram.
+
 ## 0.6.0 – 2026-10-26
 
 - **Linux packages:** besides the `.tar.gz`, each release has a `.deb` (Debian, Ubuntu), an

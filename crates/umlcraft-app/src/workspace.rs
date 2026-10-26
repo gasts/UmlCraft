@@ -611,6 +611,21 @@ impl Workspace {
         self.report(result);
     }
 
+    /// Puts an edge's «include» or «extend» where the user dragged it, `offset` from the middle
+    /// of the line.
+    pub fn place_keyword_label(&mut self, presentation: Id, offset: Point) {
+        let Some(diagram) = self.active_diagram else { return };
+        let label = t!("edit.move").to_string();
+        let result = self.edit(label, |tx| {
+            tx.update_presentation(diagram, presentation, |p| {
+                if let Shape::Edge { labels, .. } = &mut p.shape {
+                    labels.keyword = Some(offset);
+                }
+            })
+        });
+        self.report(result);
+    }
+
     pub fn set_bounds(&mut self, presentation: Id, bounds: Rect) {
         let Some(diagram) = self.active_diagram else { return };
         let label = t!("edit.resize").to_string();

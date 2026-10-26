@@ -229,7 +229,7 @@ pub struct Regions {
 
 /// Positions of edge labels placed by hand: the top left corner of each label, relative to the
 /// point it belongs to (the end of the line for role and multiplicity, the middle of the line for
-/// the name). Unset labels go where the layout puts them.
+/// the name and for «include» or «extend»). Unset labels go where the layout puts them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EdgeLabels {
@@ -243,6 +243,9 @@ pub struct EdgeLabels {
     pub target_role: Option<Point>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_multiplicity: Option<Point>,
+    /// «include» or «extend».
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keyword: Option<Point>,
 }
 
 impl EdgeLabels {

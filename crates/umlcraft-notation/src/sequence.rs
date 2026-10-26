@@ -794,12 +794,14 @@ fn message_edge(
                 anchor: Point::new(x, label_top),
                 align: LabelAlign::Center,
                 underline: false,
+                keyword: false,
             },
             (None, Some(x)) => EdgeLabel {
                 text: text.clone(),
                 anchor: Point::new(x, label_top),
                 align: LabelAlign::Left,
                 underline: false,
+                keyword: false,
             },
             (None, None) => unreachable!("one of them is set"),
         });
@@ -814,7 +816,13 @@ fn message_edge(
             _ => Point::new(center.unwrap_or_default(), label_top - STEREOTYPE_ABOVE),
         };
         let align = if m.label.is_some() { LabelAlign::Left } else { LabelAlign::Center };
-        labels.push(EdgeLabel { text: stereotype, anchor, align, underline: false });
+        labels.push(EdgeLabel {
+            text: stereotype,
+            anchor,
+            align,
+            underline: false,
+            keyword: false,
+        });
     }
     let node_tips = [points[0], points[points.len() - 1]];
     EdgeShape {

@@ -223,6 +223,15 @@ enum Drag {
         start: MPoint,
         current: MPoint,
     },
+    /// Dragging the «include» or «extend» of `edge`; `origin` is its top left corner at the
+    /// start, `middle` the middle of the line.
+    KeywordLabel {
+        edge: Id,
+        origin: MPoint,
+        middle: MPoint,
+        start: MPoint,
+        current: MPoint,
+    },
     /// Dragging line `index` between the regions of the orthogonal state `presentation`, drawn
     /// at `state`; `vertical` lines move sideways.
     RegionLine {
@@ -564,6 +573,15 @@ impl DiagramCanvas {
                     cx.notify();
                     return;
                 }
+                // So can «include» and «extend».
+                let label = scene::keyword_label_at(&self.scene, p, &FontMeasure::new(window));
+                if let Some((edge, origin, middle)) = label.filter(|_| !extend) {
+                    self.workspace.update(cx, |ws, _| ws.select(vec![edge]));
+                    self.drag =
+                        Some(Drag::KeywordLabel { edge, origin, middle, start: p, current: p });
+                    cx.notify();
+                    return;
+                }
                 match scene::hit_test(&self.scene, p, 4.0 / self.zoom) {
                     Some(id) => {
                         let already = selection.contains(&id);
@@ -779,7 +797,8 @@ impl DiagramCanvas {
             Drag::RubberBand { current, .. }
             | Drag::Connect { current, .. }
             | Drag::Reorder { current, .. }
-            | Drag::MessageLabel { current, .. } => *current = p,
+            | Drag::MessageLabel { current, .. }
+            | Drag::KeywordLabel { current, .. } => *current = p,
             Drag::RegionLine { current, .. } => *current = snap_point(p),
             Drag::Pan { last } => {
                 let delta = position - *last;
@@ -853,6 +872,15 @@ impl DiagramCanvas {
             {
                 let to = origin.offset(current.x - start.x, current.y - start.y);
                 self.update_workspace(cx, |ws| ws.place_message_label(message, to));
+            }
+            Some(Drag::KeywordLabel { edge, origin, middle, start, current })
+                if start.distance(current) > 2.0 =>
+            {
+                let offset = MPoint::new(
+                    origin.x + current.x - start.x - middle.x,
+                    origin.y + current.y - start.y - middle.y,
+                );
+                self.update_workspace(cx, |ws| ws.place_keyword_label(edge, offset));
             }
             Some(Drag::RegionLine { presentation, index, state, vertical, current }) => {
                 let offset = if vertical { current.x - state.x } else { current.y - state.y };
@@ -1567,12 +1595,19 @@ impl Render for DiagramCanvas {
                                         p.insertion_line(layout, slot.y);
                                     }
                                 }
-                                Some(Drag::MessageLabel { message, start, current, .. }) => {
-                                    // The labels where they will go.
+                                Some(
+                                    Drag::MessageLabel { message: edge, start, current, .. }
+                                    | Drag::KeywordLabel { edge, start, current, .. },
+                                ) => {
+                                    // The labels where they will go: a message's together, an
+                                    // edge's «include» or «extend» alone.
+                                    let keyword = matches!(&drag, Some(Drag::KeywordLabel { .. }));
                                     let (dx, dy) = (current.x - start.x, current.y - start.y);
                                     let s = p.c.selection;
-                                    for label in scene.edge(*message).iter().flat_map(|e| &e.labels)
-                                    {
+                                    let labels = scene.edge(*edge).into_iter().flat_map(|e| {
+                                        e.labels.iter().filter(|l| l.keyword || !keyword)
+                                    });
+                                    for label in labels {
                                         let moved = scene::EdgeLabel {
                                             anchor: label.anchor.offset(dx, dy),
                                             ..label.clone()

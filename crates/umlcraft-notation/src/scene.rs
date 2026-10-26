@@ -227,7 +227,8 @@ impl Figure {
             | Self::ActivityFinal
             | Self::FlowFinal
             | Self::Circle
-            | Self::Lollipop => Outline::Ellipse,
+            | Self::Lollipop
+            | Self::UseCase { .. } => Outline::Ellipse,
             Self::Diamond => Outline::Diamond,
             _ => Outline::Rect,
         }
@@ -507,6 +508,8 @@ pub struct EdgeLabel {
     pub align: LabelAlign,
     /// Static association ends show their role underlined.
     pub underline: bool,
+    /// «include» or «extend», which can be dragged away from the line.
+    pub keyword: bool,
 }
 
 /// An uncommitted change shown while the user drags.
@@ -1906,6 +1909,7 @@ fn edge_for(
         anchor: base.offset(offset.x, offset.y),
         align: LabelAlign::Left,
         underline: false,
+        keyword: false,
     };
     let (a, b) = route::middle_segment(pts, shape.is_curve());
     let center = middle(a, b);
@@ -1914,7 +1918,7 @@ fn edge_for(
         Some(offset) => at(text, center, offset),
         None => association_name(text, center, measure),
     });
-    edge.labels.extend(keyword.map(|text| keyword_label(text, center, measure)));
+    edge.labels.extend(keyword.map(|text| keyword_label(text, (a, b), placed.keyword, measure)));
     // Astah shows which way an association's name reads, from its first end to its second,
     // with a small triangle next to the name.
     if association
@@ -2042,7 +2046,7 @@ fn end_label(text: String, end: End, role: bool, measure: &dyn TextMeasure) -> E
     let center = Point::new(tip.x + along * ux + left * lx, tip.y + along * uy + left * ly);
     let width = label_width(&text, measure);
     let anchor = center.offset(-width / 2.0, -LABEL_HEIGHT / 2.0);
-    EdgeLabel { text, anchor, align: LabelAlign::Left, underline: false }
+    EdgeLabel { text, anchor, align: LabelAlign::Left, underline: false, keyword: false }
 }
 
 /// Places the name of an edge as Astah does, whatever the edge (associations, dependencies,
@@ -2052,7 +2056,7 @@ fn end_label(text: String, end: End, role: bool, measure: &dyn TextMeasure) -> E
 fn association_name(text: String, middle: Point, measure: &dyn TextMeasure) -> EdgeLabel {
     let width = label_width(&text, measure);
     let anchor = middle.offset(-width / 2.0, 9.0 - LABEL_HEIGHT / 2.0);
-    EdgeLabel { text, anchor, align: LabelAlign::Left, underline: false }
+    EdgeLabel { text, anchor, align: LabelAlign::Left, underline: false, keyword: false }
 }
 
 /// Astah's triangle that shows which way a name reads, next to the name's box (top left `at`,
@@ -2074,12 +2078,33 @@ fn name_arrow(at: Point, width: f32, (a, b): (Point, Point)) -> [Point; 3] {
     }
 }
 
-/// Places «include» or «extend» as Astah does: centered on the middle of the line, right above
-/// it, whichever way the line runs.
-fn keyword_label(text: String, middle: Point, measure: &dyn TextMeasure) -> EdgeLabel {
-    let width = label_width(&text, measure);
-    let anchor = middle.offset(-width / 2.0, -LABEL_HEIGHT);
-    EdgeLabel { text, anchor, align: LabelAlign::Left, underline: false }
+/// Places «include» or «extend» next to the middle of the segment `a`–`b`, so that it does not
+/// cover the line: above lines that run across, centered and right on top as Astah does; to the
+/// right of lines that run up or down, 4 away; in between on the side above or to the right.
+/// `placed` is a position set by hand, relative to the middle.
+fn keyword_label(
+    text: String,
+    (a, b): (Point, Point),
+    placed: Option<Point>,
+    measure: &dyn TextMeasure,
+) -> EdgeLabel {
+    let center = middle(a, b);
+    let anchor = match placed {
+        Some(offset) => center.offset(offset.x, offset.y),
+        None => {
+            let (half_w, half_h) = (label_width(&text, measure) / 2.0, LABEL_HEIGHT / 2.0);
+            // The line's normal, pointing up or to the right.
+            let (dx, dy) = (b.x - a.x, b.y - a.y);
+            let length = dx.hypot(dy);
+            let (nx, ny) = if length > 0.0 { (dy / length, -dx / length) } else { (0.0, -1.0) };
+            let (nx, ny) =
+                if nx - ny > 0.0 || (nx - ny == 0.0 && ny < 0.0) { (nx, ny) } else { (-nx, -ny) };
+            // The label's middle as far out along the normal as the label reaches back.
+            let distance = 4.0 * nx.abs() + half_w * nx.abs() + half_h * ny.abs();
+            center.offset(nx * distance - half_w, ny * distance - half_h)
+        }
+    };
+    EdgeLabel { text, anchor, align: LabelAlign::Left, underline: false, keyword: true }
 }
 
 /// Where the line from the center of `rect` toward `toward` leaves the rectangle.
@@ -2168,6 +2193,24 @@ pub fn message_label_at(scene: &Scene, p: Point, measure: &dyn TextMeasure) -> O
         let width = measure.width(&name.text, FONT_SIZE, false);
         let left = crate::draw::text_left(crate::draw::label_area(name), width, name.align);
         hit.then_some((e.id, Point::new(left, name.anchor.y)))
+    })
+}
+
+/// The «include» or «extend» label under `p`: the edge's presentation, the label's top left
+/// corner and the middle of the line, which a label placed by hand is kept relative to.
+pub fn keyword_label_at(
+    scene: &Scene,
+    p: Point,
+    measure: &dyn TextMeasure,
+) -> Option<(Id, Point, Point)> {
+    scene.edges.iter().rev().filter(|e| !e.fixed).find_map(|e| {
+        let label = e.labels.iter().find(|l| l.keyword)?;
+        let width = measure.width(&label.text, FONT_SIZE, false);
+        if !Rect::new(label.anchor.x, label.anchor.y, width, LABEL_HEIGHT).contains(p) {
+            return None;
+        }
+        let (a, b) = route::middle_segment(&e.points, e.shape.is_curve());
+        Some((e.id, label.anchor, middle(a, b)))
     })
 }
 
@@ -2580,6 +2623,32 @@ mod tests {
     }
 
     #[test]
+    fn lines_end_at_the_ellipse_of_a_use_case() {
+        use crate::palette::{EdgeTool, NodeTool, connect, create_node};
+        let (mut doc, ids) = order_system();
+        let d = ids.use_case_diagram;
+        let place_order = doc.model().children(doc.model().root())[2];
+        let node = doc.model().shown_on(place_order)[0].1;
+        let extend = doc
+            .edit("extend", |tx| {
+                let (_, other) =
+                    create_node(tx, d, NodeTool::UseCase, Point::new(220.0, 300.0), "Use case ")?;
+                connect(tx, d, EdgeTool::Extend, other, node)
+            })
+            .unwrap();
+        let scene = build(doc.model(), d, &Preview::default(), &ApproxMeasure);
+        let line = scene.edge(extend).unwrap();
+        for (tip, rect) in
+            [(line.points[0], line.ends[0]), (*line.points.last().unwrap(), line.ends[1])]
+        {
+            let c = rect.center();
+            let (dx, dy) =
+                ((tip.x - c.x) / (rect.width / 2.0), (tip.y - c.y) / (rect.height / 2.0));
+            assert!((dx * dx + dy * dy - 1.0).abs() < 0.01, "{tip:?} on {rect:?}");
+        }
+    }
+
+    #[test]
     fn waypoints_handles_and_previews() {
         let (doc, ids) = order_system();
         let d = ids.class_diagram;
@@ -2771,8 +2840,40 @@ mod tests {
         let middle = Point::new(300.0, 325.0);
         let name = association_name("e".into(), middle, &Fixed(6.67));
         assert!(name.anchor.distance(Point::new(295.0, 326.45312)) < 0.01, "{:?}", name.anchor);
-        let keyword = keyword_label("<<include>>".into(), middle, &Fixed(68.0));
+        let across = (Point::new(250.0, 325.0), Point::new(350.0, 325.0));
+        let keyword = keyword_label("<<include>>".into(), across, None, &Fixed(68.0));
         assert!(keyword.anchor.distance(Point::new(266.0, 309.90625)) < 0.01);
+    }
+
+    #[test]
+    fn keywords_stand_beside_their_line() {
+        let measure = Fixed(68.0);
+        let label = |a: Point, b: Point| keyword_label("<<extend>>".into(), (a, b), None, &measure);
+        let area = |l: &EdgeLabel| Rect::new(l.anchor.x, l.anchor.y, 68.0, LABEL_HEIGHT);
+        // Up or down: to the right, 4 away, centered on the middle's height.
+        for (a, b) in [((100.0, 0.0), (100.0, 200.0)), ((100.0, 200.0), (100.0, 0.0))] {
+            let k = label(Point::new(a.0, a.1), Point::new(b.0, b.1));
+            assert_eq!(k.anchor, Point::new(104.0, 100.0 - LABEL_HEIGHT / 2.0), "{a:?}");
+            assert!(k.keyword);
+        }
+        // Slanted either way: clear of the line.
+        for (a, b) in [((0.0, 0.0), (100.0, 200.0)), ((0.0, 200.0), (100.0, 0.0))] {
+            let (a, b) = (Point::new(a.0, a.1), Point::new(b.0, b.1));
+            let r = area(&label(a, b));
+            let crosses = (0..=100).any(|i| {
+                let t = i as f32 / 100.0;
+                r.contains(Point::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t))
+            });
+            assert!(!crosses, "{r:?}");
+        }
+        // Placed by hand: relative to the middle.
+        let placed = keyword_label(
+            "<<extend>>".into(),
+            (Point::new(0.0, 0.0), Point::new(0.0, 100.0)),
+            Some(Point::new(-80.0, 10.0)),
+            &measure,
+        );
+        assert_eq!(placed.anchor, Point::new(-80.0, 60.0));
     }
 
     /// Sizes measured in an SVG export of Astah 12.

@@ -98,5 +98,7 @@ fn absolute(placed: &EdgeLabels, edge: &EdgeShape) -> EdgeLabels {
         source_multiplicity: at(source, placed.source_multiplicity),
         target_role: at(target, placed.target_role),
         target_multiplicity: at(target, placed.target_multiplicity),
+        // Astah places «include» and «extend» itself.
+        keyword: None,
     }
 }

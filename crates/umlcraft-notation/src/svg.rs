@@ -1,5 +1,6 @@
-//! Diagrams as SVG images, drawn the way Astah exports them: black lines, Astah's fill colors,
-//! a margin of 10 and 96 dpi (4/3 pixels per logical unit).
+//! Diagrams as SVG images, drawn as the canvas shows them in the light theme and laid out the
+//! way Astah exports them: black lines, white fill, a margin of 10 and 96 dpi (4/3 pixels per
+//! logical unit).
 
 use umlcraft_model::{Color, Point, Rect};
 
@@ -12,27 +13,38 @@ const FONT_FAMILY: &str = "Arial, Helvetica, sans-serif";
 const MARGIN: f32 = 10.0;
 /// Pixels per logical unit: Astah exports at 96 dpi what it lays out at 72.
 pub const SCALE: f32 = 4.0 / 3.0;
-/// Astah's fill for nodes without a color of their own.
-const DEFAULT_FILL: &str = "#ffffcc";
 const WHITE: &str = "#ffffff";
+/// The fill of nodes without a color of their own, as on the canvas in the light theme.
+const DEFAULT_FILL: &str = WHITE;
 const BLACK: &str = "#000000";
 const GRAY: &str = "#808080";
 
-/// The scene as a standalone SVG document. `measure` should be the one the scene was built
-/// with; it places the texts and sizes underlines and the image bounds.
+/// Units per logical unit for images meant for other programs ([`render_scaled`]).
+pub const FINE_UNITS: f32 = 10.0;
+
+/// The scene as a standalone SVG document in logical units, as Astah's own export. `measure`
+/// should be the one the scene was built with; it places the texts and sizes underlines and the
+/// image bounds.
 pub fn render(scene: &Scene, measure: &dyn TextMeasure) -> String {
+    render_scaled(scene, measure, 1.0)
+}
+
+/// Like [`render`], with every coordinate and size inside the image `units` times larger and the
+/// image itself as large as before. Word's PDF export places the letters of SVG text on whole
+/// units; at [`FINE_UNITS`] per logical unit their spacing stays even.
+pub fn render_scaled(scene: &Scene, measure: &dyn TextMeasure, units: f32) -> String {
     let area = bounds(scene, measure).unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)).inflate(MARGIN);
-    let mut svg = Svg { out: String::new(), measure, fill: None };
+    let mut svg = Svg { out: String::new(), measure, fill: None, units };
     svg.out += "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
     svg.out += &format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{pw}\" height=\"{ph}\" \
          viewBox=\"{x} {y} {w} {h}\" font-family=\"{FONT_FAMILY}\" xml:space=\"preserve\">\n",
         pw = (area.width * SCALE).ceil(),
         ph = (area.height * SCALE).ceil(),
-        x = num(area.x),
-        y = num(area.y),
-        w = num(area.width),
-        h = num(area.height),
+        x = num(area.x * units),
+        y = num(area.y * units),
+        w = num(area.width * units),
+        h = num(area.height * units),
     );
     svg.primitive(&Primitive::Frame {
         rect: area,
@@ -116,16 +128,21 @@ struct Svg<'a> {
     measure: &'a dyn TextMeasure,
     /// Fill color of the node being drawn.
     fill: Option<Color>,
+    /// Image units per logical unit.
+    units: f32,
 }
 
 impl Svg<'_> {
     fn primitive(&mut self, p: &Primitive) {
+        // Logical units written in image units.
+        let k = self.units;
+        let num = |v: f32| num(v * k);
         let element = match p {
             Primitive::Polyline { points, width, style } => format!(
                 "<polyline points=\"{}\" fill=\"none\" stroke=\"{BLACK}\" stroke-width=\"{}\"{}/>",
-                points_attr(points),
+                points_attr(points, k),
                 num(*width),
-                dashes(*style),
+                dashes(*style, k),
             ),
             Primitive::Curve { points: [a, b, c, d], width, style } => format!(
                 "<path d=\"M{} {} C{} {} {} {} {} {}\" fill=\"none\" stroke=\"{BLACK}\" \
@@ -139,11 +156,11 @@ impl Svg<'_> {
                 num(d.x),
                 num(d.y),
                 num(*width),
-                dashes(*style),
+                dashes(*style, k),
             ),
             Primitive::Polygon { points, fill } => format!(
                 "<polygon points=\"{}\"{} stroke=\"{BLACK}\"/>",
-                points_attr(points),
+                points_attr(points, k),
                 self.fill_attr(*fill),
             ),
             Primitive::Ellipse { center, rx, ry, fill, width } => format!(
@@ -168,7 +185,7 @@ impl Svg<'_> {
                         " stroke=\"{}\" stroke-width=\"{}\"{}",
                         color(*paint),
                         num(*width),
-                        dashes(*style)
+                        dashes(*style, k)
                     ),
                 };
                 format!(
@@ -225,6 +242,8 @@ impl Svg<'_> {
             })
             .flatten();
         if let Some(advances) = advances.filter(|a| !a.is_empty()) {
+            let k = self.units;
+            let num = |v: f32| num(v * k);
             let mut x = draw::text_left(row.rect, width, row.align);
             let xs: Vec<String> = advances
                 .iter()
@@ -297,6 +316,8 @@ impl Svg<'_> {
         if text.is_empty() {
             return;
         }
+        let k = self.units;
+        let num = |v: f32| num(v * k);
         self.out += &format!(
             "<text x=\"{}\" y=\"{}\" font-size=\"{}\"{}{}>{}</text>\n",
             num(draw::text_left(area, width, align)),
@@ -319,17 +340,20 @@ fn color(paint: Paint) -> &'static str {
     }
 }
 
-fn dashes(style: LineStyle) -> String {
+/// The dash pattern of `style`, `k` image units per logical unit.
+fn dashes(style: LineStyle, k: f32) -> String {
     let dashes = style.dashes();
     if dashes.is_empty() {
         return String::new();
     }
-    let list: Vec<String> = dashes.iter().map(|&d| num(d)).collect();
+    let list: Vec<String> = dashes.iter().map(|&d| num(d * k)).collect();
     format!(" stroke-dasharray=\"{}\"", list.join(" "))
 }
 
-fn points_attr(points: &[Point]) -> String {
-    points.iter().map(|p| format!("{},{}", num(p.x), num(p.y))).collect::<Vec<_>>().join(" ")
+/// `points`, `k` image units per logical unit.
+fn points_attr(points: &[Point], k: f32) -> String {
+    let point = |p: &Point| format!("{},{}", num(p.x * k), num(p.y * k));
+    points.iter().map(point).collect::<Vec<_>>().join(" ")
 }
 
 /// A coordinate with at most two decimals, without trailing zeros.
@@ -375,8 +399,9 @@ mod tests {
         assert!(svg.contains("<polygon"), "{svg}");
         assert!(svg.contains(">Customer</text>"), "{svg}");
         assert!(svg.contains(">\u{2212}</text>") && svg.contains(">name : String</text>"), "{svg}");
-        // Astah's yellow.
-        assert!(svg.contains("fill=\"#ffffcc\""), "{svg}");
+        // White as on the canvas, not Astah's yellow.
+        assert!(svg.contains("fill=\"#ffffff\""), "{svg}");
+        assert!(!svg.contains("#ffffcc"), "{svg}");
     }
 
     /// Measures a hyphen and a hash narrower than the other characters, as most fonts do.
@@ -432,7 +457,26 @@ mod tests {
         assert_eq!(num(160.0), "160");
         assert_eq!(num(12.345_67), "12.35");
         assert_eq!(num(-0.001), "0");
-        assert_eq!(dashes(LineStyle::Dashed), " stroke-dasharray=\"10 5\"");
+        assert_eq!(dashes(LineStyle::Dashed, 1.0), " stroke-dasharray=\"10 5\"");
+    }
+
+    #[test]
+    fn scaled_images_keep_their_size() {
+        let (doc, ids) = order_system();
+        let scene = build(doc.model(), ids.class_diagram, &Preview::default(), &ApproxMeasure);
+        let (plain, fine) =
+            (render(&scene, &ApproxMeasure), render_scaled(&scene, &ApproxMeasure, FINE_UNITS));
+        let attr = |svg: &str, name: &str| -> String {
+            svg.split(&format!(" {name}=\"")).nth(1).unwrap().split('"').next().unwrap().into()
+        };
+        assert_eq!(attr(&fine, "width"), attr(&plain, "width"));
+        assert_eq!(attr(&fine, "height"), attr(&plain, "height"));
+        let numbers =
+            |s: String| -> Vec<f32> { s.split(' ').map(|n| n.parse().unwrap()).collect() };
+        let (a, b) = (numbers(attr(&plain, "viewBox")), numbers(attr(&fine, "viewBox")));
+        assert!(a.iter().zip(&b).all(|(a, b)| (a * FINE_UNITS - b).abs() < 0.1), "{a:?} {b:?}");
+        assert!(fine.contains("font-size=\"120\"") && !fine.contains("font-size=\"12\""));
+        assert!(fine.contains("stroke-width=\"20\""));
     }
 
     #[test]

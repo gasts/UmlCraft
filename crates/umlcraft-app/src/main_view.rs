@@ -565,7 +565,12 @@ impl MainView {
         let model = ws.doc.model();
         let measure = FontMeasure::new(window);
         let scene = scene::build(model, diagram, &Preview::default(), &measure);
-        let svg = umlcraft_notation::svg::render(&scene, &measure);
+        // Fine units keep the letters evenly spaced in programs such as Word.
+        let svg = umlcraft_notation::svg::render_scaled(
+            &scene,
+            &measure,
+            umlcraft_notation::svg::FINE_UNITS,
+        );
         let extension = if png { "png" } else { "svg" };
         let name = model.element(diagram).map(|e| e.name().to_owned()).unwrap_or_default();
         let suggested = format!("{}.{extension}", sanitize_file_name(&name));

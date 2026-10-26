@@ -109,8 +109,10 @@ when the app opens them (`sequence_edit::upgrade_document`, not an undoable edit
 - `draw` turns a scene's figures and end markers into a few primitives (polyline, polygon,
   ellipse, frame) with color roles (`Paint`) and says where text baselines go. The canvas paints
   them with its theme colors (and a node's own fill color on a light background); `svg` writes
-  them with black lines, yellow `#FFFFCC` where a node has no color of its own (the default fill
-  of `.asta` files), a margin of 10 and 4/3 pixels per unit. So the figure geometry exists once,
+  them as the canvas shows them in the light theme: black lines, white where a node has no color
+  of its own, a margin of 10 and 4/3 pixels per unit. The app's image export writes coordinates
+  and sizes ten times larger (`render_scaled`, same image size): Word's PDF export puts the
+  letters of SVG text on whole units, which at 12 units per letter height spaces them unevenly. So the figure geometry exists once,
   for both. Texts in nodes are centered by Java's whole-pixel width (`TextMeasure::rounded_width`,
   from the table in `metrics`), so imported diagrams keep their text positions, and written at a
   fixed x.
