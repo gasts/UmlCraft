@@ -386,21 +386,3 @@ through its official API (`astah-api.jar`):
   `end_a.name.point.x`, `end_b.multiplicity.point.y` …); the sidecar turns UmlCraft's offsets into
   those positions. `setProperty` silently ignores keys it does not know. Constraints of
   association ends become constraints on the end.
-
-### License
-
-In a test with Astah Professional 12.0.0 the API ran headless and saved projects without a
-license: the copied jars, with no license file next to them and an empty user home
-(`-Duser.home`), created and saved a project. The API still declares `LicenseNotFoundException`
-on `open` and `save`, so other editions or versions may check. Either way, the export needs an
-installed Astah, and Astah's license terms apply to using its API.
-
-The round-trip test (`crates/umlcraft-asta-export/tests/roundtrip.rs`) exports the sample
-project, extended by an interface, a dependency, an enumeration, a note, include and extend,
-imports the file again with `umlcraft-asta` and compares names, ownership, relationships,
-diagram contents and the interactions. It is skipped when Astah is not installed.
-
-## Deviation from the original plan
-
-The plan was `gpui` 0.2.2. `gpui-component` 0.8, however, requires `gpui-pre` 0.3.9, so the app
-depends on the bundle crate `gpui-kit`.
