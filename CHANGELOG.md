@@ -5,6 +5,9 @@ today.
 
 ## Unreleased
 
+- **New app icon**: an initial state with its transition into a state, as in a state machine
+  diagram. `umlcraft.exe` now carries it in Explorer, the taskbar and its windows, and the
+  macOS app shows it in the Dock and Finder.
 - SVG and PNG images fill elements white, as the diagram shows them on screen, instead of
   Astah's yellow.
 - Texts in SVG images keep even letter spacing in PDFs made with Word.

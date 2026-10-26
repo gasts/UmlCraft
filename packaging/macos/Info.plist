@@ -9,6 +9,8 @@
 	<string>UmlCraft</string>
 	<key>CFBundleExecutable</key>
 	<string>umlcraft</string>
+	<key>CFBundleIconFile</key>
+	<string>UmlCraft</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.umlcraft.app</string>
 	<key>CFBundleInfoDictionaryVersion</key>

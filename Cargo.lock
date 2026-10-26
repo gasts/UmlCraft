@@ -6672,6 +6672,7 @@ name = "umlcraft-app"
 version = "0.6.0"
 dependencies = [
  "anyhow",
+ "embed-resource",
  "gpui-kit",
  "resvg 0.46.0",
  "rust-i18n",

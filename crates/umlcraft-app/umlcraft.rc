@@ -1,0 +1,2 @@
+// GPUI loads the window icon from resource 1; Explorer and the taskbar take the first icon.
+1 ICON "../../packaging/windows/umlcraft.ico"

@@ -138,7 +138,8 @@ jobs:
             target/aarch64-apple-darwin/release/umlcraft \
             target/x86_64-apple-darwin/release/umlcraft
           sed "s/@VERSION@/$VERSION/g" packaging/macos/Info.plist > "$app/Contents/Info.plist"
-          cp LICENSE-MIT LICENSE-APACHE THIRD-PARTY-LICENSES.html "$app/Contents/Resources/"
+          cp packaging/macos/UmlCraft.icns LICENSE-MIT LICENSE-APACHE THIRD-PARTY-LICENSES.html \
+            "$app/Contents/Resources/"
           # Ad-hoc signature: not a Developer ID, but Apple Silicon refuses unsigned code.
           codesign --force --sign - "$app"
           ln -s /Applications dist/dmg/Applications
