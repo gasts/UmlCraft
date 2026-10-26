@@ -1,0 +1,22 @@
+package hints
+  class Line Public
+  class Hints Public
+    attribute + untyped = 1 {static}
+    attribute + count : int = 0 {static}
+    attribute + limit : int = 10 {readOnly}
+    attribute + frozen = "x" {readOnly}
+    attribute + either : int | str
+    attribute + callback : Callable<[int],str>
+    operation + apply(x, y : int, z : Line = None) : Hints
+    association hints.Hints NonNavigable -- hints.Line Navigable line Public
+    association hints.Hints NonNavigable -- hints.Line Navigable maybe Public [0..1]
+    association hints.Hints NonNavigable -- hints.Line Navigable union Public [0..1]
+    association hints.Hints NonNavigable -- hints.Line Navigable forward Public
+    association hints.Hints NonNavigable -- hints.Line Navigable forward_list Public [*] {ordered}
+package typing
+  class Optional Public
+    template T
+package builtins
+  class list Public
+    template T
+class Callable Public

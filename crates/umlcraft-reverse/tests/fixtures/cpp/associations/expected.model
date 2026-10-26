@@ -1,0 +1,36 @@
+package shop
+  class Line Public
+  class Customer Public
+  class Order Public
+    attribute - owner : Customer&
+    attribute - note : string
+    attribute - count : int
+    association shop.Order NonNavigable -- shop.Customer Navigable customer Private
+    association shop.Order NonNavigable -- shop.Customer Navigable payer Private [0..1]
+    association shop.Order NonNavigable -- shop.Customer Navigable reader Private [0..1]
+    association shop.Order NonNavigable -- shop.Line Navigable lines Private [*] {ordered}
+    association shop.Order NonNavigable -- shop.Line Navigable pointers Private [*] {ordered}
+    association shop.Order NonNavigable -- shop.Line Navigable sorted Private [*] {ordered} {unique}
+    association shop.Order NonNavigable -- shop.Line Navigable tags Private [*] {unique}
+    association shop.Order NonNavigable qualifier key : string -- shop.Line Navigable byName Private
+    association shop.Order NonNavigable -- shop.Customer Navigable account Private [1]
+    association shop.Order NonNavigable -- shop.Customer Navigable shared Private [0..1]
+    association shop.Order NonNavigable -- shop.Customer Navigable maybe Private [0..1]
+    association shop.Order NonNavigable -- shop.Line Navigable extra Private [*]
+package std
+  class vector Public
+    template T
+  class set Public
+    template T
+  class unordered_set Public
+    template T
+  class map Public
+    template K
+    template V
+  class string Public
+  class unique_ptr Public
+    template T
+  class shared_ptr Public
+    template T
+  class optional Public
+    template T

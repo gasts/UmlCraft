@@ -1,0 +1,22 @@
+package Properties
+  class Account Public
+    attribute - balance : int
+    attribute + Id : int = 1
+    attribute + Owner : string {readOnly}
+    attribute + Iban : string {readOnly}
+    attribute + Label : string
+    attribute + Opened : int {static}
+    operation + get_Balance() : int
+    operation # set_Balance(value : int) : void
+    operation + get_IsEmpty() : bool
+    operation + get_Doubled() : int
+    operation + get_Item(index : int) : int
+    operation + set_Item(index : int, value : int) : void
+  class Shape abstract Public
+    attribute + Name : string
+    operation + get_Area() : double {abstract}
+  interface IEntity Public
+    operation + get_Key() : int {abstract}
+    operation + set_Key(value : int) : void {abstract}
+    operation + get_Title() : string
+    operation + get_Item(name : string) : string {abstract}

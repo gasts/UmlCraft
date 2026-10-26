@@ -1,0 +1,12 @@
+== access.hpp
+public class Account (line 1)
+  private field id : int
+  public operation constructor Account()
+  public operation query balance() : int
+  protected operation audit() : void
+  private field secret : int
+  public struct Entry (line 11)
+    public field amount : int
+public struct Record (line 16)
+  public field open : int
+  private field hidden : int

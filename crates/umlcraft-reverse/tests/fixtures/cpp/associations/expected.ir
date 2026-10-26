@@ -1,0 +1,20 @@
+== associations.hpp
+namespace shop
+  public class Line (line 9)
+  public class Customer (line 10)
+  public class Order (line 12)
+    private field customer : Customer
+    private field payer : Customer*
+    private field reader : const Customer*
+    private field owner : Customer&
+    private field lines : std.vector<Line>
+    private field pointers : std.vector<Line*>
+    private field sorted : std.set<Line>
+    private field tags : std.unordered_set<Line>
+    private field byName : std.map<std.string,Line>
+    private field account : std.unique_ptr<Customer>
+    private field shared : std.shared_ptr<Customer>
+    private field maybe : std.optional<Customer>
+    private field extra : Line[3]
+    private field note : std.string
+    private field count : int

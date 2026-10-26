@@ -1,0 +1,74 @@
+# The .deb and .rpm packages, built with nfpm (https://nfpm.goreleaser.com) from the repository
+# root after install-desktop-files.sh has filled dist/linux/usr, with VERSION set:
+#   nfpm package -f packaging/linux/nfpm.yaml -p deb -t dist/UmlCraft-$VERSION-linux-x64.deb
+#
+# The binary links libxcb, FreeType and xkbcommon; GPUI loads Vulkan, Wayland and Fontconfig at
+# run time, so these are listed by hand. The rpm requires sonames, which Fedora and openSUSE
+# both provide under different package names.
+name: umlcraft
+version: ${VERSION}
+arch: amd64
+platform: linux
+section: devel
+priority: optional
+maintainer: UmlCraft <app@umlcraft.com>
+vendor: UmlCraft
+homepage: https://umlcraft.com/
+license: MIT OR Apache-2.0
+description: |-
+  UML modeling tool after the model of Astah Professional
+  UmlCraft draws class, object, use case, sequence, activity, state machine,
+  component and deployment diagrams the way Astah does, opens and writes Astah
+  projects, and imports Java, C#, C++ and Python source code.
+
+contents:
+  - src: dist/linux/usr/bin/umlcraft
+    dst: /usr/bin/umlcraft
+    file_info:
+      mode: 0755
+  - src: dist/linux/usr/share/applications/com.umlcraft.app.desktop
+    dst: /usr/share/applications/com.umlcraft.app.desktop
+  - src: dist/linux/usr/share/metainfo/com.umlcraft.app.metainfo.xml
+    dst: /usr/share/metainfo/com.umlcraft.app.metainfo.xml
+  - src: dist/linux/usr/share/mime/packages/com.umlcraft.app.xml
+    dst: /usr/share/mime/packages/com.umlcraft.app.xml
+  - src: dist/linux/usr/share/icons/hicolor/scalable/apps/com.umlcraft.app.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/com.umlcraft.app.svg
+  - src: dist/linux/usr/share/icons/hicolor/128x128/apps/com.umlcraft.app.png
+    dst: /usr/share/icons/hicolor/128x128/apps/com.umlcraft.app.png
+  - src: dist/linux/usr/share/icons/hicolor/256x256/apps/com.umlcraft.app.png
+    dst: /usr/share/icons/hicolor/256x256/apps/com.umlcraft.app.png
+  - src: README.md
+    dst: /usr/share/doc/umlcraft/README.md
+  - src: LICENSE-MIT
+    dst: /usr/share/doc/umlcraft/LICENSE-MIT
+  - src: LICENSE-APACHE
+    dst: /usr/share/doc/umlcraft/LICENSE-APACHE
+  - src: THIRD-PARTY-LICENSES.html
+    dst: /usr/share/doc/umlcraft/THIRD-PARTY-LICENSES.html
+
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.35)
+      - libgcc-s1
+      - libxcb1
+      - libfreetype6
+      - libxkbcommon0
+      - libxkbcommon-x11-0
+      - libvulkan1
+      - libwayland-client0
+      - libfontconfig1
+    recommends:
+      - mesa-vulkan-drivers
+  rpm:
+    depends:
+      - libxcb.so.1()(64bit)
+      - libfreetype.so.6()(64bit)
+      - libxkbcommon.so.0()(64bit)
+      - libxkbcommon-x11.so.0()(64bit)
+      - libvulkan.so.1()(64bit)
+      - libwayland-client.so.0()(64bit)
+      - libfontconfig.so.1()(64bit)
+    recommends:
+      - mesa-vulkan-drivers

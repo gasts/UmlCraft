@@ -1,0 +1,9 @@
+== inheritance.py
+namespace inheritance
+  import typing
+  public class Base (line 4)
+  public class Mixin (line 8)
+  public class Derived extends Base extends Mixin (line 12)
+  public class FromModule extends typing.NamedTuple (line 16)
+    public field x : int
+  public class Explicit (line 20)

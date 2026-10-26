@@ -1,0 +1,14 @@
+class Document Public
+  doc "A document.\nWith two lines."
+  attribute + title : int
+    doc "The title."
+  attribute + pages : int
+  operation + save() : void
+    doc "Doxygen with an exclamation mark."
+  operation + load() : void
+    doc "Qt style."
+  operation + print() : void
+class Box Public
+  doc "A template, documented above its template line."
+  template T
+  attribute - value : T

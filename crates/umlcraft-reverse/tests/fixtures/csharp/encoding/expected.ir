@@ -1,0 +1,11 @@
+== Legacy.cs
+public class Legacy (line 2)
+  doc "Grüße aus München."
+  private field straße : string
+== Plain.cs
+public class Plain (line 2)
+  doc "Überall UTF-8."
+== Wide.cs
+public class Wide (line 2)
+  doc "Ärger mit UTF-16."
+guessed Legacy.cs as windows-1252

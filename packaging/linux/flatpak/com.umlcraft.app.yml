@@ -1,0 +1,28 @@
+# Flatpak of the Linux binary that the release workflow builds, which it expects in
+# dist/binary/umlcraft. Built and bundled with
+#   flatpak-builder --repo=repo build packaging/linux/flatpak/com.umlcraft.app.yml
+#   flatpak build-bundle repo UmlCraft.flatpak com.umlcraft.app
+#
+# The sandbox sees the home folder, so recent files and paths given on the command line open.
+# Starting Astah's own Java for the Astah export is not possible from inside.
+app-id: com.umlcraft.app
+runtime: org.freedesktop.Platform
+runtime-version: "25.08"
+sdk: org.freedesktop.Sdk
+command: umlcraft
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  - --filesystem=home
+modules:
+  - name: umlcraft
+    buildsystem: simple
+    build-commands:
+      - bash install-desktop-files.sh umlcraft /app
+    sources:
+      - type: file
+        path: ../../../dist/binary/umlcraft
+      - type: dir
+        path: ..

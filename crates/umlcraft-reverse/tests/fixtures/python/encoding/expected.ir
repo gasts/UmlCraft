@@ -1,0 +1,10 @@
+== legacy.py
+namespace legacy
+  public class Legacy (line 1)
+    doc "Grüße aus München."
+== stub.pyi
+namespace stub
+  public class Stub (line 1)
+    doc "A stub file."
+    public operation run() : None
+guessed legacy.py as windows-1252

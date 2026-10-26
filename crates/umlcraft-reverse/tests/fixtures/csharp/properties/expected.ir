@@ -1,0 +1,24 @@
+== Properties.cs
+namespace Properties
+  public class Account (line 3)
+    private field balance : int
+    public field Id : int = 1
+    public field readonly Owner : string
+    public field readonly Iban : string
+    public field Label : string
+    public field static Opened : int
+    public operation get_Balance() : int
+    protected operation set_Balance(value : int) : void
+    public operation get_IsEmpty() : bool
+    public operation get_Doubled() : int
+    public operation get_Item(index : int) : int
+    public operation set_Item(index : int, value : int) : void
+  public class abstract Shape (line 33)
+    public operation abstract get_Area() : double
+    public field Name : string
+  public interface IEntity (line 39)
+    public operation abstract get_Key() : int
+    public operation abstract set_Key(value : int) : void
+    public operation get_Title() : string
+    public operation abstract get_Item(name : string) : string
+skipped method_body × 7

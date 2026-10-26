@@ -1,0 +1,16 @@
+class Array Public
+  template T
+  template N:int=4
+  template Rest...
+  attribute - items : T[N]
+  operation + convert<U>(u : U) : U {query}
+    template U
+class Table Public
+  template K
+  template V=int
+  attribute - key : K
+  attribute - value : V
+class Adapter Public
+  template C
+  template T
+  attribute - inner : C<T>

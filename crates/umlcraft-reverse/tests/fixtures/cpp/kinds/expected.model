@@ -1,0 +1,18 @@
+class Point Public
+  attribute - x : int
+class Pair Public
+  attribute + first : int
+  attribute + second : int
+class Value Public
+  attribute + i : int
+  attribute + f : float
+enumeration Color Public
+  literal Red
+  literal Green
+  literal Blue
+enumeration Shape Public
+  literal Circle
+  literal Square
+class Later Public
+  attribute - n : int
+class Opaque Public

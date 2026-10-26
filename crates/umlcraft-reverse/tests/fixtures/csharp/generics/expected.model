@@ -1,0 +1,26 @@
+package Generics
+  class Box Public
+    template T>IComparable<T>
+    attribute - value : T
+    attribute - index : Dictionary<string,List<T>>
+    operation + Map<U>(f : Func<T,U>) : U
+      template U
+  interface IVariant Public
+    template TIn
+    template TOut
+    operation + Convert(input : TIn) : TOut {abstract}
+  class Pair Public
+    template TKey>IComparable<TKey>
+    template TValue
+    generalization -> Generics.Box
+package System
+  interface IComparable Public
+    template T
+  package Collections
+    package Generic
+      class Dictionary Public
+        template TKey
+        template TValue
+      class List Public
+        template T
+class Func Public

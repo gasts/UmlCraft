@@ -1,0 +1,21 @@
+== Inheritance.cs
+import System.*
+import System.Collections.Generic.*
+namespace Inheritance
+  public interface INamed (line 6)
+    public operation abstract get_Name() : string
+  public interface ILabeled extends INamed extends IComparable<ILabeled> (line 11)
+  public interface Shape (line 15)
+  public class abstract Base implements IDisposable (line 19)
+    public operation Dispose() : void
+  public class Derived extends Base implements ILabeled implements ICloneable (line 25)
+    public operation get_Name() : string
+    public operation CompareTo(other : ILabeled) : int
+    public operation Clone() : object
+  public class Circle extends Shape (line 33)
+  public class Customer extends Entity implements IAudited (line 38)
+  public class Admin implements IUser (line 42)
+  public class Orders extends List<Order> implements IEnumerable<Order> (line 47)
+  public class Order (line 51)
+  public struct Point implements IEquatable<Point> implements Comparable (line 56)
+skipped method_body × 4

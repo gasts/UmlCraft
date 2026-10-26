@@ -1,0 +1,18 @@
+== typedefs.hpp
+public class Item (line 4)
+alias Items = std.vector<Item>
+alias ItemPtr = std.unique_ptr<Item>
+public struct Point (line 9)
+  public field x : int
+public struct Size (line 13)
+  public field w : int
+  public field h : int
+public class Store (line 17)
+  alias Id = unsigned long
+  alias Raw = Item*
+  public field items : Items
+  public field best : ItemPtr
+  public field id : Id
+  public field raw : Raw
+  public field origin : Point
+  public field size : Size

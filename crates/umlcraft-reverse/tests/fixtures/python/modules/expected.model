@@ -1,0 +1,9 @@
+package tool
+  class Tool Public
+package shop
+  class Catalog Public
+  package billing
+    package invoice
+      class Invoice Public
+  package orders
+    class Order Public

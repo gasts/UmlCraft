@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-umlcraft">
+    <comment>UmlCraft project</comment>
+    <comment xml:lang="de">UmlCraft-Projekt</comment>
+    <sub-class-of type="application/json"/>
+    <icon name="com.umlcraft.app"/>
+    <glob pattern="*.ucraft"/>
+  </mime-type>
+</mime-info>

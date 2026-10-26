@@ -1,0 +1,19 @@
+== hints.py
+namespace hints
+  import typing.ClassVar
+  import typing.Final
+  import typing.Optional
+  public class Line (line 4)
+  public class Hints (line 8)
+    public field static untyped = 1
+    public field static count : int = 0
+    public field readonly limit : int = 10
+    public field readonly frozen = "x"
+    public field line : Line
+    public field maybe : Optional<Line>
+    public field union : Line | None
+    public field either : int | str
+    public field forward : Line
+    public field forward_list : list<Line>
+    public field callback : Callable<[int],str>
+    public operation apply(x, y : int, z : Line = None) : Hints

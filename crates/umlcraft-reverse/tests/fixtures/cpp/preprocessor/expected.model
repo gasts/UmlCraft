@@ -1,0 +1,5 @@
+class WinOnly Public
+class Service Public
+  generalization -> Base
+  operation + fast() : void
+class Base Public

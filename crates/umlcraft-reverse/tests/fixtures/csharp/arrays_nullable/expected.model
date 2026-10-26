@@ -1,0 +1,17 @@
+package Arrays
+  class Grid Public
+    attribute - cells : int[]
+    attribute - matrix : int[,]
+    attribute - maybe : int?
+    attribute - slots : Item?[]
+    attribute - pair : (int, string)
+    attribute - raw : int*
+    attribute - anything : dynamic
+    attribute - text : String
+    operation + Fill(inout start : int, out end : int, step : int, items : Item[]) : void
+    operation + Defaults(count : int = 1, name : string = "x") : void
+    association Arrays.Grid NonNavigable -- Arrays.Item Navigable jagged Private [*]
+    association Arrays.Grid NonNavigable -- Arrays.Item Navigable next Private [0..1]
+  class Item Public
+package System
+  class String Public

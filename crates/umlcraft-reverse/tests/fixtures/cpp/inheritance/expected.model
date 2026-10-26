@@ -1,0 +1,14 @@
+class Base Public
+class Mixin Public
+class Holder Public
+  template T
+class Derived Public
+  generalization -> Base
+  generalization -> Mixin
+class Private Public
+  generalization -> Base
+class Open Public
+  generalization -> Base
+class Diamond Public
+  generalization -> Base
+  generalization -> Holder

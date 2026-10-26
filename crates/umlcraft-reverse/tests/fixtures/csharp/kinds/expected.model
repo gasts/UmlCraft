@@ -1,0 +1,23 @@
+package Kinds
+  class Plain Public
+    class Nested Public
+  interface IShape Public
+    operation + Area() : double {abstract}
+  class Point Public
+    attribute + X : int
+    attribute + Y : int
+  enumeration Color Public
+    literal Red
+    literal Green
+    literal Blue
+  class Money Public
+    attribute + Amount : decimal {readOnly}
+    attribute + Currency : string {readOnly}
+  class Size Public
+    attribute + Width : int
+    attribute + Height : int
+  class Range Public
+    attribute + From : int {readOnly}
+    attribute + To : int {readOnly}
+  class Account Public
+    operation + Account(owner : string)

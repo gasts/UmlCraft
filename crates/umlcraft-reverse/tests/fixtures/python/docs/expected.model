@@ -1,0 +1,6 @@
+package docs
+  class Document Public
+    doc "A document.\n\nWith details,\n  indented."
+    operation + save() : None
+      doc "Saves it."
+    operation + load() : None

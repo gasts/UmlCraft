@@ -1,0 +1,10 @@
+== templates.hpp
+public class Array<T, int N = 4, Rest...> (line 2)
+  private field items : T[N]
+  public operation query convert<U>(u : U) : U
+public class Table<K, V = int> (line 9)
+  private field key : K
+  private field value : V
+public class Adapter<C, T> (line 15)
+  private field inner : C<T>
+skipped specialization × 2

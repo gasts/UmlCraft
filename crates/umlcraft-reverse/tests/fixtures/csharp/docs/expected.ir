@@ -1,0 +1,17 @@
+== Documented.cs
+namespace Docs
+  public class Order (line 7)
+    doc "<summary>\nAn order.\n</summary>\n<remarks>Kept for a year.</remarks>"
+    public field Number : int
+      doc "<summary>The number.</summary>"
+    public field Plain : int
+    public operation Ship() : void
+      doc "A block comment."
+    public field Separated : int
+    public field Current : State
+      doc "<summary>The state.</summary>"
+  public enum State (line 26)
+    literal Open
+      doc "Not paid yet."
+    literal Paid
+skipped method_body × 1

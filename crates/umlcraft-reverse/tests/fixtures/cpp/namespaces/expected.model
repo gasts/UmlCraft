@@ -1,0 +1,10 @@
+package shop
+  class Order Public
+  package billing
+    class Invoice Public
+    package tax
+      class Rate Public
+class Hidden Public
+class CHandle Public
+  attribute + fd : int
+class Global Public

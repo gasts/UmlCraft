@@ -1,0 +1,81 @@
+System	Array	c		-
+System	Attribute	c		-
+System	Boolean	c		-
+System	Byte	c		-
+System	Char	c		-
+System	DateOnly	c		-
+System	DateTime	c		-
+System	DateTimeOffset	c		-
+System	Decimal	c		-
+System	Double	c		-
+System	Enum	c		-
+System	EventArgs	c		-
+System	Exception	c		-
+System	Guid	c		-
+System	IAsyncDisposable	i		-
+System	ICloneable	i		-
+System	IComparable	i	T	-
+System	IDisposable	i		-
+System	IEquatable	i	T	-
+System	IFormattable	i		-
+System	Int16	c		-
+System	Int32	c		-
+System	Int64	c		-
+System	IntPtr	c		-
+System	Lazy	c	T	-
+System	Nullable	c	T	O
+System	Object	c		-
+System	SByte	c		-
+System	Single	c		-
+System	String	c		-
+System	TimeOnly	c		-
+System	TimeSpan	c		-
+System	Type	c		-
+System	UInt16	c		-
+System	UInt32	c		-
+System	UInt64	c		-
+System	UIntPtr	c		-
+System	Uri	c		-
+System	Version	c		-
+System.Collections.Concurrent	BlockingCollection	c	T	C
+System.Collections.Concurrent	ConcurrentBag	c	T	C
+System.Collections.Concurrent	ConcurrentDictionary	c	TKey,TValue	M
+System.Collections.Concurrent	ConcurrentQueue	c	T	Co
+System.Collections.Concurrent	ConcurrentStack	c	T	Co
+System.Collections.Generic	Dictionary	c	TKey,TValue	M
+System.Collections.Generic	HashSet	c	T	Cu
+System.Collections.Generic	ICollection	i	T	C
+System.Collections.Generic	IComparer	i	T	-
+System.Collections.Generic	IDictionary	i	TKey,TValue	M
+System.Collections.Generic	IEnumerable	i	T	C
+System.Collections.Generic	IEqualityComparer	i	T	-
+System.Collections.Generic	IList	i	T	Co
+System.Collections.Generic	IReadOnlyCollection	i	T	C
+System.Collections.Generic	IReadOnlyDictionary	i	TKey,TValue	M
+System.Collections.Generic	IReadOnlyList	i	T	Co
+System.Collections.Generic	IReadOnlySet	i	T	Cu
+System.Collections.Generic	ISet	i	T	Cu
+System.Collections.Generic	KeyValuePair	c	TKey,TValue	-
+System.Collections.Generic	LinkedList	c	T	Co
+System.Collections.Generic	List	c	T	Co
+System.Collections.Generic	Queue	c	T	Co
+System.Collections.Generic	SortedDictionary	c	TKey,TValue	M
+System.Collections.Generic	SortedList	c	TKey,TValue	M
+System.Collections.Generic	SortedSet	c	T	Cou
+System.Collections.Generic	Stack	c	T	Co
+System.Collections.Immutable	IImmutableDictionary	i	TKey,TValue	M
+System.Collections.Immutable	IImmutableList	i	T	Co
+System.Collections.Immutable	IImmutableSet	i	T	Cu
+System.Collections.Immutable	ImmutableArray	c	T	Co
+System.Collections.Immutable	ImmutableDictionary	c	TKey,TValue	M
+System.Collections.Immutable	ImmutableHashSet	c	T	Cu
+System.Collections.Immutable	ImmutableList	c	T	Co
+System.Collections.Immutable	ImmutableQueue	c	T	Co
+System.Collections.Immutable	ImmutableSortedDictionary	c	TKey,TValue	M
+System.Collections.Immutable	ImmutableSortedSet	c	T	Cou
+System.Collections.Immutable	ImmutableStack	c	T	Co
+System.Collections.ObjectModel	Collection	c	T	Co
+System.Collections.ObjectModel	ObservableCollection	c	T	Co
+System.Collections.ObjectModel	ReadOnlyCollection	c	T	Co
+System.Collections.ObjectModel	ReadOnlyDictionary	c	TKey,TValue	M
+System.Collections.ObjectModel	ReadOnlyObservableCollection	c	T	Co

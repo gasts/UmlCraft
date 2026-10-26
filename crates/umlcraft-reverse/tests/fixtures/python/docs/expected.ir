@@ -1,0 +1,7 @@
+== docs.py
+namespace docs
+  public class Document (line 4)
+    doc "A document.\n\nWith details,\n  indented."
+    public operation save() : None
+      doc "Saves it."
+    public operation load() : None

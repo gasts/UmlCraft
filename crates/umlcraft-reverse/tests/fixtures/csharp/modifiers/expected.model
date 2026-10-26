@@ -1,0 +1,28 @@
+package Modifiers
+  class Defaults Package
+    class Inner Private
+    attribute - field : int
+    operation - Method() : void
+  class Visibilities abstract Public
+    attribute + a : int
+    attribute # b : int
+    attribute ~ c : int
+    attribute - d : int
+    attribute # e : int
+    attribute - f : int
+    attribute + Max : int = 10 {static} {readOnly}
+    attribute + Name : string = "v" {static} {readOnly}
+    attribute + Count : int {static}
+    operation + Run() : void {abstract}
+    operation + Step() : void
+    operation + ToString() : string {leaf}
+    operation + Reset() : void {static}
+    operation + Old() : void
+  class Leaf leaf Public
+  class Helpers Public
+    operation + Twice(x : int) : int {static}
+  class Local Private
+  interface IService Public
+    operation + Start() : void {abstract}
+    operation + Stop() : void
+    operation + Create() : void {static}

@@ -1,0 +1,14 @@
+package Model
+  class Order Public
+    doc "<summary>An order.</summary>"
+    attribute - number : long
+    operation + Ship(days : int, express : bool) : void
+    operation + Ship(days : int) : void
+    association Model.Order NonNavigable -- Model.Customer Navigable customer Private
+    association Model.Order NonNavigable -- Model.Customer Navigable backup Private [0..1]
+  class Customer Public
+    association Model.Customer NonNavigable -- Model.Missing Navigable missing Private
+  interface Kind Public
+  class Missing Public
+class Missing Public
+diagram d

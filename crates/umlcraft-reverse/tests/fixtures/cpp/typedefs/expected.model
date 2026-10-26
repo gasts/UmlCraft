@@ -1,0 +1,18 @@
+class Item Public
+class Point Public
+  attribute + x : int
+class Size Public
+  attribute + w : int
+  attribute + h : int
+class Store Public
+  attribute + id : unsigned long
+  association Store NonNavigable -- Item Navigable items Public [*] {ordered}
+  association Store NonNavigable -- Item Navigable best Public [1]
+  association Store NonNavigable -- Item Navigable raw Public [0..1]
+  association Store NonNavigable -- Point Navigable origin Public
+  association Store NonNavigable -- Size Navigable size Public
+package std
+  class vector Public
+    template T
+  class unique_ptr Public
+    template T

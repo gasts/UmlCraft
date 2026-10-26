@@ -1,0 +1,11 @@
+== visibility.py
+namespace visibility
+  public class Account (line 1)
+    public field public : int
+    protected field _protected : int
+    private field __private : int
+    public field __dunder__ : int
+    public operation constructor __init__()
+    public operation open() : None
+    protected operation _audit() : None
+    private operation __secret() : None

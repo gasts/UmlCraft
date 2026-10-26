@@ -1,0 +1,14 @@
+== docs.hpp
+public class Document (line 3)
+  doc "A document.\nWith two lines."
+  public field title : int
+    doc "The title."
+  public operation save() : void
+    doc "Doxygen with an exclamation mark."
+  public operation load() : void
+    doc "Qt style."
+  public field pages : int
+  public operation print() : void
+public class Box<T> (line 24)
+  doc "A template, documented above its template line."
+  private field value : T

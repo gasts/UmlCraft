@@ -1,0 +1,11 @@
+== shop.hpp
+namespace shop
+  public class Order (line 2)
+  namespace billing
+    public class Invoice (line 5)
+namespace shop.billing.tax
+  public class Rate (line 11)
+public class Hidden (line 16)
+public struct CHandle (line 20)
+  public field fd : int
+public class Global (line 25)

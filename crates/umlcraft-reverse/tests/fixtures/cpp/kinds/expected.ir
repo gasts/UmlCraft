@@ -1,0 +1,22 @@
+== kinds.hpp
+public class Point (line 1)
+  private field x : int
+public struct Pair (line 5)
+  public field first : int
+  public field second : int
+public class Value (line 10)
+  public field i : int
+  public field f : float
+public enum Color (line 15)
+  literal Red
+  literal Green
+  literal Blue
+public enum Shape (line 17)
+  literal Circle
+  literal Square
+public class forward Later (line 20)
+public class Later (line 22)
+  private field n : int
+public class forward Opaque (line 27)
+skipped anonymous_class × 1
+skipped enum_value × 1

@@ -1,0 +1,19 @@
+== methods.py
+namespace methods
+  import abc.abstractmethod
+  import typing.final
+  public class Service (line 5)
+    public operation static create(name : str) : Service
+      @umlcraft.python.decorators = "staticmethod"
+    public operation static default() : Service
+      @umlcraft.python.decorators = "classmethod"
+    public operation abstract run() : None
+      @umlcraft.python.decorators = "abstractmethod"
+    public operation name() : str
+      @umlcraft.python.decorators = "property"
+    public operation leaf stop() : None
+      @umlcraft.python.decorators = "final"
+    public operation fetch(url : str, args : int..., timeout : float = 1.0, options : **) : bytes
+      @umlcraft.python.async = "true"
+    public operation positional(a, b, c) : None
+skipped method_body × 2

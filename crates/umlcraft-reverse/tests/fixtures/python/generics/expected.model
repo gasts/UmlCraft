@@ -1,0 +1,18 @@
+package generics
+  class Box Public
+    template T
+    attribute + item : T
+  class Pair Public
+    template K
+    template T
+    attribute + key : K
+    attribute + value : T
+  interface Reader Public
+    template T
+    operation + read() : T
+  class Modern Public
+    template T
+    template Ts...
+    attribute + item : T
+    operation + first<U>(u : U) : U
+      template U

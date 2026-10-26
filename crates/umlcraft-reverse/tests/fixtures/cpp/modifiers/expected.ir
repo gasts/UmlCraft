@@ -1,0 +1,21 @@
+== modifiers.hpp
+public class abstract Shape (line 1)
+  public operation ~Shape()
+  public operation abstract query area() : double
+  public operation static count() : int
+  public field static readonly sides : const int = 0
+  public field static readonly pi : double = 3.14159
+  public field cache : int
+  public field id : const int
+  public field flag : volatile int
+  public operation operator=( : const Shape&) : Shape&
+  public operation query operator==(other : const Shape&) : bool
+  public operation query operator bool() : bool
+  public operation leaf draw() : void
+  public field callback : int (*)(int)
+public class leaf Square extends public Shape (line 20)
+  public operation query area() : double
+  private field side : double = 1.0
+skipped method_body × 1
+skipped deleted_function × 1
+skipped friend × 1

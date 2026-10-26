@@ -1,0 +1,24 @@
+== app.hpp
+import fmt = acme.lib
+import acme.lib.Customer
+namespace acme
+  namespace app
+    import lib.*
+    public class Shop (line 11)
+      private field price : Money
+      private field buyer : Customer
+      private field address : Customer.Address
+      private field root : Root
+      private field second : lib.Money
+      private field third : acme.lib.Money
+      private field fourth : fmt.Money
+      private field name : std.string
+      private field missing : Missing
+      private field widget : other.Widget
+== lib.hpp
+namespace acme
+  namespace lib
+    public class Money (line 3)
+    public class Customer (line 4)
+      public class Address (line 6)
+  public class Root (line 9)

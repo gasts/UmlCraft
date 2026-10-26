@@ -1,0 +1,12 @@
+package inheritance
+  class Base Public
+  class Mixin Public
+  class Derived Public
+    generalization -> inheritance.Base
+    generalization -> inheritance.Mixin
+  class FromModule Public
+    generalization -> typing.NamedTuple
+    attribute + x : int
+  class Explicit Public
+package typing
+  class NamedTuple Public

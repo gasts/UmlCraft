@@ -1,0 +1,7 @@
+== legacy.hpp
+public class Legacy (line 2)
+  doc "Grüße aus München."
+== modern.hpp
+public class Modern (line 2)
+  doc "UTF-8 with BOM: ä."
+guessed legacy.hpp as windows-1252

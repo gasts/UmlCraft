@@ -1,0 +1,32 @@
+== app/__init__.py
+namespace app
+== app/helpers.py
+namespace app.helpers
+  public class Helper (line 1)
+== app/views.py
+namespace app.views
+  import so = shop.orders
+  import typing.TYPE_CHECKING
+  import shop
+  import shop.Order
+  import shop.Line
+  import app.helpers
+  import L = shop.lines.Line
+  public class View (line 14)
+    public field order : Order
+    public field line : Line
+    public field aliased : so.Order
+    public field qualified : shop.orders.Order
+    public field checked : L
+    public field helper : helpers.Helper
+    public field missing : Missing
+== shop/__init__.py
+namespace shop
+  import shop.orders.Order
+  import shop.lines.*
+== shop/lines.py
+namespace shop.lines
+  public class Line (line 1)
+== shop/orders.py
+namespace shop.orders
+  public class Order (line 1)

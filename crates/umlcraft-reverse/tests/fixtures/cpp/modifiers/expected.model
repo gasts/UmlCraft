@@ -1,0 +1,18 @@
+class Shape abstract Public
+  attribute + sides : const int = 0 {static} {readOnly}
+  attribute + pi : double = 3.14159 {static} {readOnly}
+  attribute + cache : int
+  attribute + id : const int
+  attribute + flag : volatile int
+  attribute + callback : int (*)(int)
+  operation + ~Shape()
+  operation + area() : double {abstract} {query}
+  operation + count() : int {static}
+  operation + operator=( : const Shape&) : Shape&
+  operation + operator==(other : const Shape&) : bool {query}
+  operation + operator bool() : bool {query}
+  operation + draw() : void {leaf}
+class Square leaf Public
+  generalization -> Shape
+  attribute - side : double = 1.0
+  operation + area() : double {query}

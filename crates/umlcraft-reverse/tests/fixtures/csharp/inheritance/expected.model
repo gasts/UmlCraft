@@ -1,0 +1,48 @@
+package Inheritance
+  interface INamed Public
+    operation + get_Name() : string {abstract}
+  interface ILabeled Public
+    generalization -> Inheritance.INamed
+    generalization -> System.IComparable
+  interface Shape Public
+  class Base abstract Public
+    realization -> System.IDisposable
+    operation + Dispose() : void
+  class Derived Public
+    generalization -> Inheritance.Base
+    realization -> Inheritance.ILabeled
+    realization -> System.ICloneable
+    operation + get_Name() : string
+    operation + CompareTo(other : ILabeled) : int
+    operation + Clone() : object
+  class Circle Public
+    realization -> Inheritance.Shape
+  class Customer Public
+    generalization -> Entity
+    realization -> IAudited
+  class Admin Public
+    realization -> IUser
+  class Orders Public
+    generalization -> System.Collections.Generic.List
+    realization -> System.Collections.Generic.IEnumerable
+  class Order Public
+  class Point Public
+    realization -> System.IEquatable
+    realization -> Comparable
+package System
+  interface IComparable Public
+    template T
+  interface IDisposable Public
+  interface ICloneable Public
+  package Collections
+    package Generic
+      class List Public
+        template T
+      interface IEnumerable Public
+        template T
+  interface IEquatable Public
+    template T
+class Entity Public
+interface IAudited Public
+interface IUser Public
+interface Comparable Public

@@ -1,0 +1,12 @@
+== Conditional.cs
+import System.*
+namespace Conditional
+  public class Diagnostics (line 7)
+  public class Service (line 20)
+    public field Modern : int
+    private field unused : int
+== Program.cs
+import System.*
+public class Program (line 7)
+skipped free_member × 2
+skipped preprocessor_branch × 3

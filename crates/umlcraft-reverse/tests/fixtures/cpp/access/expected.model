@@ -1,0 +1,11 @@
+class Account Public
+  class Entry Public
+    attribute + amount : int
+  attribute - id : int
+  attribute - secret : int
+  operation + Account()
+  operation + balance() : int {query}
+  operation # audit() : void
+class Record Public
+  attribute + open : int
+  attribute - hidden : int

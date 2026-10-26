@@ -1,0 +1,12 @@
+== Generics.cs
+import System.*
+import System.Collections.Generic.*
+namespace Generics
+  public class Box<T extends IComparable<T>> (line 6)
+    private field value : T
+    private field index : Dictionary<string,List<T>>
+    public operation Map<U>(f : Func<T,U>) : U
+  public interface IVariant<TIn, TOut> (line 14)
+    public operation abstract Convert(input : TIn) : TOut
+  public class Pair<TKey extends IComparable<TKey>, TValue> extends Box<TKey> (line 19)
+skipped method_body × 1

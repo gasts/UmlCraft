@@ -1,0 +1,7 @@
+package init
+  class Point Public
+    attribute + z : float = 0.0
+    attribute + x = x
+    attribute + y : float = y
+    attribute # _cache = None
+    operation + __init__(x : float, y : float)

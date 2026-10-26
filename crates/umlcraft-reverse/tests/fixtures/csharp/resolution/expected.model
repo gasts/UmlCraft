@@ -1,0 +1,32 @@
+package Acme
+  package App
+    class Shop Public
+      attribute - opened : DateTime
+      association Acme.App.Shop NonNavigable -- Acme.Lib.Money Navigable price Private
+      association Acme.App.Shop NonNavigable -- Acme.Lib.Text.Formatter Navigable formatter Private
+      association Acme.App.Shop NonNavigable -- Acme.Lib.Text.Formatter Navigable aliased Private
+      association Acme.App.Shop NonNavigable -- Acme.Lib.Customer.Address Navigable address Private
+      association Acme.App.Shop NonNavigable -- Acme.Lib.Text.Formatter Navigable second Private
+      association Acme.App.Shop NonNavigable -- Acme.Lib.Money Navigable third Private
+      association Acme.App.Shop NonNavigable -- Acme.Lib.Money Navigable prices Private [*] {ordered}
+      association Acme.App.Shop NonNavigable -- Missing Navigable missing Private
+      association Acme.App.Shop NonNavigable -- Other.Things.Widget Navigable widget Private
+    package Inner
+      class Clerk Public
+        association Acme.App.Inner.Clerk NonNavigable -- Acme.App.Shop Navigable shop Private
+  package Lib
+    class Money Public
+    class Customer Public
+      class Address Public
+    package Text
+      class Formatter Public
+package Other
+  package Things
+    class Widget Public
+package System
+  package Collections
+    package Generic
+      class List Public
+        template T
+  class DateTime Public
+class Missing Public

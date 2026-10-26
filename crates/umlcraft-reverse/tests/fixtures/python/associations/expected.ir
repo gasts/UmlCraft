@@ -1,0 +1,24 @@
+== associations.py
+namespace associations
+  import collections.deque
+  import typing.Dict
+  import typing.List
+  import typing.Optional
+  public class Line (line 5)
+  public class Customer (line 9)
+  public class Order (line 13)
+    public field customer : Customer
+    public field payer : Optional<Customer>
+    public field reader : Customer | None
+    public field lines : list<Line>
+    public field legacy : List<Line>
+    public field queue : deque<Line>
+    public field tags : set<Line>
+    public field by_name : dict<str,Line>
+    public field old_map : Dict<str,Line>
+    public field static untyped = None
+    public field note : str
+    public field count : int
+    public field unannotated = Customer()
+    public operation constructor __init__()
+skipped method_body × 1

@@ -1,0 +1,14 @@
+package Docs
+  class Order Public
+    doc "<summary>\nAn order.\n</summary>\n<remarks>Kept for a year.</remarks>"
+    attribute + Number : int
+      doc "<summary>The number.</summary>"
+    attribute + Plain : int
+    attribute + Separated : int
+    operation + Ship() : void
+      doc "A block comment."
+    association Docs.Order NonNavigable -- Docs.State Navigable Current Public
+  enumeration State Public
+    literal Open
+      doc "Not paid yet."
+    literal Paid

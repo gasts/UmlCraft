@@ -1,0 +1,17 @@
+== Arrays.cs
+namespace Arrays
+  public class Grid (line 3)
+    private field cells : int[]
+    private field matrix : int[,]
+    private field jagged : Item[][]
+    private field maybe : int?
+    private field next : Item?
+    private field slots : Item?[]
+    private field pair : (int, string)
+    private field raw : int*
+    private field anything : dynamic
+    private field text : System.String
+    public operation Fill(inout start : int, out end : int, step : int, items : Item[]) : void
+    public operation Defaults(count : int = 1, name : string = "x") : void
+  public class Item (line 24)
+skipped method_body × 2

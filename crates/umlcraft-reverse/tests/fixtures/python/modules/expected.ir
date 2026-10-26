@@ -1,0 +1,14 @@
+== scripts/tool.py
+namespace tool
+  public class Tool (line 2)
+== shop/__init__.py
+namespace shop
+  public class Catalog (line 4)
+== shop/billing/__init__.py
+namespace shop.billing
+== shop/billing/invoice.py
+namespace shop.billing.invoice
+  public class Invoice (line 1)
+== shop/orders.py
+namespace shop.orders
+  public class Order (line 1)

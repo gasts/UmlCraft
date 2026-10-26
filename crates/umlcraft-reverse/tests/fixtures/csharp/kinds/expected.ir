@@ -1,0 +1,26 @@
+== Kinds.cs
+namespace Kinds
+  public class Plain (line 3)
+    public class Nested (line 5)
+  public interface IShape (line 10)
+    public operation abstract Area() : double
+  public struct Point (line 15)
+    public field X : int
+    public field Y : int
+  public enum Color (line 21)
+    literal Red
+    literal Green
+    literal Blue
+  public class Money (line 28)
+    public field readonly Amount : decimal
+    public field readonly Currency : string
+  public struct Size (line 30)
+    public field Width : int
+    public field Height : int
+  public struct Range (line 32)
+    public field readonly From : int
+    public field readonly To : int
+  public class Account (line 34)
+    public operation constructor Account(owner : string)
+skipped delegate × 1
+skipped enum_value × 1

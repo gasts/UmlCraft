@@ -1,0 +1,3 @@
+class Stub:
+    """A stub file."""
+    def run(self) -> None: ...

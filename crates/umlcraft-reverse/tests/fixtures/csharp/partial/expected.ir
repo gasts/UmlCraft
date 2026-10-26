@@ -1,0 +1,13 @@
+== Order.Lines.cs
+import System.*
+namespace Partial
+  public class partial Order implements IDisposable (line 5)
+    private field customer : string
+    public operation Dispose() : void
+== Order.cs
+namespace Partial
+  public class partial Order implements IComparable<Order> (line 4)
+    doc "<summary>An order, in two files.</summary>"
+    private field number : int
+    public operation CompareTo(other : Order) : int
+skipped method_body × 2

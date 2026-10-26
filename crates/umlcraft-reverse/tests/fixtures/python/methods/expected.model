@@ -1,0 +1,15 @@
+package methods
+  class Service Public
+    operation + create(name : str) : Service {static}
+      @umlcraft.python.decorators = "staticmethod"
+    operation + default() : Service {static}
+      @umlcraft.python.decorators = "classmethod"
+    operation + run() : None {abstract}
+      @umlcraft.python.decorators = "abstractmethod"
+    operation + name() : str
+      @umlcraft.python.decorators = "property"
+    operation + stop() : None {leaf}
+      @umlcraft.python.decorators = "final"
+    operation + fetch(url : str, args : int..., timeout : float = 1.0, options : **) : bytes
+      @umlcraft.python.async = "true"
+    operation + positional(a, b, c) : None

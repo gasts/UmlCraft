@@ -1,0 +1,4 @@
+== fine.py
+namespace fine
+  public class Fine (line 1)
+failed broken.py at 2:9 near "="

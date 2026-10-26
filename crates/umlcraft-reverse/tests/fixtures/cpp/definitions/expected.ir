@@ -1,0 +1,27 @@
+== order.cpp
+namespace shop
+  definition in Order
+    public operation constructor Order(number : int)
+      doc "Makes an order."
+  definition in Order
+    public operation ship(days : int, express : bool) : void
+      doc "Ships it."
+definition in shop::Order
+  public operation query total() : int
+definition in shop::Order
+  public field count : int = 0
+definition in shop::Order
+  public operation extra() : void
+definition in Gone
+  public operation f() : void
+definition in shop
+  public operation helper() : void
+free
+  public operation main() : int
+== order.hpp
+namespace shop
+  public class Order (line 2)
+    public operation constructor Order( : int)
+    public operation ship( : int,  : bool) : void
+    public operation query total() : int
+    public field static count : int

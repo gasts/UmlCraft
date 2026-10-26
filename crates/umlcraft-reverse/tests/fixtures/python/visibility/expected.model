@@ -1,0 +1,10 @@
+package visibility
+  class Account Public
+    attribute + public : int
+    attribute # _protected : int
+    attribute - __private : int
+    attribute + __dunder__ : int
+    operation + __init__()
+    operation + open() : None
+    operation # _audit() : None
+    operation - __secret() : None

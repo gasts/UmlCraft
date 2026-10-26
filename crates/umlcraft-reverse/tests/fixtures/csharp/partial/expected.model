@@ -1,0 +1,13 @@
+package Partial
+  class Order Public
+    doc "<summary>An order, in two files.</summary>"
+    realization -> System.IDisposable
+    realization -> System.IComparable
+    attribute - customer : string
+    attribute - number : int
+    operation + Dispose() : void
+    operation + CompareTo(other : Order) : int
+package System
+  interface IDisposable Public
+  interface IComparable Public
+    template T

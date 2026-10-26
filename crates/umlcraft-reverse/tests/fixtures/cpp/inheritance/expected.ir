@@ -1,0 +1,8 @@
+== inheritance.hpp
+public class Base (line 1)
+public class Mixin (line 2)
+public class Holder<T> (line 3)
+public class Derived extends public Base extends protected Mixin (line 5)
+public class Private extends private Base (line 6)
+public struct Open extends public Base (line 7)
+public class Diamond extends public virtual Base extends private Holder<int> (line 8)

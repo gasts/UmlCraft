@@ -1,0 +1,6 @@
+== statements.py
+namespace statements
+  import os
+  public class Kept (line 11)
+skipped free_member × 2
+skipped statement × 2

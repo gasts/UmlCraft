@@ -1,0 +1,4 @@
+== fine.hpp
+namespace broken
+  public class Fine (line 2)
+failed broken.hpp at 3:9 near "="

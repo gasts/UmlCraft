@@ -1,0 +1,18 @@
+package app
+  package helpers
+    class Helper Public
+  package views
+    class View Public
+      association app.views.View NonNavigable -- shop.orders.Order Navigable order Public
+      association app.views.View NonNavigable -- shop.lines.Line Navigable line Public
+      association app.views.View NonNavigable -- shop.orders.Order Navigable aliased Public
+      association app.views.View NonNavigable -- shop.orders.Order Navigable qualified Public
+      association app.views.View NonNavigable -- shop.lines.Line Navigable checked Public
+      association app.views.View NonNavigable -- app.helpers.Helper Navigable helper Public
+      association app.views.View NonNavigable -- Missing Navigable missing Public
+package shop
+  package lines
+    class Line Public
+  package orders
+    class Order Public
+class Missing Public

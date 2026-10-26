@@ -1,0 +1,9 @@
+== init.py
+namespace init
+  public class Point (line 1)
+    public field z : float = 0.0
+    public field x = x
+    public field y : float = y
+    protected field _cache = None
+    public operation constructor __init__(x : float, y : float)
+skipped method_body × 1

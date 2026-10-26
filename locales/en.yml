@@ -1,0 +1,425 @@
+toolbar:
+  save: Save
+  undo: Undo
+  redo: Redo
+  theme: Light/Dark
+  language: Deutsch
+  zoom_reset: "Reset zoom to 100 % (Ctrl+0)"
+  zoom_fit: Fit
+menu:
+  file: File
+  new: New project
+  open: Open …
+  import_astah: Import Astah project …
+  export: Export
+  export_svg: Diagram as SVG …
+  export_png: Diagram as PNG …
+  export_astah: Astah project …
+  recent: Open recent
+  no_recent: (none)
+  save: Save
+  save_as: Save as …
+  quit: Exit
+  edit: Edit
+  delete: Delete from model
+  remove_from_diagram: Remove from diagram
+  select_all: Select all
+  copy: Copy
+  cut: Cut
+  paste: Paste (as copy)
+  paste_reference: Paste (same elements)
+  align: Align
+  align_left: Align left
+  align_center: Center horizontally
+  align_right: Align right
+  align_top: Align top
+  align_middle: Center vertically
+  align_bottom: Align bottom
+  wrap_in_fragment: Surround with fragment
+  line_style: Line style
+  line_straight: Line
+  line_right_angle: Line (right angle)
+  line_curve: Curve
+  line_curve_right_angle: Curve (right angle)
+  reset_line_ends: Attach line ends to the centers
+  reset_labels: Reset label positions
+  add_extension_point: Add extension point
+  navigability: Navigability
+  aggregation: Aggregation
+  multiplicity: Multiplicity
+  unspecified: not specified
+  view: View
+  zoom_in: Zoom in
+  zoom_out: Zoom out
+  zoom_reset: Actual size
+  tools: Tools
+  java: Java
+  import_java_files: Import Java files …
+  import_java_folder: Import Java folder …
+  csharp: C#
+  import_csharp_files: Import C# files …
+  import_csharp_folder: Import C# folder …
+  cpp: C++
+  import_cpp_files: Import C++ files …
+  import_cpp_folder: Import C++ folder …
+  python: Python
+  import_python_files: Import Python files …
+  import_python_folder: Import Python folder …
+  help: Help
+  open_sample: Open sample project
+  open_diagram: Open diagram
+  new_prefix: "New:"
+  rename: Rename
+tool:
+  select: Select
+  class: Class
+  interface: Interface
+  enumeration: Enumeration
+  package: Package
+  note: Note
+  actor: Actor
+  useCase: Use case
+  lifeline: Lifeline
+  systemBoundary: System boundary
+  association: Association
+  link: Link
+  generalization: Generalization
+  realization: Realization
+  dependency: Dependency
+  include: Include
+  extend: Extend
+  noteAnchor: Note anchor
+  combinedFragment: Fragment
+  message: Message
+  asyncMessage: Asynchronous
+  reply: Reply
+  createMessage: Create
+  destroyMessage: Destroy
+  action: Action
+  initialNode: Initial
+  activityFinal: Activity final
+  flowFinal: Flow final
+  decision: Decision
+  merge: Merge
+  fork: Fork
+  join: Join
+  objectNode: Object node
+  partition: Partition
+  flow: Flow
+  state: State
+  finalState: Final state
+  initialPseudostate: Initial
+  choice: Choice
+  junction: Junction
+  forkPseudostate: Fork
+  joinPseudostate: Join
+  shallowHistory: History
+  deepHistory: Deep history
+  transition: Transition
+  component: Component
+  artifact: Artifact
+  node: Node
+  componentInstance: Component instance
+  nodeInstance: Node instance
+  object: Object
+  interactionUse: Interaction use
+  foundMessage: Found
+  lostMessage: Lost
+diagram:
+  class: Class diagram
+  useCase: Use case diagram
+  sequence: Sequence diagram
+  activity: Activity diagram
+  stateMachine: State machine diagram
+  component: Component diagram
+  deployment: Deployment diagram
+panel:
+  model: Model
+  properties: Properties
+prop:
+  name: Name
+  type: Kind
+  visibility: Visibility
+  stereotypes: Stereotypes
+  abstract: Abstract
+  declaration: Declaration
+  static: Static
+  read_only: Read-only
+  message_numbers: Show message numbers
+  return_values: Show return values
+  query: Query (changes nothing)
+  end: End
+  role: Role
+  multiplicity: Multiplicity
+  constraints: Constraints
+  navigability: Navigability
+  aggregation: Aggregation
+  display: Display on diagram
+  hide_attributes: Hide attributes
+  hide_operations: Hide operations
+  iconic: Show as circle
+  condition: Condition
+  extension_points: Extension points
+  owner: Owner
+  documentation: Documentation
+  text: Text
+  bounds: Position and size
+  nothing_selected: Nothing selected
+  message_sort: Kind of message
+  arguments: Arguments
+  return_value: Return value
+  operation: Operation
+  represents: Type
+  operator: Operator
+  operands: Operands
+  add_operand: Add operand
+  delete_operand: Delete operand
+  guard: Guard
+  trigger: Trigger
+  effect: Effect
+  entry: Entry
+  do_activity: Do
+  exit: Exit
+  internal_transitions: Internal transitions
+  add_internal_transition: Add internal transition
+  delete_internal_transition: Delete internal transition
+  new_trigger: event
+  regions: Regions
+  add_region: Add region
+  add_regions_stacked: Divide into regions, one below the other
+  add_regions_side_by_side: Divide into regions, side by side
+  delete_region: Delete region
+  covered: Covered lifelines
+  covered_automatic: None ticked – the fragment covers the lifelines of its messages.
+  classifier: Instance of
+  slots: Slots (one "name = value" per line)
+  instance_of_association: Instance of association
+  refers_to: Refers to
+  leaf: Leaf (cannot be specialized or overridden)
+  parameter_kind: Parameter kind
+  value_type: Type of the value
+  object_type: Type
+  in_state: State
+  type_bounds: Bounds
+  default: Default
+  variadic: Variadic (any number of arguments)
+template_kind:
+  type: type
+  value: value
+message_sort:
+  synchronous: synchronous
+  asynchronous: asynchronous
+  reply: reply
+  create: create
+  destroy: destroy
+navigability:
+  unspecified: unspecified
+  navigable: navigable
+  non_navigable: non-navigable
+aggregation:
+  none: none
+  shared: aggregation (◇)
+  composite: composition (◆)
+visibility:
+  public: public
+  protected: protected
+  package: package
+  private: private
+status:
+  modified: Modified
+  saved: Unchanged
+  selected: selected
+  unsaved_file: Not saved
+  exporting: Exporting to Astah …
+  importing: Importing source code …
+  imported: "Imported %{files} files: %{created} new types, %{updated} updated, %{associations} associations."
+  hint: "Wheel: scroll · Ctrl+wheel: zoom · middle button: pan"
+  hint_node: "Click to place the element · Esc: cancel"
+  hint_edge: "Drag from source to target or click both · Esc: cancel"
+canvas:
+  no_diagram: No diagram open. Double-click one or use the model tree's context menu.
+dialog:
+  unsaved: The project has unsaved changes.
+  unsaved_detail: Do you want to save them?
+  save: Save
+  discard: Discard
+  cancel: Cancel
+  open_failed: The project could not be opened.
+  save_failed: The project could not be saved.
+  import_failed: The Astah project could not be imported.
+  import_partial: "%{count} elements of the Astah project were not carried over."
+  import_partial_detail: "UmlCraft does not know these kinds of elements yet: %{kinds}"
+  export_done: The Astah project was exported.
+  export_failed: The Astah project could not be exported.
+  export_partial: "%{count} details of the project could not be carried over to Astah."
+  export_partial_detail: "Astah's API cannot express these:\n%{items}"
+  image_failed: The diagram could not be saved as an image.
+  astah_missing: Exporting to Astah needs an installed Astah.
+  astah_missing_detail: "UmlCraft writes Astah projects through the API of Astah Professional, UML or SysML. One of them must be installed, or the environment variable ASTAH_HOME must point to its install folder; then restart UmlCraft."
+  import_source_failed: The source code could not be imported.
+  import_source_none: No source files found.
+  import_source_none_detail: "The selection contains no files ending in %{extensions}."
+  import_source_partial: "%{count} files could not be imported; the others were."
+  import_source_skipped: "Left out as in Astah: %{items}"
+  syntax_error: "%{file}: syntax error in line %{line}, column %{column}, at „%{token}“"
+  syntax_missing: "%{file}: syntax error in line %{line}, column %{column}, %{token} missing"
+  read_error: "%{file}: %{error}"
+  encoding_guessed: "%{file}: read as %{encoding}"
+  more_files: "… and %{count} more"
+  astah_unlicensed: "Astah refused to save the project because its license check failed. Start Astah once and check its license, then export again."
+export_dropped:
+  comment: Comments not shown on a diagram
+  interaction: Interactions without a diagram
+  message: Messages not shown on their diagram
+  systemBoundary: System boundaries
+  query: Query flag of operations
+  extendCondition: Conditions of extends
+  extendExtensionPoints: Extension points of extends
+  returnParameter: Return parameters
+  parameterDetails: Multiplicity and default value of parameters
+  unmatchedReply: Replies without a call (exported as calls)
+  replyArguments: Arguments of replies
+  messageOperation: Operations called by messages
+  linkAssociation: Associations that links instantiate
+  emptyOperand: Empty operands of combined fragments
+  nestedEnumeration: Nested enumerations (moved to the package)
+  activity: Activities without a diagram
+  activityDiagram: Further diagrams of an activity (Astah has one per activity)
+  activityNode: Activity nodes not shown on their diagram
+  activityEdge: Flows not shown on their diagram
+  partition: Partitions not shown on their diagram
+  mergeNode: Merge nodes (exported as decision and merge nodes)
+  objectNodeType: Types of object nodes that are not classes
+  stateMachine: State machines without a diagram
+  stateMachineDiagram: Further diagrams of a state machine (Astah has one per state machine)
+  state: States not shown on their diagram
+  finalState: Final states not shown on their diagram
+  pseudostate: Pseudostates not shown on their diagram
+  transition: Transitions not shown on their diagram
+  renamed: Elements renamed because of empty or duplicate names
+  details: Stereotypes, tagged values or documentation
+  presentation: Diagram shapes
+  componentDiagram: Component diagrams (exported as class diagrams)
+  deploymentDiagram: Deployment diagrams (exported as class diagrams)
+  nestedComponent: Components, artifacts and nodes inside others (moved to the package)
+  instanceKind: Component and node instances (exported as objects)
+  instance: Instances not shown on a component, deployment or class diagram
+  interactionUse: Interaction uses not shown on their diagram
+  interactionUseReference: References of interaction uses to interactions without a sequence diagram
+  templateParameter: Template parameters of elements other than classes
+  templateParameterBounds: Further bounds of template parameters (only the first is kept)
+  variadicTemplateParameter: Variadic flag of template parameters
+  edgeRoute: Routes of lines (Astah draws them itself)
+  barHeight: Heights of activation bars (Astah sizes them itself)
+  barColor: Colors of activation bars
+  lifelineLength: Lengths of lifelines (Astah sizes them itself)
+  framePosition: Positions of frames
+  extraOperand: Further operands of combined fragments (their messages stay in the first one)
+  region: Regions beyond the second of a state (what they hold goes into the second one)
+  internalTransition: Internal transitions of states not shown on their diagram
+project:
+  untitled: New project
+edit:
+  create: Create
+  connect: Connect
+  move: Move
+  resize: Resize
+  align: Align
+  delete: Delete
+  remove_from_diagram: Remove from diagram
+  properties: Change properties
+  waypoints: Change line route
+  line_style: Change line style
+  line_ends: Attach line ends to the centers
+  labels: Reset label positions
+  show: Show on diagram
+  move_element: Move in model
+  set_slots: Change slot values
+  paste: Paste
+  wrap_in_fragment: Surround with fragment
+  import_source: Import source code
+skipped:
+  method_body: method bodies
+  initializer: initializer blocks
+  local_class: local classes
+  anonymous_class: anonymous classes
+  enum_constant_body: arguments and bodies of enum constants
+  free_member: functions and variables outside classes
+  attribute: C# attributes ([…])
+  delegate: delegates
+  event: events
+  enum_value: values of enumeration literals
+  preprocessor_branch: "#elif and #else branches"
+  generic_alias: aliases of constructed types
+  unknown_owner: definitions for unknown types
+  macro: macro definitions (#define)
+  specialization: template specializations
+  deleted_function: deleted functions (= delete)
+  friend: friend declarations
+  statement: statements that declare nothing
+kind:
+  model: Project
+  package: Package
+  class: Class
+  interface: Interface
+  enumeration: Enumeration
+  dataType: Data type
+  enumerationLiteral: Enumeration literal
+  attribute: Attribute
+  operation: Operation
+  parameter: Parameter
+  templateParameter: Template parameter
+  actor: Actor
+  useCase: Use case
+  extensionPoint: Extension point
+  systemBoundary: System boundary
+  interaction: Interaction
+  lifeline: Lifeline
+  message: Message
+  combinedFragment: Combined fragment
+  interactionOperand: Operand
+  association: Association
+  generalization: Generalization
+  realization: Realization
+  dependency: Dependency
+  include: Include
+  extend: Extend
+  comment: Note
+  diagram: Diagram
+  activity: Activity
+  activityNode: Activity node
+  activityEdge: Flow
+  action: Action
+  initialNode: Initial node
+  activityFinal: Activity final node
+  flowFinal: Flow final node
+  decision: Decision node
+  merge: Merge node
+  fork: Fork node
+  join: Join node
+  objectNode: Object node
+  partition: Partition
+  stateMachine: State machine
+  state: State
+  finalState: Final state
+  pseudostate: Pseudostate
+  transition: Transition
+  region: Region
+  internalTransition: Internal transition
+  initialPseudostate: Initial pseudostate
+  choice: Choice
+  junction: Junction
+  forkPseudostate: Fork
+  joinPseudostate: Join
+  shallowHistory: Shallow history
+  deepHistory: Deep history
+  component: Component
+  artifact: Artifact
+  node: Node
+  instance: Instance
+  componentInstance: Component instance
+  nodeInstance: Node instance
+  object: Object
+  slot: Slot
+  link: Link
+  interactionUse: Interaction use

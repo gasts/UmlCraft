@@ -1,0 +1,314 @@
+# Builds the release packages for Windows, Linux (.tar.gz, .deb, .rpm, AppImage, Flatpak, Snap)
+# and macOS.
+#
+# Pushing a tag `vX.Y.Z` (matching the workspace version) builds everything and creates a draft
+# GitHub release with the packages attached. Running the workflow by hand only builds the packages
+# and keeps them as workflow artifacts, to try packaging without a release.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: version
+        name: Read the workspace version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "umlcraft-app") | .version')
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the workspace version $version"
+            exit 1
+          fi
+          # The Linux packages take their release information from the AppStream metadata.
+          metainfo=packaging/linux/com.umlcraft.app.metainfo.xml
+          if ! grep -q "<release version=\"$version\"" "$metainfo"; then
+            echo "::error::$metainfo lists no <release version=\"$version\">"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  licenses:
+    name: Third-party licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+      - run: cargo about generate --locked about.hbs -o THIRD-PARTY-LICENSES.html
+      - uses: actions/upload-artifact@v7
+        with:
+          name: licenses
+          path: THIRD-PARTY-LICENSES.html
+
+  build:
+    name: Package (${{ matrix.name }})
+    needs: [version, licenses]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            targets: x86_64-pc-windows-msvc
+          # The oldest available Ubuntu keeps the glibc requirement low.
+          - name: Linux x64
+            os: ubuntu-22.04
+            targets: x86_64-unknown-linux-gnu
+          - name: macOS universal
+            os: macos-latest
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install GPUI build dependencies
+        if: runner.os == 'Linux'
+        run: bash packaging/linux/install-build-deps.sh
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.targets }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: licenses
+
+      - name: Build
+        run: |
+          IFS=, read -ra targets <<< "${{ matrix.targets }}"
+          for target in "${targets[@]}"; do
+            cargo build --release --locked -p umlcraft-app --target "$target"
+          done
+
+      - name: Package for Windows
+        if: runner.os == 'Windows'
+        run: |
+          name="UmlCraft-$VERSION-windows-x64"
+          mkdir -p "dist/$name"
+          cp target/x86_64-pc-windows-msvc/release/umlcraft.exe "dist/$name/"
+          cp README.md LICENSE-MIT LICENSE-APACHE THIRD-PARTY-LICENSES.html "dist/$name/"
+          (cd dist && 7z a -tzip "$name.zip" "$name")
+
+      - name: Package for Linux
+        if: runner.os == 'Linux'
+        run: |
+          name="UmlCraft-$VERSION-linux-x64"
+          mkdir -p "dist/$name"
+          cp target/x86_64-unknown-linux-gnu/release/umlcraft "dist/$name/"
+          cp README.md LICENSE-MIT LICENSE-APACHE THIRD-PARTY-LICENSES.html "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+
+      - name: Keep the Linux binary for the Linux packages
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-binary
+          path: target/x86_64-unknown-linux-gnu/release/umlcraft
+          if-no-files-found: error
+
+      - name: Package for macOS
+        if: runner.os == 'macOS'
+        run: |
+          app="dist/dmg/UmlCraft.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          lipo -create -output "$app/Contents/MacOS/umlcraft" \
+            target/aarch64-apple-darwin/release/umlcraft \
+            target/x86_64-apple-darwin/release/umlcraft
+          sed "s/@VERSION@/$VERSION/g" packaging/macos/Info.plist > "$app/Contents/Info.plist"
+          cp LICENSE-MIT LICENSE-APACHE THIRD-PARTY-LICENSES.html "$app/Contents/Resources/"
+          # Ad-hoc signature: not a Developer ID, but Apple Silicon refuses unsigned code.
+          codesign --force --sign - "$app"
+          ln -s /Applications dist/dmg/Applications
+          hdiutil create -volname UmlCraft -srcfolder dist/dmg -format UDZO \
+            "dist/UmlCraft-$VERSION-macos-universal.dmg"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package-${{ runner.os }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.dmg
+          if-no-files-found: error
+
+  # Packs the Linux binary from the build job, so every package runs the same program.
+  linux-packages:
+    name: Package (Linux deb, rpm, AppImage)
+    needs: [version, build]
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      NFPM_VERSION: 2.47.0
+      NFPM_SHA256: 3f1cf344bd0b57373ca55636a78c08b0491f7293d609a456a9ac3b0b150fda97
+      APPIMAGETOOL_VERSION: 1.9.1
+      APPIMAGETOOL_SHA256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+      APPIMAGE_RUNTIME_VERSION: "20251108"
+      APPIMAGE_RUNTIME_SHA256: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+      # appimagetool is an AppImage itself; the runner has no FUSE to mount it.
+      APPIMAGE_EXTRACT_AND_RUN: 1
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux-binary
+          path: dist/binary
+      - uses: actions/download-artifact@v8
+        with:
+          name: licenses
+
+      - name: Install the packaging tools
+        run: |
+          curl -sSfL -o nfpm.deb \
+            "https://github.com/goreleaser/nfpm/releases/download/v$NFPM_VERSION/nfpm_${NFPM_VERSION}_amd64.deb"
+          echo "$NFPM_SHA256  nfpm.deb" | sha256sum -c
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ./nfpm.deb librsvg2-bin
+          curl -sSfL -o appimagetool \
+            "https://github.com/AppImage/appimagetool/releases/download/$APPIMAGETOOL_VERSION/appimagetool-x86_64.AppImage"
+          echo "$APPIMAGETOOL_SHA256  appimagetool" | sha256sum -c
+          sudo install -m755 appimagetool /usr/local/bin/appimagetool
+          curl -sSfL -o "$RUNNER_TEMP/appimage-runtime" \
+            "https://github.com/AppImage/type2-runtime/releases/download/$APPIMAGE_RUNTIME_VERSION/runtime-x86_64"
+          echo "$APPIMAGE_RUNTIME_SHA256  $RUNNER_TEMP/appimage-runtime" | sha256sum -c
+          echo "APPIMAGE_RUNTIME=$RUNNER_TEMP/appimage-runtime" >> "$GITHUB_ENV"
+
+      - name: Package deb and rpm
+        run: |
+          bash packaging/linux/install-desktop-files.sh dist/binary/umlcraft dist/linux/usr
+          for format in deb rpm; do
+            nfpm package -f packaging/linux/nfpm.yaml -p "$format" \
+              -t "dist/UmlCraft-$VERSION-linux-x64.$format"
+          done
+
+      - name: Package AppImage
+        run: |
+          bash packaging/linux/appimage.sh dist/binary/umlcraft \
+            "dist/UmlCraft-$VERSION-linux-x64.AppImage"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package-linux-packages
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.AppImage
+          if-no-files-found: error
+
+  flatpak:
+    name: Package (Linux Flatpak)
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
+      options: --privileged
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux-binary
+          path: dist/binary
+
+      - name: Package Flatpak
+        run: |
+          flatpak-builder --disable-rofiles-fuse --force-clean --repo=repo build \
+            packaging/linux/flatpak/com.umlcraft.app.yml
+          # The runtime repository lets `flatpak install` fetch the runtime from Flathub.
+          flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            repo "dist/UmlCraft-$VERSION-linux-x64.flatpak" com.umlcraft.app
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package-linux-flatpak
+          path: dist/*.flatpak
+          if-no-files-found: error
+
+  snap:
+    name: Package (Linux Snap)
+    needs: [version, build]
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux-binary
+          path: dist/binary
+
+      # snapcraft builds in a container that sees only its project folder.
+      - name: Put the binary into the snap project
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends librsvg2-bin
+          bash packaging/linux/install-desktop-files.sh dist/binary/umlcraft \
+            packaging/linux/snap-root/usr
+
+      - id: snapcraft
+        uses: snapcore/action-build@v1
+        with:
+          path: packaging/linux
+
+      - name: Name the snap like the other packages
+        run: |
+          mkdir -p dist
+          mv "${{ steps.snapcraft.outputs.snap }}" "dist/UmlCraft-$VERSION-linux-x64.snap"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package-linux-snap
+          path: dist/*.snap
+          if-no-files-found: error
+
+  publish:
+    name: Draft release
+    if: github.ref_type == 'tag'
+    needs: [version, build, linux-packages, flatpak, snap]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: package-*
+          merge-multiple: true
+          path: dist
+      - name: Create the draft release
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+            --title "UmlCraft $VERSION" \
+            --notes-file ../packaging/release-notes.md --generate-notes \
+            *

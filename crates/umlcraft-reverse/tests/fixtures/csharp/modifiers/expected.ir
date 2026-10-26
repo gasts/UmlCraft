@@ -1,0 +1,33 @@
+== Modifiers.cs
+import System.*
+namespace Modifiers
+  package class Defaults (line 5)
+    private field field : int
+    private operation Method() : void
+    private class Inner (line 9)
+  public class abstract Visibilities (line 12)
+    public field a : int
+    protected field b : int
+    package field c : int
+    private field d : int
+    protected field e : int
+    private field f : int
+    public field static readonly Max : int = 10
+    public field static readonly Name : string = "v"
+    public field static Count : int
+    public operation abstract Run() : void
+    public operation Step() : void
+    public operation leaf ToString() : string
+    public operation static Reset() : void
+    public operation Old() : void
+  public class leaf Leaf (line 33)
+  public class static Helpers (line 35)
+    public operation static Twice(x : int) : int
+  private class Local (line 40)
+  public interface IService (line 42)
+    public operation abstract Start() : void
+    public operation Stop() : void
+    public operation static Create() : void
+skipped method_body × 8
+skipped attribute × 2
+skipped event × 1

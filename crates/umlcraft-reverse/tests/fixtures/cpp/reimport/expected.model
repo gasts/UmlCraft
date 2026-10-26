@@ -1,0 +1,10 @@
+package model
+  enumeration Kind Public
+    literal A
+    literal B
+    literal C
+  class Order Public
+    attribute + number : int
+    attribute + added : int
+    operation + ship(days : int) : void {query}
+    operation + ship(days : int) : void

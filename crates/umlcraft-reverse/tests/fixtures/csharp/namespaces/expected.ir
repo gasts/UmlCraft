@@ -1,0 +1,14 @@
+== FileScoped.cs
+namespace Shop.Delivery
+  public class Parcel (line 3)
+    private field catalog : Catalog
+== Shop.cs
+namespace Shop
+  public class Catalog (line 3)
+  namespace Orders
+    public class Order (line 9)
+      private field catalog : Catalog
+namespace Shop.Billing
+  public class Invoice (line 18)
+    private field order : Orders.Order
+public class Global (line 24)

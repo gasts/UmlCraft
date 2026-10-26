@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=UmlCraft
+GenericName=UML Modeling Tool
+GenericName[de]=UML-Modellierungswerkzeug
+Comment=Draw UML diagrams, open Astah projects and import source code
+Comment[de]=UML-Diagramme zeichnen, Astah-Projekte öffnen und Quellcode importieren
+Exec=umlcraft %f
+Icon=com.umlcraft.app
+Terminal=false
+Categories=Development;
+Keywords=UML;diagram;class;sequence;Astah;
+MimeType=application/x-umlcraft;
+StartupWMClass=com.umlcraft.app

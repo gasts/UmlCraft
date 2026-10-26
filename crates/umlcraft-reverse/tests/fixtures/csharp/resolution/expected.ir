@@ -1,0 +1,28 @@
+== App.cs
+import Acme.Lib.*
+import Fmt = Acme.Lib.Text.Formatter
+import Txt = Acme.Lib.Text
+import static System.Math.*
+namespace Acme.App
+  public class Shop (line 9)
+    private field price : Money
+    private field formatter : Fmt
+    private field aliased : Txt.Formatter
+    private field address : Customer.Address
+    private field second : Lib.Text.Formatter
+    private field third : Acme.Lib.Money
+    private field prices : List<Money>
+    private field opened : DateTime
+    private field missing : Missing
+    private field widget : Other.Things.Widget
+  namespace Inner
+    public class Clerk (line 34)
+      private field shop : Shop
+== Lib.cs
+namespace Acme.Lib
+  public class Money (line 3)
+  public class Customer (line 7)
+    public class Address (line 9)
+namespace Acme.Lib.Text
+  public class Formatter (line 17)
+skipped generic_alias × 1

@@ -1,0 +1,18 @@
+== kinds.py
+namespace kinds
+  import abc.ABC
+  import abc.ABCMeta
+  import enum.Enum
+  import enum.IntEnum
+  import typing.Protocol
+  public class Plain (line 6)
+  public interface Shape (line 10)
+    public operation area() : float
+  public enum Color (line 14)
+    literal RED
+    literal GREEN
+  public enum Level (line 19)
+    literal LOW
+  public class abstract Base (line 23)
+  public class abstract Meta (line 27)
+skipped enum_value × 3

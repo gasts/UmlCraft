@@ -1,0 +1,4 @@
+== Fine.cs
+namespace Broken
+  public class Fine (line 3)
+failed Broken.cs at 5:19 near "="

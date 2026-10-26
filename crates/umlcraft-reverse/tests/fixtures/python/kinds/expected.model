@@ -1,0 +1,11 @@
+package kinds
+  class Plain Public
+  interface Shape Public
+    operation + area() : float
+  enumeration Color Public
+    literal RED
+    literal GREEN
+  enumeration Level Public
+    literal LOW
+  class Base abstract Public
+  class Meta abstract Public

@@ -1,0 +1,3 @@
+namespace broken {
+class Fine {};
+}

@@ -1,0 +1,12 @@
+package Shop
+  package Delivery
+    class Parcel Public
+      association Shop.Delivery.Parcel NonNavigable -- Shop.Catalog Navigable catalog Private
+  class Catalog Public
+  package Orders
+    class Order Public
+      association Shop.Orders.Order NonNavigable -- Shop.Catalog Navigable catalog Private
+  package Billing
+    class Invoice Public
+      association Shop.Billing.Invoice NonNavigable -- Shop.Orders.Order Navigable order Private
+class Global Public

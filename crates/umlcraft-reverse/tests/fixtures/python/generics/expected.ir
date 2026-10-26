@@ -1,0 +1,16 @@
+== generics.py
+namespace generics
+  import typing.Generic
+  import typing.Protocol
+  import typing.TypeVar
+  public class Box<T> (line 7)
+    public field item : T
+  public class Pair<K, T> (line 11)
+    public field key : K
+    public field value : T
+  public interface Reader<T> (line 16)
+    public operation read() : T
+  public class Modern<T, Ts...> (line 20)
+    public field item : T
+    public operation first<U>(u : U) : U
+skipped free_member × 2

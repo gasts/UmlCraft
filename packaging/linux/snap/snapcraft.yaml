@@ -1,0 +1,27 @@
+# Snap of the Linux binary that the release workflow builds. The workflow first installs it with
+# the desktop integration into packaging/linux/snap-root/usr, then runs snapcraft in
+# packaging/linux. Name, summary, description, version and icon come from the AppStream
+# metadata.
+#
+# The GNOME extension brings the libraries the binary needs and, through mesa-2404, the
+# Vulkan drivers. Starting Astah's own Java for the Astah export is not possible from inside.
+name: umlcraft
+base: core24
+adopt-info: umlcraft
+grade: stable
+confinement: strict
+license: MIT OR Apache-2.0
+
+apps:
+  umlcraft:
+    command: usr/bin/umlcraft
+    common-id: com.umlcraft.app
+    extensions: [gnome]
+    plugs: [home]
+
+parts:
+  umlcraft:
+    plugin: dump
+    source: snap-root
+    parse-info: [usr/share/metainfo/com.umlcraft.app.metainfo.xml]
+    stage-packages: [libxkbcommon-x11-0]

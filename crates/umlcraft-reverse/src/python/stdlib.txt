@@ -1,0 +1,72 @@
+builtins	BaseException	c		-
+builtins	Exception	c		-
+builtins	bytearray	c		-
+builtins	dict	c	K,V	M
+builtins	frozenset	c	T	Cu
+builtins	list	c	T	Co
+builtins	memoryview	c		-
+builtins	object	c		-
+builtins	range	c		-
+builtins	set	c	T	Cu
+builtins	tuple	c	Ts	-
+builtins	type	c	T	-
+collections	ChainMap	c	K,V	M
+collections	Counter	c	T	M
+collections	OrderedDict	c	K,V	M
+collections	defaultdict	c	K,V	M
+collections	deque	c	T	Co
+collections.abc	Callable	c	Ts	-
+collections.abc	Collection	c	T	C
+collections.abc	Iterable	c	T	C
+collections.abc	Iterator	c	T	C
+collections.abc	Mapping	c	K,V	M
+collections.abc	MutableMapping	c	K,V	M
+collections.abc	MutableSequence	c	T	Co
+collections.abc	MutableSet	c	T	Cu
+collections.abc	Sequence	c	T	Co
+collections.abc	Set	c	T	Cu
+datetime	date	c		-
+datetime	datetime	c		-
+datetime	time	c		-
+datetime	timedelta	c		-
+datetime	timezone	c		-
+decimal	Decimal	c		-
+enum	Enum	c		-
+enum	Flag	c		-
+enum	IntEnum	c		-
+enum	IntFlag	c		-
+enum	StrEnum	c		-
+pathlib	Path	c		-
+pathlib	PurePath	c		-
+typing	AbstractSet	c	T	Cu
+typing	Annotated	c	Ts	-
+typing	Any	c		-
+typing	Callable	c	Ts	-
+typing	ClassVar	c	T	-
+typing	Collection	c	T	C
+typing	DefaultDict	c	K,V	M
+typing	Deque	c	T	Co
+typing	Dict	c	K,V	M
+typing	Final	c	T	-
+typing	FrozenSet	c	T	Cu
+typing	Generic	c	Ts	-
+typing	Iterable	c	T	C
+typing	Iterator	c	T	C
+typing	List	c	T	Co
+typing	Literal	c	Ts	-
+typing	Mapping	c	K,V	M
+typing	MutableMapping	c	K,V	M
+typing	MutableSequence	c	T	Co
+typing	MutableSet	c	T	Cu
+typing	NamedTuple	c		-
+typing	Optional	c	T	O
+typing	OrderedDict	c	K,V	M
+typing	Protocol	c	Ts	-
+typing	Sequence	c	T	Co
+typing	Set	c	T	Cu
+typing	Tuple	c	Ts	-
+typing	Type	c	T	-
+typing	TypeVar	c		-
+typing	TypedDict	c		-
+typing	Union	c	Ts	-
+uuid	UUID	c		-

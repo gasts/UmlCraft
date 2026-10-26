@@ -1,0 +1,40 @@
+package Shop
+  class Order Public
+    attribute - note : string
+    attribute - placed : DateTime
+    attribute - count : int
+    association Shop.Order NonNavigable -- Shop.Customer Navigable customer Private
+    association Shop.Order NonNavigable -- Shop.Customer Navigable payer Private [0..1]
+    association Shop.Order NonNavigable -- Shop.Line Navigable lines Private [*] {ordered}
+    association Shop.Order NonNavigable -- Shop.Tag Navigable tags Private [*] {unique}
+    association Shop.Order NonNavigable -- Shop.Tag Navigable sorted Private [*] {ordered} {unique}
+    association Shop.Order NonNavigable qualifier key : string -- Shop.Line Navigable byCode Private
+    association Shop.Order NonNavigable -- Shop.Line Navigable history Private [*]
+    association Shop.Order NonNavigable -- Shop.Line Navigable frozen Private [*] {ordered}
+    association Shop.Order NonNavigable -- Shop.Discount Navigable discount Private [0..1]
+    association Shop.Order NonNavigable -- Shop.Customer Navigable Owner Public
+    association Shop.Order NonNavigable -- Shop.Line Navigable Items Public [*] {ordered} {readOnly}
+  class Customer Public
+  class Line Public
+  class Tag Public
+  class Discount Public
+package System
+  package Collections
+    package Generic
+      class List Public
+        template T
+      class HashSet Public
+        template T
+      class SortedSet Public
+        template T
+      class Dictionary Public
+        template TKey
+        template TValue
+      interface IReadOnlyList Public
+        template T
+    package Immutable
+      class ImmutableArray Public
+        template T
+  class Nullable Public
+    template T
+  class DateTime Public

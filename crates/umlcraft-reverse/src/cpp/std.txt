@@ -1,0 +1,57 @@
+std	any	c		-
+std	array	c	T,N	Co
+std	atomic	c	T	-
+std	basic_string	c	T	-
+std	byte	c		-
+std	deque	c	T	Co
+std	exception	c		-
+std	forward_list	c	T	Co
+std	function	c	F	-
+std	ifstream	c		-
+std	int16_t	c		-
+std	int32_t	c		-
+std	int64_t	c		-
+std	int8_t	c		-
+std	iostream	c		-
+std	istream	c		-
+std	list	c	T	Co
+std	logic_error	c		-
+std	map	c	K,V	M
+std	multimap	c	K,V	M
+std	multiset	c	T	Co
+std	mutex	c		-
+std	nullptr_t	c		-
+std	ofstream	c		-
+std	optional	c	T	O
+std	ostream	c		-
+std	pair	c	T1,T2	-
+std	priority_queue	c	T	C
+std	ptrdiff_t	c		-
+std	queue	c	T	Co
+std	runtime_error	c		-
+std	set	c	T	Cou
+std	shared_ptr	c	T	O
+std	size_t	c		-
+std	stack	c	T	Co
+std	string	c		-
+std	string_view	c		-
+std	stringstream	c		-
+std	thread	c		-
+std	tuple	c	Ts	-
+std	u16string	c		-
+std	u32string	c		-
+std	u8string	c		-
+std	uint16_t	c		-
+std	uint32_t	c		-
+std	uint64_t	c		-
+std	uint8_t	c		-
+std	unique_ptr	c	T	W
+std	unordered_map	c	K,V	M
+std	unordered_multimap	c	K,V	M
+std	unordered_multiset	c	T	C
+std	unordered_set	c	T	Cu
+std	variant	c	Ts	-
+std	vector	c	T	Co
+std	weak_ptr	c	T	O
+std	wstring	c		-
+std	wstring_view	c		-

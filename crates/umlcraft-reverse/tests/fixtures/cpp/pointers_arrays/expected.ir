@@ -1,0 +1,13 @@
+== pointers.hpp
+public class Node (line 1)
+  public field next : Node*
+  public field self : Node&
+  public field list : Node**
+  public field buffer : int[16]
+  public field name : char[32 + 1]
+  public field label : const char*
+  public field a : int*
+  public field b : int
+  public field c : int& = b
+  public operation moved(other : Node&&) : Node&&
+  public operation fill(values : int[], count : int,  : ...) : void

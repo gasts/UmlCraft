@@ -1,0 +1,10 @@
+package model
+  enumeration Kind Public
+    literal A
+    literal B
+    literal C
+  class Order Public
+    attribute + number : str
+    attribute + added : int
+    operation + ship(days : int) : None
+    operation + ship_later(days : int) : None
