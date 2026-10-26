@@ -3,7 +3,7 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
-## Unreleased
+## 0.7.0 – 2026-10-26
 
 - **New app icon**: an initial state with its transition into a state, as in a state machine
   diagram. `umlcraft.exe` now carries it in Explorer, the taskbar and its windows, and the
