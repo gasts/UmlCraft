@@ -3,7 +3,7 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
-## Unreleased
+## 0.6.0 – 2026-10-26
 
 - **Linux packages:** besides the `.tar.gz`, each release has a `.deb` (Debian, Ubuntu), an
   `.rpm` (Fedora, openSUSE), an AppImage, a Flatpak and a Snap. They add UmlCraft with its icon
