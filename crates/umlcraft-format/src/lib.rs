@@ -94,6 +94,7 @@ pub fn from_str(json: &str) -> Result<Model, FormatError> {
         migrate(&mut value)?;
         value["formatVersion"] = Value::from(index as u32 + 2);
     }
+    rename_language_tags(&mut value);
     let file: ProjectFile = serde_json::from_value(value)?;
     let model = Model::from_records(ModelRecords {
         root: file.root,
@@ -101,6 +102,28 @@ pub fn from_str(json: &str) -> Result<Model, FormatError> {
         views: file.views,
     })?;
     Ok(model)
+}
+
+/// Files written by UmlCraft 0.7 and earlier keep the tagged values of languages under Astah's keys
+/// (`jude.java.transient`); UmlCraft's are `java.`, `csharp.` and `cpp.`. Renaming them needs
+/// no new format version, since older versions read either.
+fn rename_language_tags(value: &mut Value) {
+    const RENAMES: [(&str, &str); 3] =
+        [("jude.java.", "java."), ("jude.c_sharp.", "csharp."), ("jude.c_plus.", "cpp.")];
+    let Some(elements) = value.get_mut("elements").and_then(Value::as_array_mut) else { return };
+    let tags = elements
+        .iter_mut()
+        .filter_map(|e| e.get_mut("taggedValues").and_then(Value::as_array_mut))
+        .flatten();
+    for tag in tags {
+        let Some(key) = tag.get("key").and_then(Value::as_str) else { continue };
+        let renamed = RENAMES
+            .iter()
+            .find_map(|(old, new)| key.strip_prefix(old).map(|rest| format!("{new}{rest}")));
+        if let Some(renamed) = renamed {
+            tag["key"] = Value::from(renamed);
+        }
+    }
 }
 
 /// Writes atomically: the file is written next to the target and then renamed over it, so a

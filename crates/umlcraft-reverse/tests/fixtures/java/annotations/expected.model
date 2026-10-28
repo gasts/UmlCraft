@@ -1,10 +1,10 @@
 package annotations
   class Annotated Public
-    @jude.java.annotations = "@Deprecated\n@SuppressWarnings({\"unchecked\", \"rawtypes\"})"
+    @java.annotations = "@Deprecated\n@SuppressWarnings({\"unchecked\", \"rawtypes\"})"
     attribute - old : int
-      @jude.java.annotations = "@Deprecated"
+      @java.annotations = "@Deprecated"
     operation + toString() : String
-      @jude.java.annotations = "@Override"
+      @java.annotations = "@Override"
     operation + take(value : int) : void
 package java
   package lang

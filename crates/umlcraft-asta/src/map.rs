@@ -36,6 +36,8 @@ pub struct Imported {
 
 /// Astah's default fill color, not worth carrying over as an explicit style.
 const DEFAULT_FILL: &str = "#FFFFCC";
+/// How far right of its first stored point Astah draws the loop of a message to self.
+const SELF_LOOP: f32 = 49.9;
 
 /// Leftmost and topmost position of imported diagram content.
 const MARGIN: f32 = 20.0;
@@ -177,11 +179,23 @@ fn action_type(r: Reader<'_>, message: ObjId) -> Option<i64> {
     r.g.field(r.obj(message, "action")?, "actionType").and_then(Value::as_i64)
 }
 
+/// Astah's prefixes of its language profiles' tagged values and UmlCraft's names for them.
+const LANGUAGE_TAGS: [(&str, &str); 3] =
+    [("jude.java.", "java."), ("jude.c_sharp.", "csharp."), ("jude.c_plus.", "cpp.")];
+
+/// A language profile's tagged value under UmlCraft's name: `jude.java.transient` becomes
+/// `java.transient`. Other keys stay as they are.
+fn neutral_tag(key: &str) -> String {
+    LANGUAGE_TAGS
+        .iter()
+        .find_map(|(astah, ours)| key.strip_prefix(astah).map(|rest| format!("{ours}{rest}")))
+        .unwrap_or_else(|| key.to_owned())
+}
+
 /// Tagged values Astah uses for itself. Those of its language profiles stay: they hold
 /// modifiers such as Java's `transient` (`jude.java.transient`), which UML has no place for.
 fn is_internal_tag(key: &str) -> bool {
-    let profile =
-        ["jude.java.", "jude.c_sharp.", "jude.c_plus."].iter().any(|p| key.starts_with(p));
+    let profile = LANGUAGE_TAGS.iter().any(|(astah, _)| key.starts_with(astah));
     (key.starts_with("jude.") && !profile)
         || matches!(key, "hiddenDependency" | "matrix_access_type")
 }
@@ -389,7 +403,7 @@ impl Importer<'_> {
             .tagged_values(object)
             .into_iter()
             .filter(|(key, _)| !key.is_empty() && !is_internal_tag(key))
-            .map(|(key, value)| TaggedValue { key, value })
+            .map(|(key, value)| TaggedValue { key: neutral_tag(&key), value })
             .collect();
         data.documentation = self.r.text(object, "definition");
         data
@@ -471,12 +485,20 @@ impl Importer<'_> {
                 | "UComponentImp" | "UArtifactImp" | "UNodeImp" => {
                     // Anonymous classifiers bind a template to arguments; they live on as type
                     // expressions such as `List<Projekt>` (see `type_of`), and as bound classes
-                    // where a diagram shows them.
+                    // where a diagram shows them, a lifeline represents them (`baseInv`) or a
+                    // relationship ends at them (`implements Comparable<Order>`).
                     let bound = !self.r.list(child, "templateBinding").is_empty();
-                    if bound
-                        && self.r.name(child).is_empty()
-                        && self.r.list(child, "presentation").is_empty()
-                    {
+                    let referenced = [
+                        "presentation",
+                        "baseInv",
+                        "supplierDependency",
+                        "clientDependency",
+                        "specialization",
+                        "generalization",
+                    ]
+                    .iter()
+                    .any(|field| !self.r.list(child, field).is_empty());
+                    if bound && self.r.name(child).is_empty() && !referenced {
                         continue;
                     }
                     // Template parameters are classifiers owned by a template parameter; they
@@ -575,6 +597,12 @@ impl Importer<'_> {
         };
         let stereotypes = self.r.stereotypes(object);
         let has = |s: &str| stereotypes.iter().any(|t| t == s);
+        let enum_first = stereotypes.first().is_some_and(|s| s == "enum");
+        let constants = self
+            .r
+            .list(object, "structuralFeature")
+            .iter()
+            .any(|&a| self.r.stereotypes(a).iter().any(|s| s == "enum constant"));
         match self.r.class(object) {
             "UUseCaseImp" => (ElementKind::UseCase(props), &[]),
             "UComponentImp" => (ElementKind::Component(props), &[]),
@@ -585,10 +613,14 @@ impl Importer<'_> {
             _ if has("interface") => (ElementKind::Interface(props), &["interface"]),
             _ if has("actor") => (ElementKind::Actor(props), &["actor"]),
             _ if has("enumeration") => (ElementKind::Enumeration(props), &["enumeration"]),
+            // A Java enum imported by Astah: an enumeration when «enum» comes first and there
+            // are «enum constant»s. Otherwise a class, which shows «enum» only in front.
+            _ if enum_first && constants => (ElementKind::Enumeration(props), &["enum"]),
             _ if has("dataType") || has("datatype") => {
                 (ElementKind::DataType(props), &["dataType", "datatype"])
             }
-            _ => (ElementKind::Class(props), &[]),
+            _ if enum_first => (ElementKind::Class(props), &[]),
+            _ => (ElementKind::Class(props), &["enum"]),
         }
     }
 
@@ -830,7 +862,13 @@ impl Importer<'_> {
                 self.model.get(owner).map(|e| e.kind()),
                 Some(ElementKind::Enumeration(_))
             );
-            let kind = if owner_is_enum {
+            // In a Java enum only the «enum constant»s are literals.
+            let java_enum = self
+                .r
+                .obj(object, "owner")
+                .is_some_and(|o| self.r.stereotypes(o).first().is_some_and(|s| s == "enum"));
+            let constant = self.r.stereotypes(object).iter().any(|s| s == "enum constant");
+            let kind = if owner_is_enum && (constant || !java_enum) {
                 ElementKind::EnumerationLiteral
             } else {
                 ElementKind::Attribute(AttributeProps {
@@ -845,7 +883,8 @@ impl Importer<'_> {
                     ),
                 })
             };
-            let data = self.data(object, kind, &[]);
+            let literal = matches!(kind, ElementKind::EnumerationLiteral);
+            let data = self.data(object, kind, if literal { &["enum constant"] } else { &[] });
             self.create(owner, data, Some(object));
             return;
         }
@@ -1263,6 +1302,13 @@ impl Importer<'_> {
             let off = |field| self.r.g.field(object, field).and_then(Value::as_bool) == Some(false);
             props.hide_message_numbers = kind == DiagramKind::Sequence && off("indexVisible");
             props.hide_return_values = kind == DiagramKind::Sequence && off("ReturnValueVisible");
+            props.flat_message_numbers = kind == DiagramKind::Sequence
+                && self.r.g.field(object, "flatIndex").and_then(Value::as_bool) == Some(true);
+            props.hide_frame = kind == DiagramKind::Sequence
+                && self.r.list(object, "presentation").into_iter().any(|p| {
+                    self.r.class(p) == "FramePresentation"
+                        && self.r.g.field(p, "visibility").and_then(Value::as_bool) == Some(false)
+                });
         }
         let Some(diagram) = self.create(owner, data, Some(object)) else { return };
         self.presentations(diagram, kind, object);
@@ -1493,6 +1539,13 @@ impl Importer<'_> {
         {
             style.fill = fill.to_ascii_lowercase().parse().ok();
         }
+        // Astah stores a font size of its own with `font.size.auto` false.
+        style.font_size = self
+            .r
+            .style(p, "font.size")
+            .filter(|_| self.r.style(p, "font.size.auto").as_deref() == Some("false"))
+            .and_then(|s| s.parse::<f32>().ok())
+            .filter(|&size| size > 0.0 && size != scene::FONT_SIZE);
         style
     }
 
@@ -1681,12 +1734,22 @@ impl Importer<'_> {
             .and_then(|l| l.bounds())
             .map_or(first.x, |head| head.center().x);
         let mut presentation = Presentation::message(element, source, target, first.y);
-        if let Shape::Message { end_y, gate_x: g, labels, .. } = &mut presentation.shape {
+        if let Shape::Message { end_y, gate_x: g, loop_x, labels, .. } = &mut presentation.shape {
             if (last.y - first.y).abs() > 1e-3 {
                 *end_y = Some(last.y);
             }
             *g = gate_x;
+            // A loop to self dragged wider or narrower than Astah's 40 beyond its start.
+            if source == target && gate_x.is_none() && points.len() == 4 {
+                let width = points[1].x - points[0].x;
+                if (width - SELF_LOOP).abs() > 0.5 {
+                    *loop_x = Some(points[1].x - center);
+                }
+            }
             // A label moved by hand, relative to the sender's lifeline at the message's height.
+            // Astah draws it `localMovement` away from its own place: across from the stored
+            // `location`, which older versions left stale in height, and up from the label's
+            // place above the line.
             labels.name = r.obj(p, "namePresentation").and_then(|label| {
                 let moved = r.obj(label, "localMovement").and_then(|l| r.point(l))?;
                 if moved.x.abs() < 1e-3 && moved.y.abs() < 1e-3 {
@@ -1695,7 +1758,7 @@ impl Importer<'_> {
                 let at = r.obj(label, "location").and_then(|l| r.point(l))?;
                 Some(Point::new(
                     at.x + moved.x + shift.x - center,
-                    at.y + moved.y + shift.y - first.y,
+                    moved.y - umlcraft_notation::sequence::LABEL_ABOVE,
                 ))
             });
         }
@@ -1768,16 +1831,11 @@ impl Importer<'_> {
         let r = self.r;
         let class = r.class(p);
         let element = match class {
-            // The frame of a class, use case, component or deployment diagram, when shown, is a
-            // node presentation of the diagram.
+            // The frame of a diagram other than a sequence diagram, when shown, is a node
+            // presentation of the diagram.
             "FramePresentation"
-                if matches!(
-                    kind,
-                    DiagramKind::Class
-                        | DiagramKind::UseCase
-                        | DiagramKind::Component
-                        | DiagramKind::Deployment
-                ) && r.g.field(p, "visibility").and_then(Value::as_bool) == Some(true) =>
+                if kind != DiagramKind::Sequence
+                    && r.g.field(p, "visibility").and_then(Value::as_bool) == Some(true) =>
             {
                 diagram
             }
@@ -1815,6 +1873,13 @@ impl Importer<'_> {
             style.auto_size = scene::is_boxed_classifier(&element_kind)
                 && r.g.field(p, "doAutoResize").and_then(Value::as_bool) == Some(true);
         }
+        if class == "RectPresentation" {
+            style.name_offset = self.boundary_name(p).map(|(_, at)| at);
+        }
+        // Astah never breaks a use case's name at spaces; it widens the ellipse instead.
+        if class == "UseCasePresentation" {
+            style.auto_size = true;
+        }
         // Instances may hide their name or classifier, objects their slots.
         if matches!(
             class,
@@ -1827,6 +1892,10 @@ impl Importer<'_> {
             style.hide_instance_type = off("instanceTypeVisibility");
             style.hide_attributes =
                 class == "ObjectClassPresentation" && off("allAttributeVisibility");
+            style.hide_empty_slots =
+                class == "ObjectClassPresentation" && off("noValueAttributeVisibility");
+            style.auto_size = class == "ObjectClassPresentation"
+                && r.g.field(p, "doAutoResize").and_then(Value::as_bool) == Some(true);
         }
         // Orthogonal states keep where the lines between their regions go, as distances from
         // their top edge (regions one below the other) or left edge (side by side).
@@ -1883,21 +1952,28 @@ impl Importer<'_> {
     /// Astah has no system boundary: on a use case diagram it is a rectangle, and a text at its
     /// top edge gives the name.
     fn system_boundary(&mut self, diagram: Id, p: ObjId) -> Option<Id> {
-        /// How far below the rectangle's top the name's text may start.
+        let name = self.boundary_name(p).map(|(text, _)| text).unwrap_or_default();
+        let owner = self.model.get(diagram)?.owner()?;
+        self.create(owner, ElementData::new(name, ElementKind::SystemBoundary), None)
+    }
+
+    /// The text that names the rectangle `p`, and where its box lies relative to the
+    /// rectangle's top left: the topmost text over the rectangle that starts at most 40 above
+    /// or below its top.
+    fn boundary_name(&self, p: ObjId) -> Option<(String, Point)> {
         const NAME_ZONE: f32 = 40.0;
         let rect = self.rect(p)?;
         let texts = self.r.obj(p, "diagram").map(|d| self.r.list(d, "presentation"));
-        let name = texts
+        texts
             .unwrap_or_default()
             .into_iter()
             .filter(|&t| self.r.class(t) == "TextPresentation")
             .filter_map(|t| Some((t, self.rect(t)?)))
-            .filter(|(_, b)| rect.contains(b.center()) && b.y - rect.y < NAME_ZONE)
+            .filter(|(_, b)| {
+                (rect.x..=rect.right()).contains(&b.center().x) && (b.y - rect.y).abs() < NAME_ZONE
+            })
             .min_by(|(_, a), (_, b)| a.y.total_cmp(&b.y))
-            .map(|(t, _)| self.r.text(t, "text"))
-            .unwrap_or_default();
-        let owner = self.model.get(diagram)?.owner()?;
-        self.create(owner, ElementData::new(name, ElementKind::SystemBoundary), None)
+            .map(|(t, b)| (self.r.text(t, "text"), Point::new(b.x - rect.x, b.y - rect.y)))
     }
 
     /// Adds the edge presentation `p`, between presentations added before; returns its id.
@@ -1932,6 +2008,19 @@ impl Importer<'_> {
                 self.annotate(comment, annotated);
             }
             None
+        } else if r.class(p) == "ContainmentPresentation" {
+            // A containment line has no model of its own; it stands for the nested element and
+            // runs from its owner.
+            let (a, b) = (element_of(source)?, element_of(target)?);
+            let owner = |e: Id| self.model.get(e).and_then(|e| e.owner());
+            if owner(a) == Some(b) {
+                std::mem::swap(&mut source, &mut target);
+                swapped = true;
+                Some(a)
+            } else {
+                (owner(b) == Some(a)).then_some(b)?;
+                Some(b)
+            }
         } else {
             let &element = r.obj(p, "model").and_then(|m| self.ids.get(&m))?;
             // Message edges are added from the model, see `message_edges`.
@@ -2058,16 +2147,20 @@ impl Importer<'_> {
         });
         // A binding's substitutions (`<T->int>`) take the place of a name.
         let binding = r.class(p) == "TemplateBindingPresentation";
-        let mut labels = EdgeLabels {
-            name: label(if binding { "boundInfoPresentation" } else { "namePresentation" }, middle),
-            keyword: keyword.filter(|_| {
-                matches!(
-                    r.class(p),
-                    "IncludePresentation" | "ExtendPresentation" | "TemplateBindingPresentation"
-                )
-            }),
-            ..Default::default()
-        };
+        let own_keyword = matches!(
+            r.class(p),
+            "IncludePresentation" | "ExtendPresentation" | "TemplateBindingPresentation"
+        );
+        let mut name =
+            label(if binding { "boundInfoPresentation" } else { "namePresentation" }, middle);
+        // Other lines show their stereotypes with the name; without a name they stand where
+        // Astah keeps the stereotype label.
+        let unnamed = r.obj(p, "model").is_none_or(|m| r.name(m).is_empty());
+        if !own_keyword && unnamed && keyword.is_some() {
+            name = keyword;
+        }
+        let mut labels =
+            EdgeLabels { name, keyword: keyword.filter(|_| own_keyword), ..Default::default() };
         (
             labels.source_role,
             labels.source_multiplicity,
@@ -2140,6 +2233,10 @@ mod tests {
         for tag in ["jude.type", "jude.type_modifier", "jude.hyperlink", "hiddenDependency"] {
             assert!(is_internal_tag(tag), "{tag}");
         }
+        assert_eq!(neutral_tag("jude.java.annotations"), "java.annotations");
+        assert_eq!(neutral_tag("jude.c_sharp.override"), "csharp.override");
+        assert_eq!(neutral_tag("jude.c_plus.virtual"), "cpp.virtual");
+        assert_eq!(neutral_tag("author"), "author");
     }
 
     #[test]

@@ -44,6 +44,17 @@ fn inline(graph: &Graph, v: &Value) -> Option<String> {
         {
             Some("[]".into())
         }
+        // Style maps hold strings.
+        "HashMap" | "LinkedHashMap" | "Hashtable" => {
+            let entries = items(graph, id);
+            let pairs: Option<Vec<String>> = entries
+                .chunks(2)
+                .map(|kv| {
+                    Some(format!("{}: {}", inline(graph, &kv[0])?, inline(graph, kv.get(1)?)?))
+                })
+                .collect();
+            pairs.map(|p| format!("{{{}}}", p.join(", ")))
+        }
         _ => None,
     }
 }

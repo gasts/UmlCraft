@@ -16,7 +16,7 @@ between releases is in the [changelog](CHANGELOG.md).
 
 | Diagram | What it covers |
 | --- | --- |
-| Class | Classes, interfaces (also as a circle), enumerations, packages and subsystems; attributes, operations and template parameters with bounds and defaults; associations with roles, multiplicities, navigability, aggregation, qualifiers and static ends; generalization, realization, dependency; bound templates such as `Box<Holder, 20>`, also drawn as bound classes with their «bind» line |
+| Class | Classes, interfaces (also as a circle), enumerations, packages and subsystems; attributes, operations and template parameters with bounds and defaults; associations with roles, multiplicities, navigability, aggregation, qualifiers and static ends; generalization, realization, dependency; containment lines (⊕) to nested classes; bound templates such as `Box<Holder, 20>`, also drawn as bound classes with their «bind» line |
 | Object | Objects `name : Class` with a slot for every attribute of the class, inherited ones included; links with roles, navigability and aggregation, as instances of associations. They are drawn on class diagrams |
 | Use case | Actors, use cases with extension points, system boundary, include and extend with condition, notes on lines |
 | Sequence | Lifelines, synchronous, asynchronous, reply, create, destroy, self, found and lost messages, activation bars, message numbers, combined fragments (alt, opt, loop, par, …) with operands and guards, interaction uses |
@@ -96,6 +96,7 @@ Light and dark theme, German and English.
   and mind map diagrams and matrices in `.asta` files (skipped on import)
 - Component and deployment diagrams are exported to `.asta` as class diagrams, because the API
   has no editors for them
+- Containment lines in the `.asta` export, which the API cannot draw (they are imported)
 - In the Python import: attributes assigned outside `__init__`, `@property` as an attribute,
   functions and variables outside classes
 - In the C# import: modifiers such as `virtual`, `override` or `async` as tagged values,

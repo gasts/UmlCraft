@@ -57,7 +57,7 @@ pub(crate) struct Ctx {
 
 pub(crate) struct Importer<'p> {
     pub rules: &'static Rules,
-    /// Tagged values of this language start with it: `jude.java.`.
+    /// Tagged values of this language start with it: `java.`.
     pub tag_prefix: &'static str,
     pub report: Report,
     pub entries: Vec<Entry<'p>>,

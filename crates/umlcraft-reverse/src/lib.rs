@@ -87,9 +87,9 @@ impl SourceLanguage {
     /// Tagged values of this language's profile start with it.
     fn tag_prefix(self) -> &'static str {
         match self {
-            SourceLanguage::Java => "jude.java.",
-            SourceLanguage::CSharp => "jude.c_sharp.",
-            SourceLanguage::Cpp => "jude.c_plus.",
+            SourceLanguage::Java => "java.",
+            SourceLanguage::CSharp => "csharp.",
+            SourceLanguage::Cpp => "cpp.",
             SourceLanguage::Python => "umlcraft.python.",
         }
     }

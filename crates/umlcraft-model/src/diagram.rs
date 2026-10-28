@@ -97,6 +97,7 @@ impl Presentation {
                 y,
                 end_y: None,
                 gate_x: None,
+                loop_x: None,
                 labels: EdgeLabels::default(),
             },
             style: Style::default(),
@@ -208,6 +209,10 @@ pub enum Shape {
         /// Found and lost messages: x of the open end (a dot, or a gate on the frame).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         gate_x: Option<f32>,
+        /// Messages to self: x of the loop's far side relative to the lifeline's center, where
+        /// it was dragged away from its usual place 40 right of the bar.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        loop_x: Option<f32>,
         /// The name label, if placed by hand.
         #[serde(default, skip_serializing_if = "EdgeLabels::is_empty")]
         labels: EdgeLabels,
@@ -272,11 +277,17 @@ pub struct Style {
     /// Instances: leave out what they are an instance of (`client` instead of `client : Client`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_instance_type: bool,
+    /// Objects: leave out the slots without a value.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hide_empty_slots: bool,
     /// Classifier boxes: hide the operation compartment.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_operations: bool,
     /// Classifier boxes: sized by their content as Astah does (its "auto resize"), as wide as
-    /// the widest text and as high as the compartments, instead of keeping their bounds.
+    /// the widest text and as high as the compartments, instead of keeping their bounds. Use
+    /// cases: as Astah draws them, the name broken only at its line breaks and the ellipse
+    /// widened around its center to hold it (set for use cases from `.asta` files). Objects: as
+    /// wide as their widest text, around their center.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub auto_size: bool,
     /// Interfaces: draw as a small circle ("lollipop") instead of a box. Lifelines: draw the
@@ -286,6 +297,11 @@ pub struct Style {
     /// Messages: leave out the parentheses with the arguments.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_parameters: bool,
+    /// System boundaries: where the box of the name's text lies relative to the boundary's top
+    /// left, as Astah keeps a free text (the text starts 10 right of the box, its baseline 17
+    /// below the box's top). Unset: centered at the top.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name_offset: Option<Point>,
     /// Edges: how the line runs through its waypoints.
     #[serde(default, skip_serializing_if = "LineShape::is_line")]
     pub line_shape: LineShape,

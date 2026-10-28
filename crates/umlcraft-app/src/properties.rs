@@ -1803,14 +1803,23 @@ impl Render for PropertiesPanel {
                         |s, v| s.hide_instance_type = v,
                     ));
                 if instance.instance == umlcraft_model::InstanceKind::Object {
-                    body = body.child(style_flag(
-                        "hide-slots",
-                        t!("prop.hide_slots").into(),
-                        p.style.hide_attributes,
-                        workspace.clone(),
-                        p.id,
-                        |s, v| s.hide_attributes = v,
-                    ));
+                    body = body
+                        .child(style_flag(
+                            "hide-slots",
+                            t!("prop.hide_slots").into(),
+                            p.style.hide_attributes,
+                            workspace.clone(),
+                            p.id,
+                            |s, v| s.hide_attributes = v,
+                        ))
+                        .child(style_flag(
+                            "hide-empty-slots",
+                            t!("prop.hide_empty_slots").into(),
+                            p.style.hide_empty_slots,
+                            workspace.clone(),
+                            p.id,
+                            |s, v| s.hide_empty_slots = v,
+                        ));
                 }
             }
             if matches!(shown, Some(ElementKind::Interface(_))) {

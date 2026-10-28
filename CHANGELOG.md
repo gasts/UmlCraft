@@ -19,6 +19,32 @@ today.
   slots, with switches in the properties panel; `.asta` files keep them too. Hidden slots go
   back to Astah.
 - Component and deployment diagrams from `.asta` files keep their frame.
+- **`.asta` files look more like they do in Astah**, measured against Astah's own SVG export
+  for `Sample.asta` and 59 files from practice:
+  - font sizes of single elements;
+  - use cases and objects sized by their content grow around their center instead of
+    wrapping; auto-sized classes widen when a member does not fit;
+  - a system boundary's name keeps its place, also above the rectangle;
+  - sequence diagrams: flat message numbers (`2:`, `3:`), hidden frames, message labels moved
+    by hand, the width of messages to self, «create» over a moved label;
+  - objects can hide slots without a value (a switch in the properties panel); inherited
+    slots come first;
+  - containment lines with ⊕ at the owner of a nested class;
+  - Java enums from Astah's reverse engineering, with their «enum constant»s; stereotypes of
+    attributes and operations show in front of their name;
+  - activity, state machine and component diagrams keep their frame, tabbed `act`, `stm` and
+    `cmp`;
+  - states show their name above a line, with 2 px outlines and Astah's corners; a guard
+    stands on a line below its trigger;
+  - a node's cube sticks out above and right of its bounds, as in Astah;
+  - «reside», «implement» and other stereotypes of unnamed lines stay where Astah drew them;
+  - bound classes that a dependency or generalization points to are kept.
+- Tagged values of languages carry UmlCraft's own names: `java.`, `csharp.` and `cpp.`
+  instead of Astah's `jude.java.` … The Astah import and older project files are renamed on
+  the way in, the export names them back; Java annotations, which Astah does not take under
+  its own name, go there under UmlCraft's and come back unchanged.
+- Export to Astah no longer stumbles over guards moved above their operand; containment
+  lines are reported as left out.
 - Notes wrap long lines at their width instead of growing wider.
 - Texts on the canvas sit a fraction of a pixel closer to where Astah puts them.
 

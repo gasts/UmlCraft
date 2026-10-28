@@ -1,4 +1,6 @@
 # Astah links `Labeled extends Comparable<Labeled>` to an anonymous bound class, which the
-# .asta import drops; UmlCraft links the generalization to `Comparable` itself.
+# .asta import keeps; UmlCraft links the generalization to `Comparable` itself.
 
+- interface inheritance. Public
+-   extends inheritance.
 +   extends java.lang.Comparable

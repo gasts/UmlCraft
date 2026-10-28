@@ -161,6 +161,7 @@ prop:
   hide_instance_name: Namen ausblenden
   hide_instance_type: Classifier ausblenden
   hide_slots: Slots ausblenden
+  hide_empty_slots: Slots ohne Wert ausblenden
   iconic: Als Kreis darstellen
   condition: Bedingung
   extension_points: Erweiterungspunkte
@@ -324,6 +325,9 @@ export_dropped:
   internalTransition: Interne Transitionen von Zuständen, die nicht auf ihrem Diagramm stehen
   binding: Bindungen gebundener Klassen, deren Template keine Klasse ist
   bindingArgument: Argumente gebundener Klassen, die weder Klassen noch primitive Typen sind
+  fontSize: Schriftgrößen einzelner Elemente
+  containment: Enthaltenseins-Linien geschachtelter Klassen
+  guardPosition: Wächterbedingungen oberhalb ihres Operanden
   instanceNameVisibility: Ausgeblendete Namen von Instanzen
   instanceTypeVisibility: Ausgeblendete Classifier von Instanzen
 project:

@@ -823,6 +823,13 @@ pub struct DiagramProps {
     /// Sequence diagrams: leave out the return values after calls ("submit() : ok").
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_return_values: bool,
+    /// Sequence diagrams: number the messages 1, 2, 3 … from top to bottom instead of below
+    /// the message that started the bar they leave ("2.1").
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub flat_message_numbers: bool,
+    /// Sequence diagrams: keep the frame for the layout but do not draw it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hide_frame: bool,
 }
 
 /// The metaclass of an element together with its metaclass-specific properties.
@@ -1052,6 +1059,8 @@ impl ElementKind {
         Self::Diagram(DiagramProps {
             diagram,
             hide_message_numbers: false,
+            flat_message_numbers: false,
+            hide_frame: false,
             hide_return_values: false,
         })
     }

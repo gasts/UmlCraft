@@ -1,21 +1,21 @@
 == Modifiers.java
 namespace modifiers
   public class abstract Modifiers (line 3)
-    @jude.java.strictfp = "true"
+    @java.strictfp = "true"
     public field a : int
     protected field b : int
     package field c : int
     private field d : int
     public field static readonly MAX : int = 10
     private field cache : Object
-      @jude.java.transient = "true"
-      @jude.java.volatile = "true"
+      @java.transient = "true"
+      @java.volatile = "true"
     public operation constructor Modifiers()
     protected operation abstract run() : void
     public operation leaf stop() : void
-      @jude.java.synchronized = "true"
+      @java.synchronized = "true"
     public operation static now() : long
-      @jude.java.native = "true"
+      @java.native = "true"
     private operation static counter() : int
   package class leaf Leaf (line 26)
   public interface Contract (line 29)

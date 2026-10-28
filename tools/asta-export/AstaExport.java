@@ -730,14 +730,7 @@ public final class AstaExport {
                     diagram = (IDiagram) named(id, n -> ud.createUseCaseDiagram((INamedElement) owner, n));
                     editor = ud;
                 }
-                // Astah frames new diagrams; UmlCraft only those that show themselves as a node.
-                boolean framed = view(id).stream()
-                    .anyMatch(p -> "node".equals(p.get("shape")) && id.equals(p.get("element")));
-                for (IPresentation p : diagram.getPresentations()) {
-                    if ("Frame".equals(p.getType())) {
-                        p.setProperty("visibility", Boolean.toString(framed));
-                    }
-                }
+                frame(id, diagram);
                 structureDiagram(id, editor);
             }
             case "sequence" -> {
@@ -759,7 +752,16 @@ public final class AstaExport {
                     Boolean.toString(!Boolean.TRUE.equals(props.get("hideMessageNumbers"))));
                 d.setProperty("message_return_value_initial_visibility",
                     Boolean.toString(!Boolean.TRUE.equals(props.get("hideReturnValues"))));
+                d.setProperty("flat_message_index",
+                    Boolean.toString(Boolean.TRUE.equals(props.get("flatMessageNumbers"))));
                 new Sequence(id, sd).build();
+                if (Boolean.TRUE.equals(props.get("hideFrame"))) {
+                    for (IPresentation p : d.getPresentations()) {
+                        if ("Frame".equals(p.getType())) {
+                            p.setProperty("visibility", "false");
+                        }
+                    }
+                }
                 diagram = d;
             }
             case "activity" -> {
@@ -774,6 +776,7 @@ public final class AstaExport {
                     d.getActivity().setName(activityName);
                 }
                 common(activity, d.getActivity(), Set.of());
+                frame(id, d);
                 activityDiagram(id, activity, ad);
                 diagram = d;
             }
@@ -789,6 +792,7 @@ public final class AstaExport {
                     d.getStateMachine().setName(machineName);
                 }
                 common(machine, d.getStateMachine(), Set.of());
+                frame(id, d);
                 stateDiagram(id, machine, sm);
                 diagram = d;
             }
@@ -796,6 +800,17 @@ public final class AstaExport {
         }
         common(id, diagram, Set.of());
         return diagram;
+    }
+
+    /// Astah frames new diagrams; UmlCraft only those that show themselves as a node.
+    private void frame(String id, IDiagram diagram) throws Exception {
+        boolean framed = view(id).stream()
+            .anyMatch(p -> "node".equals(p.get("shape")) && id.equals(p.get("element")));
+        for (IPresentation p : diagram.getPresentations()) {
+            if ("Frame".equals(p.getType())) {
+                p.setProperty("visibility", Boolean.toString(framed));
+            }
+        }
     }
 
     /// Nodes in z-order, then edges and note anchors of a class or use case diagram.
@@ -814,7 +829,7 @@ public final class AstaExport {
             if ("comment".equals(type)) {
                 node = note(editor, element, at);
             } else if ("systemBoundary".equals(type)) {
-                attempt(element, () -> systemBoundary(editor, element, r));
+                attempt(element, () -> systemBoundary(editor, element, r, (Map<String, Object>) p.get("style")));
                 continue;
             } else if ("instance".equals(type) && editor instanceof ClassDiagramEditor cd) {
                 node = (INodePresentation) attempt(element, () -> instance(cd, element, at));
@@ -1353,15 +1368,21 @@ public final class AstaExport {
 
     /// Astah has no system boundary; it is drawn as a rectangle with the name as a text,
     /// centered, its top 7 below the rectangle's (the baseline then lies 24 below).
-    private INodePresentation systemBoundary(BasicDiagramEditor editor, String boundary, Map<String, Object> r)
-            throws Exception {
+    private INodePresentation systemBoundary(
+        BasicDiagramEditor editor, String boundary, Map<String, Object> r, Map<String, Object> style
+    ) throws Exception {
         shownBoundaries.add(boundary);
         double x = num(r, "x"), y = num(r, "y"), width = num(r, "width");
         INodePresentation rect = editor.createRect(new Point2D.Double(x, y), width, num(r, "height"));
         String name = name(elements.get(boundary));
         if (!name.isEmpty()) {
             INodePresentation text = editor.createText(name, new Point2D.Double(x, y + 7));
-            text.setLocation(new Point2D.Double(x + (width - text.getWidth()) / 2, y + 7));
+            // Where the text stood in Astah, or centered.
+            if (style != null && style.get("nameOffset") instanceof Map<?, ?> at) {
+                text.setLocation(new Point2D.Double(x + num((Map<String, Object>) at, "x"), y + num((Map<String, Object>) at, "y")));
+            } else {
+                text.setLocation(new Point2D.Double(x + (width - text.getWidth()) / 2, y + 7));
+            }
         }
         return rect;
     }
@@ -1408,6 +1429,10 @@ public final class AstaExport {
                     && "transition".equals(type(elements.get(element)))
                     && source instanceof INodePresentation s && target instanceof INodePresentation t) {
                 link = transition(sm, (String) element, s, t);
+            } else if (created.get(element) instanceof IClass) {
+                // A containment line stands for the nested class; the API cannot draw one.
+                drop("containment");
+                return null;
             } else if (editor instanceof ClassDiagramEditor cd && "link".equals(type(elements.get(element)))
                     && source instanceof INodePresentation s && target instanceof INodePresentation t) {
                 link = link(cd, (String) element, s, t);
@@ -1564,6 +1589,9 @@ public final class AstaExport {
             // An object's compartment holds its slots.
             node.setProperty("instance".equals(type) ? "slot_visibility" : "attribute_compartment_visibility", "false");
         }
+        if ("instance".equals(type) && Boolean.TRUE.equals(style.get("hideEmptySlots"))) {
+            node.setProperty("no_value_slot_visibility", "false");
+        }
         // The API keeps neither an instance's hidden name nor its hidden classifier.
         if (Boolean.TRUE.equals(style.get("hideInstanceName"))) {
             drop("instanceNameVisibility");
@@ -1573,6 +1601,10 @@ public final class AstaExport {
         }
         if (Boolean.TRUE.equals(style.get("hideOperations"))) {
             node.setProperty("operation_compartment_visibility", "false");
+        }
+        // The API refuses every value of `font.size`.
+        if (style.get("fontSize") != null) {
+            drop("fontSize");
         }
     }
 
@@ -2053,13 +2085,21 @@ public final class AstaExport {
             }
             for (int k = 0; k < made.size(); k++) {
                 int i = kept.get(k);
-                if (i < guards.size() && guards.get(i) instanceof Map<?, ?> moved) {
+                // Without a guard text there is no label to place.
+                String guard = made.get(k).guard();
+                if (guard != null && !guard.isEmpty()
+                        && i < guards.size() && guards.get(i) instanceof Map<?, ?> moved) {
                     double operandTop = i == 0 ? top + 25.09375
                         : top + ((Number) separators.get(i - 1)).doubleValue();
                     double x = num(r, "x") + 10 + num((Map<String, Object>) moved, "x");
                     double gy = y(operandTop + 2 + num((Map<String, Object>) moved, "y"));
-                    node.setProperty("guard." + (k + 1) + ".point.x", Double.toString(x));
-                    node.setProperty("guard." + (k + 1) + ".point.y", Double.toString(gy));
+                    try {
+                        node.setProperty("guard." + (k + 1) + ".point.x", Double.toString(x));
+                        node.setProperty("guard." + (k + 1) + ".point.y", Double.toString(gy));
+                    } catch (InvalidEditingException refused) {
+                        // Astah refuses guards moved above their operand.
+                        drop("guardPosition");
+                    }
                 }
             }
             common(f.id(), model, Set.of());
@@ -2119,6 +2159,21 @@ public final class AstaExport {
         }
     }
 
+    /// UmlCraft's names of the language profiles' tagged values and Astah's.
+    private static final String[][] LANGUAGE_TAGS = {
+        {"java.", "jude.java."}, {"csharp.", "jude.c_sharp."}, {"cpp.", "jude.c_plus."},
+    };
+
+    /// Astah's key for a tagged value: `java.transient` is `jude.java.transient` there.
+    private static String astahTag(String key) {
+        for (String[] names : LANGUAGE_TAGS) {
+            if (key.startsWith(names[0])) {
+                return names[1] + key.substring(names[0].length());
+            }
+        }
+        return key;
+    }
+
     /// Visibility, stereotypes, tagged values and documentation.
     private void common(String id, IElement target, Set<String> implied) {
         Map<String, Object> e = elements.get(id);
@@ -2143,7 +2198,18 @@ public final class AstaExport {
             }
             for (Object tv : list(e.get("taggedValues"))) {
                 Map<String, Object> tag = (Map<String, Object>) tv;
-                basic.createTaggedValue(target, text(tag, "key"), text(tag, "value"));
+                String key = text(tag, "key");
+                try {
+                    basic.createTaggedValue(target, astahTag(key), text(tag, "value"));
+                } catch (InvalidEditingException x) {
+                    // Astah keeps keys such as "jude.java.annotations" to itself; UmlCraft's
+                    // own name keeps the value.
+                    try {
+                        basic.createTaggedValue(target, key, text(tag, "value"));
+                    } catch (InvalidEditingException y) {
+                        drop("details");
+                    }
+                }
             }
             if (target instanceof INamedElement n && !text(e, "documentation").isEmpty()) {
                 n.setDefinition(text(e, "documentation"));

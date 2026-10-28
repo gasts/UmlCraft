@@ -410,10 +410,11 @@ pub fn figure(node: &NodeShape) -> Vec<Primitive> {
         }],
         Figure::Rectangle => vec![frame(r, Paint::Fill)],
         Figure::State { separator, regions, vertical } => {
+            // Astah outlines states 2 px wide.
             let mut result = vec![Primitive::Frame {
                 rect: r,
-                width: 1.0,
-                radius: STATE_RADIUS.min(r.height / 2.0).min(r.width / 2.0),
+                width: 2.0,
+                radius: state_radius(r).min(r.height / 2.0).min(r.width / 2.0),
                 fill: Paint::Fill,
                 border: Paint::Line,
                 style: solid,
@@ -472,9 +473,11 @@ pub fn figure(node: &NodeShape) -> Vec<Primitive> {
             ]
         }
         Figure::Cube { depth } => {
-            // Astah: the outline and the front face's top and right edges, all 2 px.
+            // Astah: the outline and the front face's top and right edges, all 2 px. The node's
+            // rectangle is the front face; top and side stick out of it.
             let d = *depth;
-            let front = Rect::new(r.x, r.y + d, r.width - d, r.height - d);
+            let front = r;
+            let r = Rect::new(r.x, r.y - d, r.width + d, r.height + d);
             let outline = vec![
                 Point::new(r.x, front.y),
                 Point::new(r.x + d, r.y),
@@ -513,8 +516,10 @@ pub fn figure(node: &NodeShape) -> Vec<Primitive> {
 
 /// Corner radius of actions, as far as their size allows.
 const ACTION_RADIUS: f32 = 12.0;
-/// Corner radius of states; less round than actions.
-const STATE_RADIUS: f32 = 8.0;
+/// Corner radius of states, measured in Astah: 4 plus a twentieth of the height.
+fn state_radius(r: Rect) -> f32 {
+    4.0 + r.height / 20.0
+}
 
 /// The line of an edge, `width` wide: a polyline, or one curve.
 pub fn edge_line(edge: &EdgeShape, width: f32) -> Primitive {
@@ -589,6 +594,16 @@ fn marker(tip: Point, from: Point, marker: EndMarker) -> Vec<Primitive> {
                 points: vec![tip, at(7.0, 5.0), at(14.0, 0.0), at(7.0, -5.0)],
                 fill,
             }]
+        }
+        EndMarker::Containment => {
+            // A circle of radius 5 touching the node, crossed along and across the line.
+            let r = 5.0;
+            let center = at(r, 0.0);
+            vec![
+                Primitive::Ellipse { center, rx: r, ry: r, fill: Paint::Background, width: 1.0 },
+                line(vec![tip, at(2.0 * r, 0.0)], solid),
+                line(vec![at(r, r), at(r, -r)], solid),
+            ]
         }
     }
 }

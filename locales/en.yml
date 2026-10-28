@@ -161,6 +161,7 @@ prop:
   hide_instance_name: Hide name
   hide_instance_type: Hide classifier
   hide_slots: Hide slots
+  hide_empty_slots: Hide slots without value
   iconic: Show as circle
   condition: Condition
   extension_points: Extension points
@@ -324,6 +325,9 @@ export_dropped:
   internalTransition: Internal transitions of states not shown on their diagram
   binding: Bindings of bound classes whose template is not a class
   bindingArgument: Arguments of bound classes that are neither classes nor primitive types
+  fontSize: Font sizes of single elements
+  containment: Containment lines of nested classes
+  guardPosition: Guards moved above their operand
   instanceNameVisibility: Hidden names of instances
   instanceTypeVisibility: Hidden classifiers of instances
 project:

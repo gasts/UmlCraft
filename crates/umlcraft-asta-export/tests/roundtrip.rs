@@ -478,7 +478,13 @@ fn diagram_contents(model: &Model) -> Contents {
             let shown = element.map(|e| e.name().to_owned()).unwrap_or_default();
             let line = match &p.shape {
                 Shape::Node { .. } => {
-                    let r = scene.node(p.id).map_or(p.bounds().unwrap(), |n| n.rect);
+                    // Use cases from Astah widen around their center for a name ApproxMeasure
+                    // takes wider than Arial; their stored place is what the export kept.
+                    let stored = matches!(element.map(|e| e.kind()), Some(ElementKind::UseCase(_)));
+                    let r = match scene.node(p.id) {
+                        Some(n) if !stored => n.rect,
+                        _ => p.bounds().unwrap(),
+                    };
                     // Astah places the lines between regions itself; their direction stays.
                     let regions = p.regions().map(|l| format!(" regions vertical {}", l.vertical));
                     let line = format!(
@@ -964,4 +970,48 @@ fn subsystems_through_astah() {
     // One stereotype, not one from the import and one exported as such.
     assert_eq!(e.data().stereotypes, [palette::SUBSYSTEM]);
     assert_eq!(back.shown_on(e.id()).len(), 1);
+}
+
+#[test]
+fn display_settings_through_astah() {
+    let (mut doc, ids) = order_system();
+    let class_node = doc.model().view(ids.class_diagram).unwrap().presentations()[0].id;
+    doc.edit("settings", |tx| {
+        tx.update_presentation(ids.class_diagram, class_node, |p| p.style.font_size = Some(14.0))?;
+        tx.update(ids.sequence_diagram, |data| {
+            if let ElementKind::Diagram(p) = &mut data.kind {
+                p.flat_message_numbers = true;
+                p.hide_frame = true;
+            }
+        })?;
+        let owner = tx.model().get(ids.use_case_diagram).unwrap().owner().unwrap();
+        let boundary = tx.create(owner, ElementData::new("Shop", ElementKind::SystemBoundary))?;
+        let node = tx.add_node(
+            ids.use_case_diagram,
+            Some(boundary),
+            Rect::new(400.0, 300.0, 300.0, 200.0),
+        )?;
+        tx.update_presentation(ids.use_case_diagram, node, |p| {
+            p.style.name_offset = Some(Point::new(20.0, -30.0));
+        })
+    })
+    .unwrap();
+    // Astah's API refuses font sizes; the export reports them as dropped.
+    let Some(back) = through_astah(doc.model(), "settings") else { return };
+    let sequence = back
+        .elements()
+        .find_map(|e| match e.kind() {
+            ElementKind::Diagram(p) if p.diagram == DiagramKind::Sequence => Some(*p),
+            _ => None,
+        })
+        .unwrap();
+    assert!(sequence.flat_message_numbers && sequence.hide_frame, "{sequence:?}");
+    let offsets: Vec<Point> = back
+        .elements()
+        .filter(|e| matches!(e.kind(), ElementKind::SystemBoundary))
+        .flat_map(|e| back.shown_on(e.id()))
+        .filter_map(|(d, n)| back.view(d).unwrap().get(n).unwrap().style.name_offset)
+        .collect();
+    assert_eq!(offsets.len(), 1, "{offsets:?}");
+    assert!(offsets[0].distance(Point::new(20.0, -30.0)) < 0.01, "{offsets:?}");
 }

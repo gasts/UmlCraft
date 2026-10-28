@@ -13,7 +13,7 @@ namespace kinds
       public field y : int
       public operation constructor Point(x : int, y : int)
     public class Marker (line 22)
-      @jude.java.atmark_interface = "true"
+      @java.atmark_interface = "true"
       public operation abstract value() : String
       public operation abstract priority() : int
     package class static Nested (line 27)

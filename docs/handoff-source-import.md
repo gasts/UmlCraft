@@ -205,14 +205,9 @@ design questions; see "Ulf's decisions" below.
 
 ## Tags
 
-Astah's language profiles use these prefixes:
-
-- `jude.java.`
-- `jude.c_sharp.`
-- `jude.c_plus.`
-
-The Astah import already passes them through (`crates/umlcraft-asta/src/map.rs`,
-`is_internal_tag`). Use them for C# and C++, so a project round-trips through Astah.
+Astah's language profiles use the prefixes `jude.java.`, `jude.c_sharp.` and `jude.c_plus.`.
+UmlCraft names them `java.`, `csharp.` and `cpp.`: the Astah import renames them
+(`crates/umlcraft-asta/src/map.rs`, `neutral_tag`) and the export names them back. Use them for C# and C++, so a project round-trips through Astah.
 
 Astah has code generation for C# and C++, so it has keys for modifiers such as `override`,
 `virtual`, `const`, `inline` or `struct`. Ask Ulf for the exact keys before you use them. He

@@ -38,7 +38,7 @@ const SELF_WIDTH: f32 = 40.0;
 /// How far right a message that branches off another one runs before it turns.
 const BRANCH_RUN: f32 = 20.0;
 /// The top of a message's label above its line.
-const LABEL_ABOVE: f32 = 21.05;
+pub const LABEL_ABOVE: f32 = 21.05;
 /// The top of a message's stereotype above the top of its label.
 const STEREOTYPE_ABOVE: f32 = 16.55;
 /// The label of a message to self is centered this far right of the loop.
@@ -245,6 +245,7 @@ struct Msg {
     y: f32,
     end_y: Option<f32>,
     gate_x: Option<f32>,
+    loop_x: Option<f32>,
     label: Option<Point>,
     parameters: bool,
     sort: MessageSort,
@@ -262,10 +263,10 @@ pub(crate) fn arrange(
 ) -> (SequenceLayout, Vec<EdgeShape>) {
     let mut layout = SequenceLayout::default();
     let mut lanes: HashMap<Id, LaneState> = HashMap::new();
-    let hide_numbers = matches!(
-        model.get(diagram).map(|d| d.kind()),
-        Some(ElementKind::Diagram(p)) if p.hide_message_numbers
-    );
+    let (hide_numbers, flat_numbers) = match model.get(diagram).map(|d| d.kind()) {
+        Some(ElementKind::Diagram(p)) => (p.hide_message_numbers, p.flat_message_numbers),
+        _ => (false, false),
+    };
 
     for node in nodes.iter_mut() {
         let Some(p) = view.get(node.id) else { continue };
@@ -421,7 +422,8 @@ pub(crate) fn arrange(
         .presentations()
         .iter()
         .filter_map(|p| {
-            let Shape::Message { source, target, y, end_y, gate_x, labels } = p.shape else {
+            let Shape::Message { source, target, y, end_y, gate_x, loop_x, labels } = p.shape
+            else {
                 return None;
             };
             if !lanes.contains_key(&source) || !lanes.contains_key(&target) {
@@ -439,6 +441,7 @@ pub(crate) fn arrange(
                 y,
                 end_y,
                 gate_x,
+                loop_x,
                 label: labels.name,
                 parameters: !p.style.hide_parameters,
                 sort: props.map_or(MessageSort::Synchronous, |m| m.sort),
@@ -446,7 +449,8 @@ pub(crate) fn arrange(
             })
         })
         .collect();
-    let numbers = if hide_numbers { HashMap::new() } else { numbers(&messages, &lanes) };
+    let numbers =
+        if hide_numbers { HashMap::new() } else { numbers(&messages, &lanes, flat_numbers) };
     let hide_returns = matches!(
         model.get(diagram).map(|d| d.kind()),
         Some(ElementKind::Diagram(p)) if p.hide_return_values
@@ -459,7 +463,7 @@ pub(crate) fn arrange(
                 number: numbers.get(&m.presentation),
                 returned: returns.get(&m.presentation),
             };
-            message_edge(model, m, &lanes, frame, label, &mut layout)
+            message_edge(model, m, &lanes, frame, label, measure, &mut layout)
         })
         .collect();
 
@@ -507,9 +511,10 @@ fn lifeline_rows(
 ) -> (f32, Vec<Row>) {
     let Some(e) = model.get(lifeline) else { return (head.bottom(), Vec::new()) };
     let ElementKind::Lifeline(p) = e.kind() else { return (head.bottom(), Vec::new()) };
-    let type_name = p.represents.and_then(|t| model.get(t)).map(|t| t.name());
+    // A bound class shows what it binds: `list : List<Order>`.
+    let type_name = p.represents.filter(|&t| model.get(t).is_some());
     let text = match type_name {
-        Some(t) => format!("{} : {t}", e.name()),
+        Some(t) => format!("{} : {}", e.name(), crate::member::display_name(model, t)),
         None => e.name().to_owned(),
     };
     let w = measure.rounded_width(&text, 12.0, false);
@@ -604,10 +609,18 @@ pub(crate) fn frame_with_tab(
 
 /// Message numbers as Astah gives them: a message sent from a bar is numbered below the
 /// message that started the bar ("2.1"), the others count from 1. Messages that branch off the
-/// same point share a number with "-A", "-B" appended. Replies have none.
-fn numbers(messages: &[Msg], lanes: &HashMap<Id, LaneState>) -> HashMap<Id, String> {
+/// same point share a number with "-A", "-B" appended. Replies have none. `flat` counts all
+/// calls from top to bottom instead.
+fn numbers(messages: &[Msg], lanes: &HashMap<Id, LaneState>, flat: bool) -> HashMap<Id, String> {
     let mut calls: Vec<&Msg> = messages.iter().filter(|m| m.sort != MessageSort::Reply).collect();
     calls.sort_by(|a, b| a.y.total_cmp(&b.y).then(end(a).total_cmp(&end(b))));
+    if flat {
+        return calls
+            .iter()
+            .enumerate()
+            .map(|(i, m)| (m.presentation, (i + 1).to_string()))
+            .collect();
+    }
     // The bar each call starts.
     let started: HashMap<Id, Id> = calls
         .iter()
@@ -701,6 +714,7 @@ fn message_edge(
     lanes: &HashMap<Id, LaneState>,
     frame: Option<Rect>,
     label: Label<'_>,
+    measure: &dyn TextMeasure,
     layout: &mut SequenceLayout,
 ) -> EdgeShape {
     let (from, to) = (&lanes[&m.source], &lanes[&m.target]);
@@ -722,7 +736,10 @@ fn message_edge(
             let start = from.side(outer, true);
             let y1 = if m.end_y.is_some() { y1 } else { y0 + 20.0 };
             let end = to.side(own.or_else(|| to.bar_at(y1, None)), true);
-            let loop_x = start + SELF_WIDTH;
+            let loop_x = match m.loop_x {
+                Some(x) => (from.center() + x).max(start + BAR),
+                None => start + SELF_WIDTH,
+            };
             vec![
                 Point::new(start, y0),
                 Point::new(loop_x, y0),
@@ -807,19 +824,17 @@ fn message_edge(
         });
     }
     if let Some(stereotype) = stereotype {
-        let anchor = match labels.first() {
+        let x = match labels.first() {
+            // Centered over a label placed by hand.
             Some(l) if l.align == LabelAlign::Left => {
-                // Centered over a label placed by hand; its width is not known here, so over its
-                // start.
-                Point::new(l.anchor.x, label_top - STEREOTYPE_ABOVE)
+                l.anchor.x + crate::scene::label_width(&l.text, measure) / 2.0
             }
-            _ => Point::new(center.unwrap_or_default(), label_top - STEREOTYPE_ABOVE),
+            _ => center.unwrap_or_default(),
         };
-        let align = if m.label.is_some() { LabelAlign::Left } else { LabelAlign::Center };
         labels.push(EdgeLabel {
             text: stereotype,
-            anchor,
-            align,
+            anchor: Point::new(x, label_top - STEREOTYPE_ABOVE),
+            align: LabelAlign::Center,
             underline: false,
             keyword: false,
         });

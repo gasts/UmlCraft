@@ -8,9 +8,9 @@
 //!   types in interfaces are static but keep their own visibility.
 //! - `final` makes classes and methods leaves and fields read-only.
 //! - Modifiers UML has no place for (`transient`, `volatile`, `native`, `synchronized`,
-//!   `strictfp`) and annotations become tagged values `jude.java.*`, as in Astah.
+//!   `strictfp`) and annotations become tagged values `java.*` (Astah's `jude.java.*`).
 //! - Records are classes whose components are public attributes; `@interface`s are classes
-//!   tagged `jude.java.atmark_interface`.
+//!   tagged `java.atmark_interface`.
 //! - A declaration's documentation is the block or Javadoc comment right before it.
 
 mod jdk;
@@ -26,10 +26,10 @@ use crate::ir::{
 use crate::lang::{Frontend, Skip, Skipped, SyntaxError, first_error};
 
 /// Tag holding a declaration's annotations as written, one per line.
-pub const ANNOTATIONS_TAG: &str = "jude.java.annotations";
+pub const ANNOTATIONS_TAG: &str = "java.annotations";
 /// Tag marking an interface declared as `@interface`.
-pub const ANNOTATION_TYPE_TAG: &str = "jude.java.atmark_interface";
-/// Modifiers kept as tags `jude.java.<modifier>` with the value `true`.
+pub const ANNOTATION_TYPE_TAG: &str = "java.atmark_interface";
+/// Modifiers kept as tags `java.<modifier>` with the value `true`.
 const TAGGED_MODIFIERS: [&str; 5] = ["strictfp", "transient", "volatile", "native", "synchronized"];
 
 pub struct Java;
@@ -193,7 +193,7 @@ impl<'a> Reader<'a> {
                     "final" => m.is_final = true,
                     "default" => m.is_default = true,
                     k if TAGGED_MODIFIERS.contains(&k) => {
-                        m.tags.push((format!("jude.java.{k}"), "true".to_owned()));
+                        m.tags.push((format!("java.{k}"), "true".to_owned()));
                     }
                     _ => {}
                 }

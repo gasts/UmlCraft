@@ -90,7 +90,7 @@ fn normalize(model: &Model) -> String {
             .data()
             .tagged_values
             .iter()
-            .filter(|t| t.key.starts_with("jude.java."))
+            .filter(|t| t.key.starts_with("java."))
             .map(|t| format!("  @{} = {:?}", t.key, t.value))
             .collect();
         tags.sort();

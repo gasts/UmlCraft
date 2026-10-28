@@ -1,20 +1,20 @@
 package modifiers
   class Modifiers abstract Public
-    @jude.java.strictfp = "true"
+    @java.strictfp = "true"
     attribute + a : int
     attribute # b : int
     attribute ~ c : int
     attribute - d : int
     attribute + MAX : int = 10 {static} {readOnly}
     attribute - cache : Object
-      @jude.java.transient = "true"
-      @jude.java.volatile = "true"
+      @java.transient = "true"
+      @java.volatile = "true"
     operation + Modifiers()
     operation # run() : void {abstract}
     operation + stop() : void {leaf}
-      @jude.java.synchronized = "true"
+      @java.synchronized = "true"
     operation + now() : long {static}
-      @jude.java.native = "true"
+      @java.native = "true"
     operation - counter() : int {static}
   class Leaf leaf Package
   interface Contract Public

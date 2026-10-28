@@ -9,29 +9,30 @@ use std::collections::HashSet;
 
 use umlcraft_model::{ElementData, ElementKind, Id, Model, Result, SlotProps, Tx};
 
-/// The attributes an instance of `classifier` has slots for: its own, then those of its
-/// generals, nearest first, each once.
+/// The attributes an instance of `classifier` has slots for, as Astah orders them: those of
+/// its generals first (each general's own generals before it), then its own, each once.
 pub fn slot_attributes(model: &Model, classifier: Id) -> Vec<Id> {
-    let mut attributes = Vec::new();
-    let mut seen = HashSet::new();
-    let mut queue = vec![classifier];
-    while let Some(c) = queue.pop() {
+    fn collect(model: &Model, c: Id, seen: &mut HashSet<Id>, attributes: &mut Vec<Id>) {
         if !seen.insert(c) {
-            continue;
+            return;
         }
-        let Some(e) = model.get(c) else { continue };
+        let generals: Vec<Id> = model
+            .elements()
+            .filter_map(|g| match g.kind() {
+                ElementKind::Generalization(p) if p.specific == c => Some(p.general),
+                _ => None,
+            })
+            .collect();
+        for general in generals {
+            collect(model, general, seen, attributes);
+        }
+        let Some(e) = model.get(c) else { return };
         attributes.extend(e.children().iter().copied().filter(|&a| {
             model.get(a).is_some_and(|a| matches!(a.kind(), ElementKind::Attribute(_)))
         }));
-        let generals = model.elements().filter_map(|g| match g.kind() {
-            ElementKind::Generalization(p) if p.specific == c => Some(p.general),
-            _ => None,
-        });
-        // Depth first, nearest general first.
-        let mut generals: Vec<Id> = generals.collect();
-        generals.reverse();
-        queue.extend(generals);
     }
+    let mut attributes = Vec::new();
+    collect(model, classifier, &mut HashSet::new(), &mut attributes);
     attributes
 }
 
@@ -108,7 +109,7 @@ mod tests {
         })
         .unwrap();
         let model = doc.model();
-        assert_eq!(names(model, &slot_attributes(model, ids.premium)), ["level", "name"]);
+        assert_eq!(names(model, &slot_attributes(model, ids.premium)), ["name", "level"]);
         assert_eq!(names(model, &slot_attributes(model, ids.customer)), ["name"]);
     }
 

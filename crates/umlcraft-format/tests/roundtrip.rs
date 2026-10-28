@@ -121,6 +121,32 @@ fn output_is_stable_and_readable() {
 }
 
 #[test]
+fn older_files_get_language_tags_under_umlcraft_names() {
+    let (mut doc, ids) = order_system();
+    doc.edit("tag", |tx| {
+        tx.update(ids.customer, |d| {
+            d.tagged_values = [("jude.java.transient", "true"), ("table", "CUSTOMER")]
+                .map(|(key, value)| umlcraft_model::TaggedValue {
+                    key: key.into(),
+                    value: value.into(),
+                })
+                .to_vec();
+        })
+    })
+    .unwrap();
+    let model = from_str(&to_string(doc.model())).unwrap();
+    let keys: Vec<&str> = model
+        .get(ids.customer)
+        .unwrap()
+        .data()
+        .tagged_values
+        .iter()
+        .map(|t| t.key.as_str())
+        .collect();
+    assert_eq!(keys, ["java.transient", "table"]);
+}
+
+#[test]
 fn rejects_foreign_newer_and_broken_files() {
     assert!(matches!(from_str("{}"), Err(FormatError::NotAProject)));
     assert!(matches!(from_str("[1,2]"), Err(FormatError::NotAProject)));
