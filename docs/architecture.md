@@ -71,7 +71,10 @@ when the app opens them (`sequence_edit::upgrade_document`, not an undoable edit
 - `main_view.rs` contains menus, tabs, palette, model tree and the file operations.
 - `png.rs` rasterizes the SVG export (`umlcraft_notation::svg`) with `resvg` for PNG export, at
   twice the canvas size and with the system's fonts, on a background thread.
-- `settings.rs` stores recent files, language and theme in `%APPDATA%\UmlCraft\settings.json`.
+- `settings.rs` stores recent files, language, theme and the visibility column
+  (`visibilityColumn`) in `%APPDATA%\UmlCraft\settings.json`. The column reaches layout and
+  drawing through `TextMeasure::visibility_column` of the measures the canvas and the
+  workspace use.
 - Texts come from `locales/{de,en}.yml` (rust-i18n). Without a setting, the system language is used.
 
 ## Notation
@@ -88,7 +91,9 @@ when the app opens them (`sequence_edit::upgrade_document`, not an undoable edit
 - `route` runs edges in the line styles of `.asta` files (`Style::line_shape`): straight through the
   waypoints, at right angles with the waypoints as corners, or as one cubic Bézier curve whose
   control points are the first and the last waypoint. Right-angled lines are fitted when drawn,
-  so their first and last segment stay straight while nodes move or grow; the drawn corners are
+  so their first and last segment stay straight while nodes move or grow. Without waypoints
+  they get Astah's default corners: none when the ends are less than 2 apart across (the line
+  then runs slightly slanted), else a step halfway between the nodes. The drawn corners are
   what gets dragged (a segment moves across, the end segments slide their anchor inside the
   node) and exported. Changing the style changes the route (`scene::restyle`):
   "line" drops the waypoints, right angles turn them into corners.
@@ -115,8 +120,9 @@ when the app opens them (`sequence_edit::upgrade_document`, not an undoable edit
   and sizes ten times larger (`render_scaled`, same image size): Word's PDF export puts the
   letters of SVG text on whole units, which at 12 units per letter height spaces them unevenly. So the figure geometry exists once,
   for both. Texts in nodes are centered by Java's whole-pixel width (`TextMeasure::rounded_width`,
-  from the table in `metrics`), so imported diagrams keep their text positions, and written at a
-  fixed x.
+  from the tables for 12 and 14 px in `metrics`), so imported diagrams keep their text
+  positions, and written at a fixed x. Message labels are centered by that width too; those
+  moved by hand get the offset Astah's stored box implies on import.
 
 ## Sequence diagrams
 
@@ -371,7 +377,9 @@ through its official API (`astah-api.jar`):
   operand into it; Astah refuses that for empty operands and for operators with a single
   operand (reported as `emptyOperand`, `extraOperand`). The separators go to their places
   through `operand.N.length`, guards moved by hand through `guard.N.point.x/y`.
-- Message display options: `parameter_visibility`, and labels moved by hand through
+- Message display options: `parameter_visibility`, `parameter_type_visibility` and
+  `return_value_visibility` (a call without arguments shows its operation's parameters,
+  `Style::hide_parameter_types`, `Style::show_return_type`), and labels moved by hand through
   `name.point.x/y`. Astah moves a label by as much as `name.point` differs from its own value,
   so the layout sidecar says where Astah puts each such label by itself (`labelDefaults`: the
   last segment's middle minus half of Java's whole-pixel width, at most 200). The diagram's

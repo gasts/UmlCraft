@@ -85,7 +85,11 @@ Inline editing by double-click with a parser for `+ name : Type [0..*] = init` a
 `+ op(p : T) : R`; a properties panel for everything else. Undo and redo for every change, copy,
 cut and paste (as a copy or as the same elements), rubber-band and multiple selection, alignment,
 waypoints, zoom to fit, drag and drop within the model tree and from the tree onto the canvas.
-Light and dark theme, German and English.
+Free texts and lines on every diagram (Text and Line tools): texts edited in place, lines
+dashed or with arrowheads, their ends dragged one by one. Light and dark theme, German and
+English. Members show their visibility right before the name (`- name`); setting
+`"visibilityColumn": true` in `%APPDATA%\UmlCraft\settings.json` lines up all names of a
+compartment in a column instead.
 
 ## Not yet supported
 
