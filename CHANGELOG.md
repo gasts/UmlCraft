@@ -23,7 +23,8 @@ today.
   for `Sample.asta` and 59 files from practice:
   - font sizes of single elements;
   - use cases and objects sized by their content grow around their center instead of
-    wrapping; auto-sized classes widen when a member does not fit;
+    wrapping; auto-sized classes widen when a member does not fit, and fit anew when their
+    content or font changed since they were sized, as Astah does when it opens the file;
   - a system boundary's name keeps its place, also above the rectangle;
   - sequence diagrams: flat message numbers (`2:`, `3:`), hidden frames, message labels moved
     by hand, the width of messages to self, «create» over a moved label;

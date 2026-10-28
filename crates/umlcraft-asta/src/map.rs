@@ -2027,7 +2027,9 @@ impl Importer<'_> {
             if matches!(self.model.get(element).map(|e| e.kind()), Some(ElementKind::Message(_))) {
                 return None;
             }
+            // A line from an element to itself keeps Astah's order of servers.
             if let Some((from, to)) = self.model.get(element).and_then(|e| edge_ends(e.kind()))
+                && from != to
                 && element_of(source) == Some(to)
                 && element_of(target) == Some(from)
             {

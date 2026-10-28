@@ -1715,7 +1715,10 @@ pub const ACTOR_FIGURE: Size = Size { width: 28.0, height: 55.0 };
 
 /// Astah's narrowest classifier box.
 const MIN_CLASSIFIER_WIDTH: f32 = 40.0;
-/// Astah makes automatically sized classifier boxes this much higher than their content.
+/// Astah's lowest classifier box, sized automatically (one with only a name).
+const MIN_CLASSIFIER_HEIGHT: f32 = 30.0;
+/// Astah makes automatically sized classifier boxes this much higher than their content when
+/// they show a compartment below the name; a box with only its name gets nothing extra.
 const AUTO_SIZE_EXTRA_HEIGHT: f32 = 3.0;
 
 /// Classes, interfaces, enumerations and data types, drawn as boxes with compartments.
@@ -1818,8 +1821,7 @@ fn layout_classifier(
     let width = if refit {
         let widest =
             header.iter().chain(compartments.iter().flatten()).map(needs).fold(0.0, f32::max);
-        let fitted = widest + 2.0 * PAD_X;
-        if fit { fitted } else { bounds.width.max(fitted) }
+        widest + 2.0 * PAD_X
     } else {
         let header_w = header.iter().map(|l| l.width(measure)).fold(0.0, f32::max);
         let word_w =
@@ -1841,14 +1843,22 @@ fn layout_classifier(
         |lines: &[Line]| 2.0 * PAD_Y + lines.iter().map(|l| line_height(l.size)).sum::<f32>();
     let header_h = block(&header);
     let content_h = header_h + compartments.iter().map(|c| block(c)).sum::<f32>();
-    let height =
-        if fit { content_h + AUTO_SIZE_EXTRA_HEIGHT } else { bounds.height.max(content_h) };
-    let x = if refit && !fit && width > bounds.width {
-        bounds.center().x - width / 2.0
+    let extra = if compartments.is_empty() { 0.0 } else { AUTO_SIZE_EXTRA_HEIGHT };
+    let fitted_h = (content_h + extra).max(MIN_CLASSIFIER_HEIGHT);
+    // A box sized automatically whose stored height is that of its content keeps its stored
+    // width and only widens around its center. One whose content changed since (other
+    // members, another font size) Astah fits anew, also narrower, around its stored center.
+    let stale = style.auto_size && !fit && (fitted_h - bounds.height).abs() > 0.5;
+    let width = if refit && !fit && !stale { bounds.width.max(width) } else { width };
+    let height = if fit || stale { fitted_h } else { bounds.height.max(content_h) };
+    let c = bounds.center();
+    let r = if stale {
+        Rect::new(c.x - width / 2.0, c.y - height / 2.0, width, height)
+    } else if refit && !fit && width > bounds.width {
+        Rect::new(c.x - width / 2.0, bounds.y, width, height)
     } else {
-        bounds.x
+        Rect::new(bounds.x, bounds.y, width, height)
     };
-    let r = Rect::new(x, bounds.y, width, height);
 
     let mut rows = Vec::new();
     let mut y = r.y + PAD_Y;
