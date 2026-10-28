@@ -344,10 +344,16 @@ impl Workspace {
                 }
             })
             .collect();
+        let lines: Vec<Id> = presentations
+            .iter()
+            .filter_map(|&p| view.get(p))
+            .filter(|p| matches!(p.shape, Shape::Line { .. }))
+            .map(|p| p.id)
+            .collect();
         let diagram_kind = model.get(diagram).and_then(|d| d.kind().as_diagram());
         let sequence = diagram_kind == Some(umlcraft_model::DiagramKind::Sequence);
         let states = diagram_kind == Some(umlcraft_model::DiagramKind::StateMachine);
-        if nodes.is_empty() || (dx == 0.0 && dy == 0.0) {
+        if (nodes.is_empty() && lines.is_empty()) || (dx == 0.0 && dy == 0.0) {
             return;
         }
         // Edges between two moved nodes keep their shape: their waypoints move along.
@@ -375,6 +381,7 @@ impl Workspace {
         let label = t!("edit.move").to_string();
         let result = self.edit(label, |tx| {
             nodes.iter().try_for_each(|&(p, b)| tx.set_bounds(diagram, p, b))?;
+            lines.iter().try_for_each(|&l| tx.move_line(diagram, l, dx, dy))?;
             edges.into_iter().try_for_each(|(e, w)| tx.set_waypoints(diagram, e, w))?;
             if sequence {
                 umlcraft_notation::sequence_edit::tidy(tx, diagram)?;

@@ -527,6 +527,18 @@ fn diagram_contents(model: &Model) -> Contents {
                     contents.placements.insert(line.clone(), placed);
                     line
                 }
+                Shape::Text { bounds, text } => {
+                    format!("{}: text {text:?} at {:.0},{:.0}", d.name(), bounds.x, bounds.y)
+                }
+                Shape::Line { from, to, dashed, start_arrow, end_arrow } => format!(
+                    "{}: line {:.0},{:.0} → {:.0},{:.0} dashed {dashed} arrows {start_arrow} \
+                     {end_arrow}",
+                    d.name(),
+                    from.x,
+                    from.y,
+                    to.x,
+                    to.y
+                ),
                 // Only on sequence diagrams.
                 Shape::Lifeline { .. }
                 | Shape::Activation { .. }

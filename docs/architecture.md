@@ -20,7 +20,8 @@ Like UML, `umlcraft-model` separates **elements** from **presentations**:
   or operations and stand for a type (with bounds) or a value (with its type, C++'s `int N`),
   optionally with a default and variadic.
 - Every diagram element has a `View` with presentations in z-order. A node has `bounds`; an edge
-  connects two presentations of the same view.
+  connects two presentations of the same view. Free texts (`Shape::Text`) and free lines
+  (`Shape::Line`, dashed and with arrowheads as chosen) show no element.
 
 ## Changes
 
@@ -315,6 +316,9 @@ through its official API (`astah-api.jar`):
   to fit it, e.g. a use case with extension points. Nodes without a fill color get Astah's usual
   `#FFFFCC` instead of the API's white. Notes are created per presentation, since Astah keeps
   comments as notes on diagrams; comments that are not on any diagram are dropped.
+- Free texts and lines go through `createText` and `createLine` of the diagram's editor. Astah
+  adds the line but reports an exception; the export then takes the line the diagram did not
+  have before and sets `line.type` and `line.arrow.type` on it.
 - Sequence diagrams: Astah puts lifeline heads at y = 30, so the whole drawing moves vertically
   by as much; x stays. Messages are created from top to bottom at their stored height, from the
   Astah bar made for the UmlCraft bar at that height (or the lifeline). Astah makes the bars

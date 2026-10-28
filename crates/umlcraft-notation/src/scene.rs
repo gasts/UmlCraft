@@ -199,6 +199,8 @@ pub enum Figure {
     Cube {
         depth: f32,
     },
+    /// A free text: only its rows are drawn.
+    Text,
     Other,
 }
 
@@ -651,8 +653,9 @@ impl Line {
         for word in self.words() {
             let candidate =
                 if current.is_empty() { word.clone() } else { format!("{current} {word}") };
-            // Break where Astah breaks: by its width, not the visibility column's.
-            if !current.is_empty() && self.astah_width_of(&candidate, measure) > max {
+            // Break where Astah breaks: by the exact width of the plain text, not by the
+            // visibility column's nor Java's whole-pixel width.
+            if !current.is_empty() && measure.width(&candidate, self.size, self.bold) > max {
                 texts.push(std::mem::replace(&mut current, word));
             } else {
                 current = candidate;
@@ -817,8 +820,33 @@ pub fn build(model: &Model, diagram: Id, preview: &Preview, measure: &dyn TextMe
             .filter_map(|p| edge_shape(p, &rects, &outlines)),
     );
     keywords_away_from_notes(&candidates, &built, &mut edges, measure);
+    edges.extend(view.presentations().iter().filter_map(|p| free_line(p, preview)));
     edges.extend(messages);
     Scene { nodes, edges, sequence }
+}
+
+/// A free line, moved along while it is dragged.
+fn free_line(p: &Presentation, preview: &Preview) -> Option<EdgeShape> {
+    let Shape::Line { from, to, dashed, start_arrow, end_arrow } = p.shape else { return None };
+    let (dx, dy) =
+        if preview.moved.contains(&p.id) { (preview.dx, preview.dy) } else { (0.0, 0.0) };
+    let (from, to) = (from.offset(dx, dy), to.offset(dx, dy));
+    let marker = |on: bool| if on { EndMarker::OpenArrow } else { EndMarker::None };
+    Some(EdgeShape {
+        id: p.id,
+        points: vec![from, to],
+        line: if dashed { LineStyle::ShortDashed } else { LineStyle::Solid },
+        shape: LineShape::Line,
+        source_marker: marker(start_arrow),
+        target_marker: marker(end_arrow),
+        labels: Vec::new(),
+        fixed: true,
+        ends: [Rect::new(from.x, from.y, 0.0, 0.0), Rect::new(to.x, to.y, 0.0, 0.0)],
+        anchors: [None, None],
+        name_arrow: None,
+        qualifiers: Vec::new(),
+        node_tips: [from, to],
+    })
 }
 
 /// A note anchored to the middle of an include or extend comes from one side of its line; the
@@ -912,11 +940,39 @@ fn layout_node(
     measure: &dyn TextMeasure,
 ) -> NodeShape {
     let element = p.element.and_then(|e| model.get(e));
-    let (rect, figure, rows) = match element {
-        Some(e) => layout_element(model, e.id(), &p.style, p.regions(), bounds, measure),
-        None => (bounds, Figure::Other, Vec::new()),
+    let (rect, figure, rows) = match (element, &p.shape) {
+        (_, Shape::Text { text, .. }) => layout_text(text, &p.style, bounds, measure),
+        (Some(e), _) => layout_element(model, e.id(), &p.style, p.regions(), bounds, measure),
+        (None, _) => (bounds, Figure::Other, Vec::new()),
     };
     NodeShape { id: p.id, element: p.element, rect, figure, rows, fill: p.style.fill }
+}
+
+/// A free text as Astah draws it: no outline, each line 10 right of the box's left edge, the
+/// first baseline 17 below its top. The box grows to hold the text.
+fn layout_text(
+    text: &str,
+    style: &Style,
+    bounds: Rect,
+    measure: &dyn TextMeasure,
+) -> (Rect, Figure, Vec<Row>) {
+    let size = style.font_size.unwrap_or(FONT_SIZE);
+    let height = line_height(size);
+    let top = bounds.y + 17.0 - size * crate::draw::BASELINE;
+    let rows: Vec<Row> = text
+        .split('\n')
+        .enumerate()
+        .map(|(i, text)| {
+            let line = Line::new(text, size, RowRole::Name, None);
+            let w = line.width(measure);
+            let y = top + i as f32 * height;
+            line.place(Rect::new(bounds.x + 10.0, y, w, height), LabelAlign::Left)
+        })
+        .collect();
+    let width = rows.iter().map(|r| r.rect.width + 20.0).fold(bounds.width, f32::max);
+    let bottom = rows.last().map_or(0.0, |r| r.rect.bottom() - bounds.y);
+    let rect = Rect::new(bounds.x, bounds.y, width, bounds.height.max(bottom));
+    (rect, Figure::Text, rows)
 }
 
 fn layout_element(
@@ -2572,6 +2628,42 @@ mod tests {
         assert_eq!(texts, vec![("Customer", RowRole::Name), ("- name : String", RowRole::Member)]);
         // The stored bounds are big enough, so the box keeps them.
         assert_eq!(customer.rect, Rect::new(80.0, 80.0, 160.0, 90.0));
+    }
+
+    #[test]
+    fn free_texts_and_lines_are_drawn_as_astah_draws_them() {
+        let (mut doc, ids) = order_system();
+        let d = ids.class_diagram;
+        let mut line = Presentation::line(Point::new(10.0, 300.0), Point::new(150.0, 300.0));
+        if let Shape::Line { dashed, start_arrow, .. } = &mut line.shape {
+            (*dashed, *start_arrow) = (true, true);
+        }
+        let (text, line) = doc
+            .edit("free", |tx| {
+                let text = Presentation::text(Rect::new(40.0, 400.0, 30.0, 23.0), "a\nb c".into());
+                Ok((tx.add_presentation(d, text)?, tx.add_presentation(d, line)?))
+            })
+            .unwrap();
+        let scene = build(doc.model(), d, &Preview::default(), &ApproxMeasure);
+        let node = scene.node(text).unwrap();
+        assert!(matches!(node.figure, Figure::Text));
+        let rows: Vec<(&str, f32)> =
+            node.rows.iter().map(|r| (r.text.as_str(), r.rect.x)).collect();
+        assert_eq!(rows, vec![("a", 50.0), ("b c", 50.0)]);
+        // The first baseline lies 17 below the top; the box grows to hold both lines.
+        let baseline = node.rows[0].rect.y + FONT_SIZE * crate::draw::BASELINE;
+        assert!((baseline - 417.0).abs() < 1e-3, "{baseline}");
+        assert!(node.rect.bottom() >= node.rows[1].rect.bottom());
+        let edge = scene.edge(line).unwrap();
+        assert_eq!(edge.points, vec![Point::new(10.0, 300.0), Point::new(150.0, 300.0)]);
+        assert_eq!((edge.line, edge.source_marker), (LineStyle::ShortDashed, EndMarker::OpenArrow));
+        assert_eq!(edge.target_marker, EndMarker::None);
+        // Both move with the selection.
+        let preview =
+            Preview { moved: [text, line].into(), dx: 5.0, dy: 7.0, ..Preview::default() };
+        let scene = build(doc.model(), d, &preview, &ApproxMeasure);
+        assert_eq!(scene.node(text).unwrap().rect.x, 45.0);
+        assert_eq!(scene.edge(line).unwrap().points[0], Point::new(15.0, 307.0));
     }
 
     #[test]

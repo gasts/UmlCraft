@@ -502,6 +502,14 @@ impl DiagramCanvas {
         ws.doc.model().view(ws.active_diagram?)?.get(presentation)?.element
     }
 
+    /// Whether `presentation` is a free line, which moves like a node.
+    fn is_free_line(&self, presentation: Id, cx: &App) -> bool {
+        let ws = self.workspace.read(cx);
+        ws.active_diagram
+            .and_then(|d| ws.doc.model().view(d)?.get(presentation))
+            .is_some_and(|p| matches!(p.shape, umlcraft_model::Shape::Line { .. }))
+    }
+
     fn on_left_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         self.commit_edit(cx);
         self.focus_handle.focus(window, cx);
@@ -606,7 +614,9 @@ impl DiagramCanvas {
                         let reorder = self.reorderable(id, cx).filter(|_| selected && !extend);
                         if let Some(element) = reorder {
                             self.drag = Some(Drag::Reorder { element, start: p, current: p });
-                        } else if self.scene.node(id).is_some() && selected {
+                        } else if (self.scene.node(id).is_some() || self.is_free_line(id, cx))
+                            && selected
+                        {
                             let reselect =
                                 (already && !extend && selection.len() > 1).then_some(id);
                             self.drag = Some(Drag::Move { start: p, dx: 0.0, dy: 0.0, reselect });

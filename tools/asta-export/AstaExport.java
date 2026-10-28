@@ -31,6 +31,7 @@ import com.change_vision.jude.api.inf.editor.ActivityDiagramEditor;
 import com.change_vision.jude.api.inf.editor.BasicDiagramEditor;
 import com.change_vision.jude.api.inf.editor.BasicModelEditor;
 import com.change_vision.jude.api.inf.editor.ClassDiagramEditor;
+import com.change_vision.jude.api.inf.editor.DiagramEditor;
 import com.change_vision.jude.api.inf.editor.SequenceDiagramEditor;
 import com.change_vision.jude.api.inf.editor.StateMachineDiagramEditor;
 import com.change_vision.jude.api.inf.editor.StructureDiagramEditor;
@@ -713,6 +714,9 @@ public final class AstaExport {
         String kind = text(e, "diagram");
         Object owner = created.get(owners.get(id));
         IDiagram diagram;
+        DiagramEditor current;
+        // Sequence diagrams are moved down to Astah's frame.
+        double dy = 0;
         switch (kind) {
             case "class", "useCase", "component", "deployment" -> {
                 StructureDiagramEditor editor;
@@ -732,6 +736,7 @@ public final class AstaExport {
                 }
                 frame(id, diagram);
                 structureDiagram(id, editor);
+                current = editor;
             }
             case "sequence" -> {
                 // A sequence diagram brings its own interaction, owned by the interaction's owner.
@@ -754,7 +759,9 @@ public final class AstaExport {
                     Boolean.toString(!Boolean.TRUE.equals(props.get("hideReturnValues"))));
                 d.setProperty("flat_message_index",
                     Boolean.toString(Boolean.TRUE.equals(props.get("flatMessageNumbers"))));
-                new Sequence(id, sd).build();
+                Sequence sequence = new Sequence(id, sd);
+                sequence.build();
+                dy = sequence.dy;
                 if (Boolean.TRUE.equals(props.get("hideFrame"))) {
                     for (IPresentation p : d.getPresentations()) {
                         if ("Frame".equals(p.getType())) {
@@ -763,6 +770,7 @@ public final class AstaExport {
                     }
                 }
                 diagram = d;
+                current = sd;
             }
             case "activity" -> {
                 // An activity diagram brings its own activity, owned by the activity's owner.
@@ -779,6 +787,7 @@ public final class AstaExport {
                 frame(id, d);
                 activityDiagram(id, activity, ad);
                 diagram = d;
+                current = ad;
             }
             case "stateMachine" -> {
                 // A state machine diagram brings its own state machine, like an activity diagram.
@@ -795,11 +804,60 @@ public final class AstaExport {
                 frame(id, d);
                 stateDiagram(id, machine, sm);
                 diagram = d;
+                current = sm;
             }
             default -> throw new IllegalStateException(kind);
         }
+        freeShapes(id, current, dy);
         common(id, diagram, Set.of());
         return diagram;
+    }
+
+    /// A free line from `from` to `to`. Astah adds the line but then reports an exception from
+    /// the command that adds it; the new line is then the presentation the diagram did not have.
+    private static IPresentation createLine(DiagramEditor editor, Point2D from, Point2D to) throws Exception {
+        Set<IPresentation> before = new HashSet<>(List.of(editor.getDiagram().getPresentations()));
+        try {
+            return editor.createLine(from, to);
+        } catch (InvalidEditingException e) {
+            for (IPresentation p : editor.getDiagram().getPresentations()) {
+                if (!before.contains(p)) {
+                    return p;
+                }
+            }
+            throw e;
+        }
+    }
+
+    /// Free texts and lines, which show no model element, moved down by `dy`.
+    private void freeShapes(String diagram, DiagramEditor editor, double dy) {
+        for (Map<String, Object> p : view(diagram)) {
+            String shape = String.valueOf(p.get("shape"));
+            if ("text".equals(shape)) {
+                Map<String, Object> r = (Map<String, Object>) p.get("bounds");
+                attempt(null, () -> {
+                    return editor.createText(text(p, "text"), new Point2D.Double(num(r, "x"), num(r, "y") + dy));
+                });
+            } else if ("line".equals(shape)) {
+                Map<String, Object> from = (Map<String, Object>) p.get("from");
+                Map<String, Object> to = (Map<String, Object>) p.get("to");
+                attempt(null, () -> {
+                    IPresentation line = createLine(editor,
+                        new Point2D.Double(num(from, "x"), num(from, "y") + dy),
+                        new Point2D.Double(num(to, "x"), num(to, "y") + dy));
+                    if (Boolean.TRUE.equals(p.get("dashed"))) {
+                        line.setProperty("line.type", "dash1");
+                    }
+                    boolean start = Boolean.TRUE.equals(p.get("startArrow"));
+                    boolean end = Boolean.TRUE.equals(p.get("endArrow"));
+                    if (start || end) {
+                        line.setProperty("line.arrow.type",
+                            start && end ? "botharrow" : start ? "startarrow" : "endarrow");
+                    }
+                    return line;
+                });
+            }
+        }
     }
 
     /// Astah frames new diagrams; UmlCraft only those that show themselves as a node.
@@ -1700,6 +1758,15 @@ public final class AstaExport {
                 common(element, model, Set.of());
                 created.putIfAbsent(element, model);
                 resize(lane, num(head, "width"), num(head, "height"));
+                // As for instances, the API keeps neither a hidden name nor a hidden classifier.
+                if (p.get("style") instanceof Map<?, ?> style) {
+                    if (Boolean.TRUE.equals(style.get("hideInstanceName"))) {
+                        drop("instanceNameVisibility");
+                    }
+                    if (Boolean.TRUE.equals(style.get("hideInstanceType"))) {
+                        drop("instanceTypeVisibility");
+                    }
+                }
             }
 
             walk(owners.get(diagram), null);
@@ -1852,8 +1919,10 @@ public final class AstaExport {
                 double y = y(at + num((Map<String, Object>) offset, "y"));
                 Object defaults = layouts.get(diagram) instanceof Map<?, ?> l ? l.get("labelDefaults") : null;
                 Object own = defaults instanceof Map<?, ?> d ? d.get(p.get("id")) : null;
-                double point = Double.parseDouble(link.getProperty("name.point.x"));
-                double shift = own instanceof Number n ? point - n.doubleValue() : -2.45;
+                // Found and lost messages may have no label position of their own yet.
+                String current = link.getProperty("name.point.x");
+                double shift = own instanceof Number n && current != null
+                    ? Double.parseDouble(current) - n.doubleValue() : -2.45;
                 link.setProperty("name.point.x", Double.toString(x + shift));
                 link.setProperty("name.point.y", Double.toString(y));
             }

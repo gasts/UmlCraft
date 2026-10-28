@@ -368,13 +368,23 @@ impl Tx<'_> {
         Ok(())
     }
 
-    /// Moves or resizes a node; for a lifeline, its head.
+    /// Moves or resizes a node or free text; for a lifeline, its head.
     pub fn set_bounds(&mut self, diagram: Id, id: Id, bounds: Rect) -> Result<()> {
         self.update_presentation(diagram, id, |p| match &mut p.shape {
             Shape::Node { bounds: b, .. }
             | Shape::Lifeline { head: b, .. }
-            | Shape::Fragment { bounds: b, .. } => *b = bounds,
+            | Shape::Fragment { bounds: b, .. }
+            | Shape::Text { bounds: b, .. } => *b = bounds,
             _ => {}
+        })
+    }
+
+    /// Moves a free line by (`dx`, `dy`).
+    pub fn move_line(&mut self, diagram: Id, id: Id, dx: f32, dy: f32) -> Result<()> {
+        self.update_presentation(diagram, id, |p| {
+            if let Shape::Line { from, to, .. } = &mut p.shape {
+                (*from, *to) = (from.offset(dx, dy), to.offset(dx, dy));
+            }
         })
     }
 

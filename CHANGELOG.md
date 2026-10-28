@@ -39,7 +39,24 @@ today.
     stands on a line below its trigger;
   - a node's cube sticks out above and right of its bounds, as in Astah;
   - «reside», «implement» and other stereotypes of unnamed lines stay where Astah drew them;
-  - bound classes that a dependency or generalization points to are kept.
+  - bound classes that a dependency, generalization or association points to are kept, so
+    associations to types such as `List<User>` are no longer left out;
+  - a self-association keeps its ends where Astah has them;
+  - a found message without arguments shows the signature of the operation it calls and
+    breaks it over lines like Astah; «create» without a text stands where its label was
+    placed;
+  - long attributes and operations break where Astah breaks them;
+  - combined fragments show their name in the tab (`loop : name`); «create» without a text
+    stands where the label goes;
+  - activation bars that Astah keeps with width 0 are drawn as a line;
+  - lifelines can hide their classifier or name, as in Astah (a switch in the properties
+    panel). Hidden ones are reported by the export to Astah.
+- **Free texts and lines**: texts and lines drawn on a diagram without a model element, such
+  as a guard written next to a fragment or a reply drawn by hand, come along from `.asta`
+  files, dashed and with arrowheads as in Astah, can be moved and deleted, and go back to
+  Astah. Projects with free texts or lines cannot be opened by UmlCraft 0.7.0 and older.
+- Export to Astah no longer fails on sequence diagrams with a found or lost message whose
+  label was moved.
 - Tagged values of languages carry UmlCraft's own names: `java.`, `csharp.` and `cpp.`
   instead of Astah's `jude.java.` … The Astah import and older project files are renamed on
   the way in, the export names them back; Java annotations, which Astah does not take under

@@ -16,13 +16,13 @@
 use std::collections::{HashMap, HashSet};
 
 use umlcraft_model::{
-    ElementKind, Id, InteractionOperator, LineShape, MessageGate, MessageSort, Model, Point, Rect,
-    Shape, View,
+    ElementKind, Id, InteractionOperator, LineShape, MessageGate, MessageSort, Model,
+    ParameterDirection, Point, Rect, Shape, Style, View,
 };
 
 use crate::scene::{
-    EdgeLabel, EdgeShape, EndMarker, Figure, HeadIcon, LabelAlign, LineStyle, NodeShape, Row,
-    RowRole, TextMeasure, line_height,
+    EdgeLabel, EdgeShape, EndMarker, FONT_SIZE, Figure, HeadIcon, LabelAlign, LineStyle, NodeShape,
+    Row, RowRole, TextMeasure, line_height,
 };
 
 /// Height of a lifeline's head box as Astah creates it.
@@ -163,6 +163,15 @@ fn message_parts(
     let text = match p.sort {
         MessageSort::Reply if reply_value && !p.return_value.is_empty() => p.return_value.clone(),
         MessageSort::Reply => name.to_owned(),
+        // A found message without arguments shows the signature of the operation it calls, as
+        // in Astah: `findRegions(b: User) : List<Region>`.
+        _ if parameters
+            && p.gate == MessageGate::Found
+            && p.arguments.is_empty()
+            && p.operation.is_some() =>
+        {
+            p.operation.map(|o| signature(model, o, name)).unwrap_or_default()
+        }
         _ if parameters && !name.is_empty() => format!("{name}({})", p.arguments),
         _ => name.to_owned(),
     };
@@ -181,6 +190,48 @@ fn message_parts(
     (stereotype, text)
 }
 
+/// `text` in lines no wider than `room`, broken at spaces; a word wider than `room` stands on a
+/// line of its own.
+fn break_at_spaces(text: &str, room: f32, measure: &dyn TextMeasure) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for word in text.split(' ') {
+        match lines.last_mut() {
+            Some(line) if crate::scene::label_width(&format!("{line} {word}"), measure) <= room => {
+                line.push(' ');
+                line.push_str(word);
+            }
+            _ => lines.push(word.to_owned()),
+        }
+    }
+    lines
+}
+
+/// `name(p: Type, q: Type) : Result`, an operation called by a message without arguments.
+fn signature(model: &Model, operation: Id, name: &str) -> String {
+    let Some(o) = model.get(operation) else { return format!("{name}()") };
+    let parameters: Vec<String> = o
+        .children()
+        .iter()
+        .filter_map(|&c| model.get(c))
+        .filter_map(|c| match c.kind() {
+            ElementKind::Parameter(p) if p.direction != ParameterDirection::Return => {
+                Some(match crate::member::type_label(model, &p.type_ref) {
+                    Some(t) => format!("{}: {t}", c.name()),
+                    None => c.name().to_owned(),
+                })
+            }
+            _ => None,
+        })
+        .collect();
+    let mut text = format!("{name}({})", parameters.join(", "));
+    if let ElementKind::Operation(p) = o.kind()
+        && let Some(t) = crate::member::type_label(model, &p.return_type)
+    {
+        text.push_str(&format!(" : {t}"));
+    }
+    text
+}
+
 /// An activation bar as laid out.
 #[derive(Clone, Copy)]
 struct Bar {
@@ -188,12 +239,13 @@ struct Bar {
     top: f32,
     bottom: f32,
     left: f32,
+    width: f32,
     level: usize,
 }
 
 impl Bar {
     fn right(&self) -> f32 {
-        self.left + BAR
+        self.left + self.width
     }
 
     fn contains(&self, y: f32) -> bool {
@@ -275,7 +327,8 @@ pub(crate) fn arrange(
                 let Some(lifeline) = p.element else { continue };
                 let icon = if p.style.iconic { head_icon(model, lifeline) } else { HeadIcon::Box };
                 let head = node.rect;
-                let (line_top, rows) = lifeline_rows(model, lifeline, head, icon, measure);
+                let (line_top, rows) =
+                    lifeline_rows(model, lifeline, &p.style, head, icon, measure);
                 let bottom = line_top + length;
                 node.rect = Rect::new(head.x, head.y, head.width, bottom - head.y);
                 node.figure = Figure::Lifeline { head, icon, line: (line_top, bottom) };
@@ -302,12 +355,17 @@ pub(crate) fn arrange(
                     }
                     _ => None,
                 };
-                // Astah writes a loop's condition into the tab.
+                // Astah writes the fragment's name (`loop : name`) and a loop's condition into
+                // the tab.
                 let in_tab = props.operator == InteractionOperator::Loop;
-                let keyword = match operands.first().and_then(|&o| guard_of(o)) {
-                    Some(guard) if in_tab => format!("loop {guard}"),
-                    _ => operator_keyword(props.operator).to_owned(),
-                };
+                let mut keyword = operator_keyword(props.operator).to_owned();
+                if !e.name().trim().is_empty() {
+                    keyword = format!("{keyword} : {}", e.name());
+                }
+                if let Some(guard) = operands.first().and_then(|&o| guard_of(o)).filter(|_| in_tab)
+                {
+                    keyword = format!("{keyword} {guard}");
+                }
                 let tab = tab(&keyword, r, measure);
                 let mut rows = vec![tab_row(&keyword, r, ROW_17, e.id())];
                 for (k, &operand) in operands.iter().enumerate() {
@@ -364,29 +422,29 @@ pub(crate) fn arrange(
     }
 
     // Bars, with x from their lifeline and from the bars they lie within.
-    let mut bars: Vec<(Id, Id, f32, f32)> = view
+    let mut bars: Vec<(Id, Id, f32, f32, f32)> = view
         .presentations()
         .iter()
         .filter_map(|p| match p.shape {
-            Shape::Activation { lifeline, top, height } if lanes.contains_key(&lifeline) => {
-                Some((p.id, lifeline, top, top + height))
+            Shape::Activation { lifeline, top, height, width } if lanes.contains_key(&lifeline) => {
+                Some((p.id, lifeline, top, top + height, width.unwrap_or(BAR)))
             }
             _ => None,
         })
         .collect();
     bars.sort_by(|a, b| a.2.total_cmp(&b.2).then(b.3.total_cmp(&a.3)));
-    for &(id, lane, top, bottom) in &bars {
+    for &(id, lane, top, bottom, width) in &bars {
         let state = lanes.get_mut(&lane).expect("filtered above");
         let level = state.bars.iter().filter(|b| b.top <= top && bottom <= b.bottom).count();
-        let left = state.center() - BAR / 2.0 + level as f32 * BAR;
-        state.bars.push(Bar { id, top, bottom, left, level });
+        let left = state.center() - width / 2.0 + level as f32 * BAR;
+        state.bars.push(Bar { id, top, bottom, left, width, level });
     }
     for node in nodes.iter_mut() {
         if let Some(Shape::Activation { lifeline, .. }) = view.get(node.id).map(|p| &p.shape)
             && let Some(bar) =
                 lanes.get(lifeline).and_then(|l| l.bars.iter().find(|b| b.id == node.id))
         {
-            node.rect = Rect::new(bar.left, bar.top, BAR, bar.bottom - bar.top);
+            node.rect = Rect::new(bar.left, bar.top, bar.width, bar.bottom - bar.top);
             node.figure = Figure::Activation;
             node.rows = Vec::new();
         }
@@ -405,7 +463,7 @@ pub(crate) fn arrange(
         nodes.push(NodeShape {
             id: p.id,
             element: None,
-            rect: Rect::new(bar.left, bar.top, BAR, bar.bottom - bar.top),
+            rect: Rect::new(bar.left, bar.top, bar.width, bar.bottom - bar.top),
             figure: Figure::Activation,
             rows: Vec::new(),
             fill: p.style.fill,
@@ -505,17 +563,20 @@ fn head_icon(model: &Model, lifeline: Id) -> HeadIcon {
 fn lifeline_rows(
     model: &Model,
     lifeline: Id,
+    style: &Style,
     head: Rect,
     icon: HeadIcon,
     measure: &dyn TextMeasure,
 ) -> (f32, Vec<Row>) {
     let Some(e) = model.get(lifeline) else { return (head.bottom(), Vec::new()) };
     let ElementKind::Lifeline(p) = e.kind() else { return (head.bottom(), Vec::new()) };
-    // A bound class shows what it binds: `list : List<Order>`.
-    let type_name = p.represents.filter(|&t| model.get(t).is_some());
+    // A bound class shows what it binds: `list : List<Order>`. Name and classifier may be
+    // hidden.
+    let type_name = p.represents.filter(|&t| model.get(t).is_some() && !style.hide_instance_type);
+    let name = if style.hide_instance_name { "" } else { e.name() };
     let text = match type_name {
-        Some(t) => format!("{} : {}", e.name(), crate::member::display_name(model, t)),
-        None => e.name().to_owned(),
+        Some(t) => format!("{name} : {}", crate::member::display_name(model, t)),
+        None => name.to_owned(),
     };
     let w = measure.rounded_width(&text, 12.0, false);
     let h = line_height(12.0);
@@ -823,17 +884,41 @@ fn message_edge(
             (None, None) => unreachable!("one of them is set"),
         });
     }
+    // Astah breaks the label of a found message at spaces where it would run past the lifeline
+    // it calls; the last line stays where the whole label would be.
+    if m.gate == MessageGate::Found
+        && let Some(first) = labels.first().filter(|l| l.align == LabelAlign::Left).cloned()
+    {
+        let room = to.center() - first.anchor.x;
+        let lines = break_at_spaces(&first.text, room, measure);
+        if lines.len() > 1 {
+            let count = lines.len();
+            labels.splice(
+                0..1,
+                lines.into_iter().enumerate().map(|(i, text)| EdgeLabel {
+                    text,
+                    anchor: first
+                        .anchor
+                        .offset(0.0, -(line_height(FONT_SIZE) * (count - 1 - i) as f32)),
+                    ..first.clone()
+                }),
+            );
+        }
+    }
     if let Some(stereotype) = stereotype {
-        let x = match labels.first() {
+        let (x, above) = match (labels.first(), left_at) {
             // Centered over a label placed by hand.
-            Some(l) if l.align == LabelAlign::Left => {
-                l.anchor.x + crate::scene::label_width(&l.text, measure) / 2.0
+            (Some(l), _) if l.align == LabelAlign::Left => {
+                (l.anchor.x + crate::scene::label_width(&l.text, measure) / 2.0, STEREOTYPE_ABOVE)
             }
-            _ => center.unwrap_or_default(),
+            // Without a text, in the label's place: where it was placed, or centered.
+            (None, Some(x)) => (x, 0.0),
+            (None, None) => (center.unwrap_or_default(), 0.0),
+            _ => (center.unwrap_or_default(), STEREOTYPE_ABOVE),
         };
         labels.push(EdgeLabel {
             text: stereotype,
-            anchor: Point::new(x, label_top - STEREOTYPE_ABOVE),
+            anchor: Point::new(x, label_top - above),
             align: LabelAlign::Center,
             underline: false,
             keyword: false,

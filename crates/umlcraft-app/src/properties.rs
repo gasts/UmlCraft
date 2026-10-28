@@ -1784,6 +1784,25 @@ impl Render for PropertiesPanel {
                         |s, v| s.hide_operations = v,
                     ));
             }
+            if matches!(&shown, Some(ElementKind::Lifeline(_))) {
+                body = body
+                    .child(style_flag(
+                        "hide-instance-name",
+                        t!("prop.hide_instance_name").into(),
+                        p.style.hide_instance_name,
+                        workspace.clone(),
+                        p.id,
+                        |s, v| s.hide_instance_name = v,
+                    ))
+                    .child(style_flag(
+                        "hide-instance-type",
+                        t!("prop.hide_instance_type").into(),
+                        p.style.hide_instance_type,
+                        workspace.clone(),
+                        p.id,
+                        |s, v| s.hide_instance_type = v,
+                    ));
+            }
             if let Some(ElementKind::Instance(instance)) = &shown {
                 body = body
                     .child(style_flag(

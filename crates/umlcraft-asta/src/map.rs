@@ -486,7 +486,8 @@ impl Importer<'_> {
                     // Anonymous classifiers bind a template to arguments; they live on as type
                     // expressions such as `List<Projekt>` (see `type_of`), and as bound classes
                     // where a diagram shows them, a lifeline represents them (`baseInv`) or a
-                    // relationship ends at them (`implements Comparable<Order>`).
+                    // relationship ends at them (`implements Comparable<Order>`, an association
+                    // to `List<User>`).
                     let bound = !self.r.list(child, "templateBinding").is_empty();
                     let referenced = [
                         "presentation",
@@ -495,6 +496,7 @@ impl Importer<'_> {
                         "clientDependency",
                         "specialization",
                         "generalization",
+                        "associationEnd",
                     ]
                     .iter()
                     .any(|field| !self.r.list(child, field).is_empty());
@@ -1609,6 +1611,10 @@ impl Importer<'_> {
                     presentation.style = self.fill(p);
                     presentation.style.iconic =
                         r.g.field(p, "notationType").and_then(Value::as_i64) == Some(1);
+                    let off =
+                        |field: &str| r.g.field(p, field).and_then(Value::as_bool) == Some(false);
+                    presentation.style.hide_instance_name = off("nameVisibility");
+                    presentation.style.hide_instance_type = off("baseVisibility");
                     presentation
                 }
                 "CombinedFragmentPresentation" | "InteractionUsePresentation" => {
@@ -1647,6 +1653,10 @@ impl Importer<'_> {
             let Some(&server) = r.list(p, "servers").first() else { continue };
             let Some(lifeline) = lane_of(self, server, &presentation_of) else { continue };
             let mut presentation = Presentation::activation(lifeline, bounds.y, bounds.height);
+            // Astah keeps bars of width 0 and draws them as a line.
+            if let Shape::Activation { width, .. } = &mut presentation.shape {
+                *width = (bounds.width.abs() < 1e-3).then_some(0.0);
+            }
             presentation.style = self.fill(p);
             if let Some(id) = self.insert(diagram, presentation, false) {
                 presentation_of.insert(p, id);
@@ -1663,6 +1673,12 @@ impl Importer<'_> {
         for &p in &sources {
             if class(p) == "NoteAnchorPresentation" {
                 self.edge(diagram, p, &presentation_of, shift);
+            }
+        }
+        // Astah draws free texts and lines in front of the bars.
+        for &p in &sources {
+            if let Some(presentation) = self.free_shape(p, shift) {
+                self.insert(diagram, presentation, false);
             }
         }
     }
@@ -1780,20 +1796,41 @@ impl Importer<'_> {
             self.r.obj(p, "allPoints").is_some() || self.r.class(p) == "NoteAnchorPresentation"
         });
 
-        let mut placed = Vec::new();
+        // Texts that name a system boundary are part of it.
+        let names: HashSet<ObjId> = if kind == DiagramKind::UseCase {
+            nodes
+                .iter()
+                .filter(|&&p| self.r.class(p) == "RectPresentation")
+                .filter_map(|&p| self.boundary_text(p).map(|(t, _)| t))
+                .collect()
+        } else {
+            HashSet::new()
+        };
+        // Nodes, and free texts and lines (without node data) among them in Astah's z-order.
+        let mut placed: Vec<(ObjId, Option<NodeData>)> = Vec::new();
         for p in nodes {
-            if let Some(node) = self.node(diagram, kind, p) {
-                placed.push(node);
+            if matches!(self.r.class(p), "TextPresentation" | "LinePresentation") {
+                if !names.contains(&p) {
+                    placed.push((p, None));
+                }
+            } else if let Some((p, node)) = self.node(diagram, kind, p) {
+                placed.push((p, Some(node)));
             }
         }
         let min = placed
             .iter()
-            .map(|(_, n)| n.bounds)
+            .filter_map(|(p, n)| n.as_ref().map(|n| n.bounds).or_else(|| self.rect(*p)))
             .fold((f32::MAX, f32::MAX), |(x, y), b| (x.min(b.x), y.min(b.y)));
         let shift = Point::new((MARGIN - min.0).max(0.0), (MARGIN - min.1).max(0.0));
 
         let mut presentation_of = HashMap::new();
-        for (source, mut node) in placed {
+        for (source, node) in placed {
+            let Some(mut node) = node else {
+                if let Some(presentation) = self.free_shape(source, shift) {
+                    self.insert(diagram, presentation, false);
+                }
+                continue;
+            };
             node.bounds.x += shift.x;
             node.bounds.y += shift.y;
             // Containers and fragments go to the back, as when they are drawn in UmlCraft.
@@ -1961,6 +1998,12 @@ impl Importer<'_> {
     /// rectangle's top left: the topmost text over the rectangle that starts at most 40 above
     /// or below its top.
     fn boundary_name(&self, p: ObjId) -> Option<(String, Point)> {
+        let (t, at) = self.boundary_text(p)?;
+        Some((self.r.text(t, "text"), at))
+    }
+
+    /// The text presentation that names the rectangle `p`, see [`Self::boundary_name`].
+    fn boundary_text(&self, p: ObjId) -> Option<(ObjId, Point)> {
         const NAME_ZONE: f32 = 40.0;
         let rect = self.rect(p)?;
         let texts = self.r.obj(p, "diagram").map(|d| self.r.list(d, "presentation"));
@@ -1973,7 +2016,36 @@ impl Importer<'_> {
                 (rect.x..=rect.right()).contains(&b.center().x) && (b.y - rect.y).abs() < NAME_ZONE
             })
             .min_by(|(_, a), (_, b)| a.y.total_cmp(&b.y))
-            .map(|(t, b)| (self.r.text(t, "text"), Point::new(b.x - rect.x, b.y - rect.y)))
+            .map(|(t, b)| (t, Point::new(b.x - rect.x, b.y - rect.y)))
+    }
+
+    /// A free text or line, moved by `shift`. A line runs from its location by its
+    /// `localMovement`; `line.type` dashes it, `line.arrow.type` puts arrowheads on it.
+    fn free_shape(&self, p: ObjId, shift: Point) -> Option<Presentation> {
+        let r = self.r;
+        match r.class(p) {
+            "TextPresentation" => {
+                let bounds = self.rect(p)?.translate(shift.x, shift.y);
+                let mut presentation = Presentation::text(bounds, r.text(p, "text"));
+                presentation.style.font_size = self.fill(p).font_size;
+                Some(presentation)
+            }
+            "LinePresentation" => {
+                let from = r.obj(p, "location").and_then(|l| r.point(l))?.offset(shift.x, shift.y);
+                let by = r.obj(p, "localMovement").and_then(|l| r.point(l)).unwrap_or_default();
+                let mut presentation = Presentation::line(from, from.offset(by.x, by.y));
+                if let Shape::Line { dashed, start_arrow, end_arrow, .. } = &mut presentation.shape
+                {
+                    let line = r.style(p, "line.type").unwrap_or_default();
+                    *dashed = line.starts_with("dash") || line.starts_with("dot");
+                    let arrows = r.style(p, "line.arrow.type").unwrap_or_default();
+                    *start_arrow = arrows.contains("start") || arrows.contains("both");
+                    *end_arrow = arrows.contains("end") || arrows.contains("both");
+                }
+                Some(presentation)
+            }
+            _ => None,
+        }
     }
 
     /// Adds the edge presentation `p`, between presentations added before; returns its id.

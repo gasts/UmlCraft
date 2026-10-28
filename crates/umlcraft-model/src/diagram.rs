@@ -82,7 +82,7 @@ impl Presentation {
         Self {
             id: Id::generate(),
             element: None,
-            shape: Shape::Activation { lifeline, top, height },
+            shape: Shape::Activation { lifeline, top, height, width: None },
             style: Style::default(),
         }
     }
@@ -113,12 +113,37 @@ impl Presentation {
         }
     }
 
-    /// The box of a node or fragment; the head of a lifeline.
+    /// A free text: `text` with its box at `bounds`.
+    pub fn text(bounds: Rect, text: String) -> Self {
+        Self {
+            id: Id::generate(),
+            element: None,
+            shape: Shape::Text { bounds, text },
+            style: Style::default(),
+        }
+    }
+
+    /// A free line from `from` to `to`, solid and without arrowheads.
+    pub fn line(from: Point, to: Point) -> Self {
+        Self {
+            id: Id::generate(),
+            element: None,
+            shape: Shape::Line { from, to, dashed: false, start_arrow: false, end_arrow: false },
+            style: Style::default(),
+        }
+    }
+
+    /// The box of a node, fragment or free text; the head of a lifeline.
     pub fn bounds(&self) -> Option<Rect> {
         match self.shape {
-            Shape::Node { bounds, .. } | Shape::Fragment { bounds, .. } => Some(bounds),
+            Shape::Node { bounds, .. }
+            | Shape::Fragment { bounds, .. }
+            | Shape::Text { bounds, .. } => Some(bounds),
             Shape::Lifeline { head, .. } => Some(head),
-            Shape::Edge { .. } | Shape::Activation { .. } | Shape::Message { .. } => None,
+            Shape::Edge { .. }
+            | Shape::Activation { .. }
+            | Shape::Message { .. }
+            | Shape::Line { .. } => None,
         }
     }
 
@@ -135,7 +160,9 @@ impl Presentation {
             Shape::Node { .. }
             | Shape::Lifeline { .. }
             | Shape::Activation { .. }
-            | Shape::Fragment { .. } => None,
+            | Shape::Fragment { .. }
+            | Shape::Text { .. }
+            | Shape::Line { .. } => None,
         }
     }
 
@@ -194,8 +221,15 @@ pub enum Shape {
         guards: Vec<Option<Point>>,
     },
     /// Sequence diagrams: an activation bar on the lifeline presentation `lifeline`. Its x
-    /// follows from the lifeline and from the bars it lies within.
-    Activation { lifeline: Id, top: f32, height: f32 },
+    /// follows from the lifeline and from the bars it lies within. `width` is unset for the
+    /// usual 10; Astah's files may have bars of width 0, drawn as a line.
+    Activation {
+        lifeline: Id,
+        top: f32,
+        height: f32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        width: Option<f32>,
+    },
     /// Sequence diagrams: a message from lifeline presentation `source` to `target` (the same
     /// one for messages to self and for found and lost messages). It leaves the sender at `y`
     /// and reaches the receiver at `end_y` if that differs (messages to self, messages that
@@ -216,6 +250,22 @@ pub enum Shape {
         /// The name label, if placed by hand.
         #[serde(default, skip_serializing_if = "EdgeLabels::is_empty")]
         labels: EdgeLabels,
+    },
+    /// A text of its own on the diagram, not tied to a model element (Astah's free text). It
+    /// starts 10 right of the box's left edge, its first baseline 17 below the top.
+    Text { bounds: Rect, text: String },
+    /// A line of its own from `from` to `to`, not tied to a model element (Astah's free line).
+    Line {
+        from: Point,
+        to: Point,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        dashed: bool,
+        /// An open arrowhead at `from`.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        start_arrow: bool,
+        /// An open arrowhead at `to`.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        end_arrow: bool,
     },
 }
 
@@ -271,10 +321,11 @@ pub struct Style {
     /// Classifier boxes: hide the attribute compartment; objects: the slot compartment.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_attributes: bool,
-    /// Instances: leave out the instance's name (`: Client`).
+    /// Instances and lifelines: leave out the name (`: Client`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_instance_name: bool,
-    /// Instances: leave out what they are an instance of (`client` instead of `client : Client`).
+    /// Instances and lifelines: leave out what they are an instance of or represent (`client`
+    /// instead of `client : Client`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_instance_type: bool,
     /// Objects: leave out the slots without a value.

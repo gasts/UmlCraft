@@ -29,8 +29,8 @@ Diagrams imported from `.asta` files keep their layout, sizes and colors.
 ## Files
 
 - **Open `.asta` files** (File › Import Astah project, or simply open the file): Astah project
-  files with the model, all diagram kinds above, positions, sizes, waypoints, line styles, notes
-  and colors. Anything UmlCraft cannot represent yet is skipped and reported.
+  files with the model, all diagram kinds above, positions, sizes, waypoints, line styles, notes,
+  free texts and lines, and colors. Anything UmlCraft cannot represent yet is skipped and reported.
 - **Export to `.asta`** (File › Export › Astah project …): writes `.asta` files through the
   official API of an installed Astah; without one the menu item explains what is missing. What
   the API cannot express is reported. See

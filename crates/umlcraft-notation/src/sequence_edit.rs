@@ -137,7 +137,7 @@ impl Geometry {
                     destroyed: *destroyed,
                     iconic: p.style.iconic,
                 }),
-                Shape::Activation { lifeline, top, height } => {
+                Shape::Activation { lifeline, top, height, .. } => {
                     g.bars.push(Bar { id: p.id, lane: *lifeline, top: *top, bottom: top + height })
                 }
                 Shape::Message { source, target, y, end_y, .. } => {
@@ -183,7 +183,8 @@ impl Geometry {
                         _ => g.notes.push(*bounds),
                     }
                 }
-                Shape::Edge { .. } => {}
+                // Free texts and lines stay where they are, as in Astah.
+                Shape::Edge { .. } | Shape::Text { .. } | Shape::Line { .. } => {}
             }
         }
         Ok(g)
@@ -1116,6 +1117,33 @@ mod tests {
         // Calls run between the bars' sides, 5 beside the lifelines' centers.
         let add_item = scene.edges.iter().find(|e| e.points[0].y == 150.0).unwrap();
         assert_eq!((add_item.points[0].x, add_item.points[1].x), (120.0, 310.0));
+    }
+
+    #[test]
+    fn a_fragment_names_itself_in_its_tab_and_lifelines_hide_their_name() {
+        let (mut doc, ids) = order_system();
+        let d = ids.sequence_diagram;
+        let scene = scene_of(&doc, d);
+        let fragment = scene.nodes.iter().find(|n| matches!(n.figure, Figure::Fragment { .. }));
+        let fragment = fragment.unwrap().element.unwrap();
+        let lifeline = scene.nodes.iter().find(|n| matches!(n.figure, Figure::Lifeline { .. }));
+        let lifeline = lifeline.unwrap().id;
+        doc.edit("name", |tx| {
+            tx.rename(fragment, "each item")?;
+            tx.update_presentation(d, lifeline, |p| p.style.hide_instance_name = true)
+        })
+        .unwrap();
+        let scene = scene_of(&doc, d);
+        let rows = |figure: fn(&Figure) -> bool| -> Vec<String> {
+            let node = scene.nodes.iter().find(|n| figure(&n.figure)).unwrap();
+            node.rows.iter().map(|r| r.text.clone()).collect()
+        };
+        assert_eq!(
+            rows(|f| matches!(f, Figure::Fragment { .. })),
+            ["loop : each item [more items]"]
+        );
+        let head = &scene.node(lifeline).unwrap().rows[0].text;
+        assert!(head.is_empty() || head.starts_with(" : "), "{head:?}");
     }
 
     #[test]

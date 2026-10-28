@@ -1,9 +1,10 @@
 # - Astah has no template parameters on operations (class `E` in the root instead).
 # - `Map.Entry<String, App>` becomes an association to an anonymous bound class in Astah,
-#   which the .asta import drops; Astah also files `Entry` as `java.util.Entry`. UmlCraft
+#   which the .asta import keeps; Astah also files `Entry` as `java.util.Entry`. UmlCraft
 #   keeps the attribute and places the JDK types `Map` and `Map.Entry` as the JDK has them.
 
 - class E Public
+- class app. Public
 -   operation + first(list : List<E>) : E static=false abstract=false final=false
 +   attribute - entry : Entry<String,App> static=false final=false
 +   operation + first<E>(list : List<E>) : E static=false abstract=false final=false
@@ -16,3 +17,4 @@
 + interface java.util.Map.Entry Public
 +   template K
 +   template V
+- association app. Navigable entry -- app.App NonNavigable

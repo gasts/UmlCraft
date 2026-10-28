@@ -1,5 +1,7 @@
 # Astah turns `Optional<Order>` into an association to an anonymous bound class
-# `Optional<Order>`, which the .asta import drops. UmlCraft has no bound classes and keeps
-# the attribute.
+# `Optional<Order>`, which the .asta import keeps (`shop.` with an empty name). UmlCraft's
+# source import keeps the attribute.
 
+- class shop. Public
 +   attribute - current : Optional<Order> static=false final=false
+- association shop. Navigable current -- shop.Shop NonNavigable

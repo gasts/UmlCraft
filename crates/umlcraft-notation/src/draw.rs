@@ -313,6 +313,10 @@ pub fn figure(node: &NodeShape) -> Vec<Primitive> {
             result.extend(head(*h, *icon));
             result
         }
+        // Astah draws a bar of width 0 as a line.
+        Figure::Activation if r.width < 0.5 => {
+            vec![line(vec![Point::new(r.x, r.y), Point::new(r.x, r.bottom())], solid)]
+        }
         Figure::Activation => vec![frame(r, Paint::Fill)],
         Figure::Frame { tab } => vec![frame(r, Paint::None), tab_line(*tab, 1.0)],
         Figure::Fragment { tab, separators, filled } => {
@@ -503,6 +507,7 @@ pub fn figure(node: &NodeShape) -> Vec<Primitive> {
             frame(r, Paint::Translucent),
             line(vec![Point::new(r.x, *header), Point::new(r.right(), *header)], solid),
         ],
+        Figure::Text => Vec::new(),
         Figure::Other => vec![Primitive::Frame {
             rect: r,
             width: 1.0,
