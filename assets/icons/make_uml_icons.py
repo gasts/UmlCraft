@@ -1,0 +1,165 @@
+"""Writes UmlCraft's UML tool icons in the style of Fluent UI System Icons, 24 px regular.
+
+Shapes are laid out on a 20 px grid (content 2..18) and mapped onto Fluent's 24 px grid
+(content 2..22) with 1.5 px strokes, as Fluent's own 24 px icons have. File names are the
+palette's tool keys. Run `python make_uml_icons.py` to rewrite `uml/`.
+"""
+import io
+import os
+import re
+
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uml')
+
+
+def pos(v):
+    return f'{1.25 * v - 0.5:g}'
+
+
+def size(v):
+    return f'{1.25 * v:g}'
+
+
+def coords(d):
+    return re.sub(r'-?\d+(?:\.\d+)?', lambda m: pos(float(m.group())), d)
+
+
+HEAD = (r'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#212121" '
+        r'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" '
+        r'xmlns="http://www.w3.org/2000/svg">')
+FILL = r' fill="#212121"'
+
+
+def dash(on=2, off=1.5):
+    return f' stroke-dasharray="{size(on)} {size(off)}" stroke-linecap="butt"'
+
+
+def path(d, extra=''):
+    return f'<path d="{coords(d)}"{extra}/>'
+
+
+def dashed(d):
+    return path(d, dash())
+
+
+def rect(x, y, w, h, rx=0, extra=''):
+    r = f' rx="{size(rx)}"' if rx else ''
+    return f'<rect x="{pos(x)}" y="{pos(y)}" width="{size(w)}" height="{size(h)}"{r}{extra}/>'
+
+
+def circle(cx, cy, r, extra=''):
+    return f'<circle cx="{pos(cx)}" cy="{pos(cy)}" r="{size(r)}"{extra}/>'
+
+
+def ellipse(cx, cy, rx, ry):
+    return f'<ellipse cx="{pos(cx)}" cy="{pos(cy)}" rx="{size(rx)}" ry="{size(ry)}"/>'
+
+
+def dot(cx, cy, r):
+    return circle(cx, cy, r, FILL + ' stroke="none"')
+
+
+BAR = rect(3, 9, 13, 2, extra=FILL + ' stroke="none"')
+INITIAL = [circle(10, 10, 4.5, FILL)]
+FINAL = [circle(10, 10, 6.5), dot(10, 10, 4)]
+FORK = [BAR, path('M9.5 3.5V9M5.5 11V16.5M13.5 11V16.5')]
+JOIN = [BAR, path('M5.5 3.5V9M13.5 3.5V9M9.5 11V16.5')]
+PACKAGE = [path('M2.5 16.5V3.5H8.5V6.5H17.5V16.5Z'), path('M2.5 6.5H8.5')]
+COMPONENT = [path('M4.5 5.5V3.5H17.5V16.5H4.5V14.5M4.5 8.5V11.5'),
+             rect(2.5, 5.5, 4, 3), rect(2.5, 11.5, 4, 3)]
+NODE = [path('M2.5 5.5H14.5V17.5H2.5Z'), path('M2.5 5.5L5.5 2.5H17.5L14.5 5.5'),
+        path('M17.5 2.5V14.5L14.5 17.5')]
+FRAGMENT = [rect(2.5, 3.5, 15, 13, 2), path('M2.5 7.5H7.5L9.5 5.5V3.5')]
+OPEN_HEAD = path('M12.5 6L17.5 9.5L12.5 13')
+MESSAGE_HEAD = path('M12.5 6.5L17.5 9.5L12.5 12.5Z', FILL)
+NAVIGABLE = [path('M2.5 9.5H17.5'), OPEN_HEAD]
+DIAMOND = 'M9.5 9.5L13.5 6.5L17.5 9.5L13.5 12.5Z'
+
+ICONS = {
+    # Nodes
+    'class': [rect(2.5, 3.5, 15, 13, 2), path('M2.5 7.5H17.5M2.5 11.5H17.5')],
+    'interface': [circle(13.5, 10.5, 4), path('M2.5 10.5H9.5')],
+    'enumeration': [rect(2.5, 3.5, 15, 13, 2), path('M2.5 7.5H17.5'),
+                    path('M5.5 10.5H14.5M5.5 13.5H11.5')],
+    'package': PACKAGE,
+    'subsystem': PACKAGE + [path('M10 9V11.5M7.5 14V11.5H12.5V14')],
+    'comment': [path('M2.5 4.5H13.5L17.5 8.5V15.5H2.5Z'), path('M13.5 4.5V8.5H17.5')],
+    'actor': [circle(9.5, 4.5, 2),
+              path('M9.5 6.5V12.5M5.5 8.5H13.5M9.5 12.5L6 17.5M9.5 12.5L13 17.5')],
+    'useCase': [ellipse(10, 10, 7.5, 4.5)],
+    'lifeline': [rect(3.5, 2.5, 12, 5, 1), dashed('M9.5 8V17.5')],
+    'systemBoundary': [rect(2.5, 2.5, 15, 15, 2), path('M4.5 5.5H9.5'),
+                       ellipse(10, 11.5, 4.5, 3)],
+    'combinedFragment': FRAGMENT + [dashed('M3 11.5H17')],
+    'interactionUse': FRAGMENT + [path('M6.5 11.5H13.5')],
+    'action': [rect(2.5, 5.5, 15, 9, 3.5)],
+    'initialNode': INITIAL,
+    'activityFinal': FINAL,
+    'flowFinal': [circle(10, 10, 6.5), path('M5.4 5.4L14.6 14.6M14.6 5.4L5.4 14.6')],
+    'decision': [path('M9.5 7.5L13.5 11.5L9.5 15.5L5.5 11.5Z'),
+                 path('M9.5 2.5V7.5M5.5 11.5H2.5M13.5 11.5H16.5')],
+    'merge': [path('M9.5 4.5L13.5 8.5L9.5 12.5L5.5 8.5Z'),
+              path('M2.5 8.5H5.5M13.5 8.5H16.5M9.5 12.5V17.5')],
+    'fork': FORK,
+    'join': JOIN,
+    'objectNode': [rect(2.5, 5.5, 15, 9, 1)],
+    'partition': [rect(2.5, 2.5, 15, 15, 2), path('M2.5 6.5H17.5M9.5 2.5V17.5')],
+    'state': [rect(2.5, 4.5, 15, 11, 3), path('M2.5 8.5H17.5')],
+    'finalState': FINAL,
+    'initialPseudostate': INITIAL,
+    'choice': [path('M10 3.5L16.5 10L10 16.5L3.5 10Z')],
+    'junction': [circle(10.5, 10.5, 2.5, FILL),
+                 path('M3 4.5L8.2 8.7M3 16.5L8.2 12.3M13.5 10.5H17.5')],
+    'forkPseudostate': FORK,
+    'joinPseudostate': JOIN,
+    'shallowHistory': [circle(10, 10, 7.5), path('M7.5 6V14M12.5 6V14M7.5 9.5H12.5')],
+    'deepHistory': [circle(10, 10, 7.5), path('M6.5 6.5V13.5M10.5 6.5V13.5M6.5 9.5H10.5'),
+                    path('M13.5 6V10M11.8 7L15.2 9M11.8 9L15.2 7')],
+    'component': COMPONENT,
+    'artifact': [path('M4.5 2.5H11.5L15.5 6.5V17.5H4.5Z'), path('M11.5 2.5V6.5H15.5'),
+                 path('M7 10.5H13M7 13.5H13')],
+    'node': NODE,
+    'componentInstance': COMPONENT + [path('M8 10.5H14')],
+    'nodeInstance': NODE + [path('M5.5 11.5H11.5')],
+    'object': [rect(2.5, 3.5, 15, 13, 2), path('M6.5 7.5H13.5M2.5 10.5H17.5')],
+    # Edges
+    'association': [path('M2.5 9.5H17.5')],
+    'navigableAssociation': NAVIGABLE,
+    'aggregation': [path('M2.5 9.5H9.5'), path(DIAMOND)],
+    'composition': [path('M2.5 9.5H9.5'), path(DIAMOND, FILL)],
+    'associationClass': [rect(5.5, 2.5, 9, 7, 1), path('M5.5 5.5H14.5'), dashed('M10 10V15'),
+                         path('M2.5 15.5H17.5')],
+    'containment': [path('M2.5 9.5H11.5'), circle(14.5, 9.5, 3),
+                    path('M14.5 7.5V11.5M12.5 9.5H16.5')],
+    'link': [dot(3.5, 9.5, 1.5), path('M5 9.5H15'), dot(16.5, 9.5, 1.5)],
+    'generalization': [path('M2.5 9.5H11.5'), path('M11.5 5.5L17.5 9.5L11.5 13.5Z')],
+    'realization': [dashed('M11 9.5H2'), path('M11.5 5.5L17.5 9.5L11.5 13.5Z')],
+    'dependency': [dashed('M17 9.5H2'), OPEN_HEAD],
+    'requiredInterface': [path('M2.5 9.5H11.5'),
+                          path('M15.5 5.5C13.29 5.5 11.5 7.29 11.5 9.5'
+                               'C11.5 11.71 13.29 13.5 15.5 13.5')],
+    'include': [circle(4.5, 9.5, 2), path('M12.5 9.5H7.5', dash(1.5, 1.5)),
+                path('M10.5 7.5L12.5 9.5L10.5 11.5'), circle(15.5, 9.5, 2)],
+    'extend': [circle(4.5, 9.5, 2), path('M7.5 9.5H12.5', dash(1.5, 1.5)),
+               path('M9.5 7.5L7.5 9.5L9.5 11.5'), circle(15.5, 9.5, 2)],
+    'noteAnchor': [path('M2.5 5.5H7.5L9.5 7.5V13.5H2.5Z'), dashed('M17.5 9.5H10')],
+    'message': [path('M2.5 9.5H13'), MESSAGE_HEAD],
+    'asyncMessage': NAVIGABLE,
+    'reply': [dashed('M3 9.5H18'), path('M7.5 6L2.5 9.5L7.5 13')],
+    'createMessage': [dashed('M11.5 9.5H2'), path('M8.5 7L12 9.5L8.5 12'),
+                      rect(12.5, 6.5, 5, 6, 1)],
+    'destroyMessage': [path('M2.5 9.5H9'), path('M8 7L11.5 9.5L8 12Z', FILL),
+                       path('M13 7L18 12M13 12L18 7')],
+    'foundMessage': [dot(4.5, 9.5, 2), path('M6.5 9.5H13'), MESSAGE_HEAD],
+    'lostMessage': [path('M2.5 9.5H9.5'), path('M8.5 6.5L13 9.5L8.5 12.5Z', FILL),
+                    dot(15.5, 9.5, 2)],
+    'flow': NAVIGABLE,
+    'transition': NAVIGABLE,
+    'freeLine': [path('M16 4L3.5 16.5', dash(2, 2)), path('M11.5 3.5H16.5V8.5')],
+}
+
+os.makedirs(OUT, exist_ok=True)
+for name, parts in ICONS.items():
+    body = '\n'.join(parts)
+    with io.open(os.path.join(OUT, name + '.svg'), 'w', encoding='utf-8', newline='\n') as f:
+        f.write(f'{HEAD}\n{body}\n</svg>\n')
+print(len(ICONS), 'icons')
