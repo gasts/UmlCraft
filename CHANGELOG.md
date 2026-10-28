@@ -3,7 +3,7 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
-## Unreleased
+## 0.8.0 – 2026-10-28
 
 - **Members look as in Astah**: the visibility stands right before the name again (`- name`).
   UmlCraft's own column, which lines up all names of a compartment, is now a setting
