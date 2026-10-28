@@ -39,21 +39,35 @@ fn relative(rect: Rect, p: Point) -> Point {
     Point::new(fraction(p.x, rect.x, rect.width), fraction(p.y, rect.y, rect.height))
 }
 
+/// Ends of a right-angled line closer than this across its direction are joined by a straight,
+/// slightly slanted line instead of a step (Astah: 1.8 apart straight, 2.21 a step).
+const NO_STEP: f32 = 2.0;
+
 /// Corners of a right-angled line from `from` in `source` to `to` in `target` that has no
-/// waypoints of its own, as Astah makes them: none when the ends line up; when the nodes overlap
-/// horizontally, a step down (or up) with the crossing in the middle; when they overlap
+/// waypoints of its own, as Astah makes them: none when the ends (nearly) line up; when the
+/// nodes overlap horizontally, a step down (or up) halfway between the nodes; when they overlap
 /// vertically, a step sideways; otherwise one corner straight below (or above) the source.
 pub fn default_corners(source: Rect, from: Point, target: Rect, to: Point) -> Vec<Point> {
-    if same(from.x, to.x) || same(from.y, to.y) {
+    if (from.x - to.x).abs() < NO_STEP || (from.y - to.y).abs() < NO_STEP {
         return Vec::new();
     }
     let overlap_x = source.x < target.right() && target.x < source.right();
     let overlap_y = source.y < target.bottom() && target.y < source.bottom();
+    // Halfway through the gap between the facing sides, or between the ends where they overlap.
+    let between = |a: f32, a_end: f32, b: f32, b_end: f32, from: f32, to: f32| {
+        if a_end <= b {
+            (a_end + b) / 2.0
+        } else if b_end <= a {
+            (b_end + a) / 2.0
+        } else {
+            (from + to) / 2.0
+        }
+    };
     if overlap_x {
-        let y = (from.y + to.y) / 2.0;
+        let y = between(source.y, source.bottom(), target.y, target.bottom(), from.y, to.y);
         vec![Point::new(from.x, y), Point::new(to.x, y)]
     } else if overlap_y {
-        let x = (from.x + to.x) / 2.0;
+        let x = between(source.x, source.right(), target.x, target.right(), from.x, to.x);
         vec![Point::new(x, from.y), Point::new(x, to.y)]
     } else {
         vec![Point::new(from.x, to.y)]
@@ -283,6 +297,13 @@ mod tests {
         assert_eq!(corners(p(41.0, 171.0)), vec![p(20.0, 96.0), p(41.0, 96.0)]);
         // Overlapping vertically: a step sideways.
         assert_eq!(corners(p(320.0, 31.0)), vec![p(170.0, 21.0), p(170.0, 31.0)]);
+        // Ends less than 2 apart: no step; the line runs straight (`2027 Klassendiagramm`).
+        assert_eq!(corners(p(21.8, 171.0)), vec![]);
+        // A step halfway between the facing sides, not between the ends.
+        let (above, below) =
+            (Rect::new(533.8, 253.1, 300.25, 94.47), Rect::new(294.41, 414.3, 504.0, 196.0));
+        let steps = default_corners(below, p(707.15, 488.17), above, p(704.94, 288.78));
+        assert_eq!(steps, vec![p(707.15, 380.935), p(704.94, 380.935)]);
     }
 
     #[test]
