@@ -26,6 +26,12 @@ pub trait TextMeasure {
         crate::metrics::java_width(text, font_size, bold)
             .unwrap_or_else(|| self.width(text, font_size, bold))
     }
+
+    /// Whether members draw their visibility in UmlCraft's own column
+    /// ([`visibility_column`]), a setting. Off, they look as in Astah.
+    fn visibility_column(&self) -> bool {
+        false
+    }
 }
 
 pub struct ApproxMeasure;
@@ -526,6 +532,8 @@ pub struct Preview {
     pub dy: f32,
     pub resized: Option<(Id, Rect)>,
     pub route: Option<(Id, Route)>,
+    /// A free line with one end (0 start, 1 end) dragged to a point.
+    pub line_end: Option<(Id, usize, Point)>,
 }
 
 impl Preview {
@@ -548,8 +556,9 @@ pub fn stereotype_text(names: &[String]) -> String {
 }
 
 /// The visibility symbol a member's text starts with, as drawn, and the rest of the text from
-/// the space on. Unlike Astah, UmlCraft draws the symbol centered in the width of a `+`, so all
-/// names of a compartment start in one column, and a minus as `−`, as wide as the plus.
+/// the space on. Unlike Astah, UmlCraft can draw the symbol centered in the width of a `+`, so
+/// all names of a compartment start in one column, and a minus as `−`, as wide as the plus
+/// ([`TextMeasure::visibility_column`]).
 pub fn visibility_column(text: &str) -> Option<(&'static str, &str)> {
     let rest = text.get(1..).filter(|rest| rest.starts_with(' '))?;
     let symbol = match &text[..1] {
@@ -562,8 +571,8 @@ pub fn visibility_column(text: &str) -> Option<(&'static str, &str)> {
     Some((symbol, rest))
 }
 
-/// Width of a row's text as drawn: a member's visibility symbol in its column
-/// ([`visibility_column`]). `rounded` measures in whole pixels.
+/// Width of a row's text as drawn: a member's visibility symbol in its column, where the
+/// column is on ([`visibility_column`]). `rounded` measures in whole pixels.
 pub fn row_text_width(
     text: &str,
     role: RowRole,
@@ -579,7 +588,8 @@ pub fn row_text_width(
             measure.width(text, size, bold)
         }
     };
-    match visibility_column(text).filter(|_| role == RowRole::Member) {
+    match visibility_column(text).filter(|_| role == RowRole::Member && measure.visibility_column())
+    {
         Some((_, rest)) => width("+") + width(rest),
         None => width(text),
     }
@@ -830,7 +840,12 @@ fn free_line(p: &Presentation, preview: &Preview) -> Option<EdgeShape> {
     let Shape::Line { from, to, dashed, start_arrow, end_arrow } = p.shape else { return None };
     let (dx, dy) =
         if preview.moved.contains(&p.id) { (preview.dx, preview.dy) } else { (0.0, 0.0) };
-    let (from, to) = (from.offset(dx, dy), to.offset(dx, dy));
+    let (mut from, mut to) = (from.offset(dx, dy), to.offset(dx, dy));
+    match preview.line_end {
+        Some((id, 0, at)) if id == p.id => from = at,
+        Some((id, _, at)) if id == p.id => to = at,
+        _ => {}
+    }
     let marker = |on: bool| if on { EndMarker::OpenArrow } else { EndMarker::None };
     Some(EdgeShape {
         id: p.id,
@@ -958,7 +973,7 @@ fn layout_text(
 ) -> (Rect, Figure, Vec<Row>) {
     let size = style.font_size.unwrap_or(FONT_SIZE);
     let height = line_height(size);
-    let top = bounds.y + 17.0 - size * crate::draw::BASELINE;
+    let top = bounds.y + 17.0 - crate::draw::baseline(size);
     let rows: Vec<Row> = text
         .split('\n')
         .enumerate()
@@ -1030,7 +1045,7 @@ fn layout_element(
             let feet = r.center().y + ACTOR_FIGURE.height / 2.0;
             let line = name_line(FONT_SIZE, true);
             let w = line.width(measure).max(r.width) + 8.0;
-            let top = feet + 13.0 - FONT_SIZE * crate::draw::BASELINE;
+            let top = feet + 13.0 - crate::draw::baseline(FONT_SIZE);
             let row = line.place(
                 Rect::new(r.center().x - w / 2.0, top, w, line_height(FONT_SIZE)),
                 LabelAlign::Center,
@@ -1051,7 +1066,7 @@ fn layout_element(
             let row = match style.name_offset {
                 // Astah's free text: 10 right of its box, the baseline 17 below the box's top.
                 Some(at) => {
-                    let top = r.y + at.y + 17.0 - FONT_SIZE * crate::draw::BASELINE;
+                    let top = r.y + at.y + 17.0 - crate::draw::baseline(FONT_SIZE);
                     let w = line.width(measure);
                     line.place(
                         Rect::new(r.x + at.x + 10.0, top, w, line_height(FONT_SIZE)),
@@ -1059,7 +1074,7 @@ fn layout_element(
                     )
                 }
                 None => {
-                    let top = r.y + 24.0 - FONT_SIZE * crate::draw::BASELINE;
+                    let top = r.y + 24.0 - crate::draw::baseline(FONT_SIZE);
                     line.place(
                         Rect::new(r.x, top, r.width, line_height(FONT_SIZE)),
                         LabelAlign::Center,
@@ -1700,7 +1715,7 @@ fn layout_use_case(
     if let Some(separator) = separator {
         let inner = r.width / std::f32::consts::SQRT_2;
         let left = r.center().x - inner / 2.0;
-        let first = separator + FIRST_BASELINE - FONT_SIZE * crate::draw::BASELINE;
+        let first = separator + FIRST_BASELINE - crate::draw::baseline(FONT_SIZE);
         rows.extend(points.into_iter().enumerate().map(|(i, line)| {
             line.place(Rect::new(left, first + h * i as f32, inner, h), LabelAlign::Left)
         }));
@@ -1906,7 +1921,10 @@ fn layout_classifier(
     // members, another font size) Astah fits anew, also narrower, around its stored center.
     let stale = style.auto_size && !fit && (fitted_h - bounds.height).abs() > 0.5;
     let width = if refit && !fit && !stale { bounds.width.max(width) } else { width };
-    let height = if fit || stale { fitted_h } else { bounds.height.max(content_h) };
+    // A box whose content no longer fits its stored height grows as if fitted: 3 below the
+    // content (`CD_Dokus.asta`, `Serial_kurz` at 14 px).
+    let height =
+        if fit || stale || content_h > bounds.height + 0.5 { fitted_h } else { bounds.height };
     let c = bounds.center();
     let r = if stale {
         Rect::new(c.x - width / 2.0, c.y - height / 2.0, width, height)
@@ -1972,7 +1990,7 @@ fn template_box(
     let width = measure.width(&all, FONT_SIZE, false) + 2.0 * PAD;
     let height = line_height(FONT_SIZE) + PAD;
     let rect = Rect::new(r.right() - 0.8 * width, r.y + BELOW_TOP - height, width, height);
-    let top = rect.y + BASELINE_BELOW_TOP - FONT_SIZE * crate::draw::BASELINE;
+    let top = rect.y + BASELINE_BELOW_TOP - crate::draw::baseline(FONT_SIZE);
     let mut x = rect.x + PAD;
     for (parameter, text) in texts {
         let w = measure.width(&text, FONT_SIZE, false);
@@ -2074,7 +2092,7 @@ fn edge_for(
                 // A minus as wide as the plus, as in compartments (`visibility_column`).
                 let role = (!end.role.is_empty()).then(|| {
                     let text = format!("{} {}", end.visibility.symbol(), end.role);
-                    match visibility_column(&text) {
+                    match visibility_column(&text).filter(|_| measure.visibility_column()) {
                         Some((symbol, rest)) => format!("{symbol}{rest}"),
                         None => text,
                     }
@@ -2273,7 +2291,7 @@ fn qualifier_box(
         .zip(widths)
         .enumerate()
         .map(|(i, (text, w))| {
-            let top = rect.y + FIRST_BASELINE + i as f32 * step - FONT_SIZE * crate::draw::BASELINE;
+            let top = rect.y + FIRST_BASELINE + i as f32 * step - crate::draw::baseline(FONT_SIZE);
             let line = Line::new(text.clone(), FONT_SIZE, RowRole::Member, None);
             line.place(Rect::new(rect.x + PAD, top, w, line_height(FONT_SIZE)), LabelAlign::Left)
         })
@@ -2651,7 +2669,7 @@ mod tests {
             node.rows.iter().map(|r| (r.text.as_str(), r.rect.x)).collect();
         assert_eq!(rows, vec![("a", 50.0), ("b c", 50.0)]);
         // The first baseline lies 17 below the top; the box grows to hold both lines.
-        let baseline = node.rows[0].rect.y + FONT_SIZE * crate::draw::BASELINE;
+        let baseline = node.rows[0].rect.y + crate::draw::baseline(FONT_SIZE);
         assert!((baseline - 417.0).abs() < 1e-3, "{baseline}");
         assert!(node.rect.bottom() >= node.rows[1].rect.bottom());
         let edge = scene.edge(line).unwrap();
@@ -2827,7 +2845,7 @@ mod tests {
         // As in Astah: the name regular, centered, its baseline 24 below the top.
         let name = &frame.rows[0];
         assert!(!name.bold && name.size == FONT_SIZE);
-        let baseline = name.rect.y + FONT_SIZE * crate::draw::BASELINE;
+        let baseline = name.rect.y + crate::draw::baseline(FONT_SIZE);
         assert!((baseline - (frame.rect.y + 24.0)).abs() < 0.01, "{baseline}");
         assert!((name.rect.center().x - frame.rect.center().x).abs() < 0.01);
         // Inside the frame, away from border and title: not the boundary.
@@ -2886,8 +2904,8 @@ mod tests {
                 ("payment", false, LabelAlign::Left),
             ]
         );
-        // Baselines (12.06 below the row tops) and the left edge of the inscribed rectangle.
-        let baseline = |i: usize| node.rows[i].rect.y + 12.06;
+        // Baselines and the left edge of the inscribed rectangle.
+        let baseline = |i: usize| node.rows[i].rect.y + crate::draw::baseline(FONT_SIZE);
         assert!((baseline(1) - 100.31).abs() < 0.02 && (baseline(2) - 115.41).abs() < 0.02);
         assert!((node.rows[0].rect.y - 68.22).abs() < 0.02, "{:?}", node.rows[0].rect);
         assert!((node.rows[1].rect.x - 70.31).abs() < 0.02, "{:?}", node.rows[1].rect);

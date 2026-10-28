@@ -90,6 +90,10 @@ pub enum Tool {
     Select,
     Node(NodeTool),
     Edge(EdgeTool),
+    /// A free text, not tied to a model element.
+    Text,
+    /// A free line, drawn from where the drag starts to where it ends.
+    Line,
 }
 
 impl Tool {
@@ -99,6 +103,8 @@ impl Tool {
             Self::Select => "select",
             Self::Node(n) => n.key(),
             Self::Edge(e) => e.key(),
+            Self::Text => "text",
+            Self::Line => "line",
         }
     }
 }
@@ -195,6 +201,7 @@ pub fn palette(kind: DiagramKind) -> Vec<Tool> {
     std::iter::once(Tool::Select)
         .chain(nodes.iter().map(|&n| Tool::Node(n)))
         .chain(edges.iter().map(|&e| Tool::Edge(e)))
+        .chain([Tool::Text, Tool::Line])
         .collect()
 }
 

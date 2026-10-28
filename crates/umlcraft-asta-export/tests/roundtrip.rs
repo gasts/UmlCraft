@@ -201,6 +201,10 @@ fn sample() -> Document {
         let submit = message(tx.model(), "submit");
         sequence_edit::place_label(tx, ids.sequence_diagram, add_item, Point::new(200.0, 110.0))?;
         tx.update_presentation(ids.sequence_diagram, submit, |p| p.style.hide_parameters = true)?;
+        tx.update_presentation(ids.sequence_diagram, add_item, |p| {
+            p.style.hide_parameter_types = true;
+            p.style.show_return_type = true;
+        })?;
         tx.update(pay_diagram, |data| {
             if let ElementKind::Diagram(p) = &mut data.kind {
                 p.hide_message_numbers = true;
@@ -657,10 +661,12 @@ fn sequence_geometry(model: &Model) -> BTreeMap<String, Vec<String>> {
                 let m = p.element.map(|e| name(model, e)).unwrap_or_default();
                 let label = labels.name.map(|l| format!(" label {:.0},{:.0}", l.x, l.y));
                 lines.push(format!(
-                    "message {m:?} at {:.0}{} parameters {}",
+                    "message {m:?} at {:.0}{} parameters {} types {} return {}",
                     y - top,
                     label.unwrap_or_default(),
-                    !p.style.hide_parameters
+                    !p.style.hide_parameters,
+                    !p.style.hide_parameter_types,
+                    p.style.show_return_type
                 ));
             }
         }

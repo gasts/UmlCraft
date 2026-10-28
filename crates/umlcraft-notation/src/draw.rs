@@ -13,9 +13,11 @@ use crate::scene::{
 };
 use crate::sequence::SequenceLayout;
 
-/// How far below the top of its line Java puts the baseline of "Dialog", relative to the font
-/// size (12.06 px at 12 px).
-pub const BASELINE: f32 = 12.06 / 12.0;
+/// How far below the top of its line Astah puts the baseline of "Dialog" at `size`: Java's
+/// whole-pixel ascent, one more than the size (13 at 12 px, 15 at 14 px).
+pub fn baseline(size: f32) -> f32 {
+    size * 12.06 / 12.0
+}
 /// Astah underlines 2.3 px below the baseline (at 12 px), relative to the font size.
 pub const UNDERLINE: f32 = 14.34 / 12.0;
 /// Edge labels sit about 1 px lower than rows: Astah puts their baseline 13 px below the

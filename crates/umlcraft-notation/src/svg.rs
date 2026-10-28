@@ -219,6 +219,7 @@ impl Svg<'_> {
     fn row(&mut self, row: &Row) {
         if let Some((symbol, rest)) = scene::visibility_column(&row.text)
             .filter(|_| row.role == RowRole::Member && row.align == LabelAlign::Left && !row.hinted)
+            .filter(|_| self.measure.visibility_column())
         {
             self.member_row(row, symbol, rest);
             return;
@@ -256,7 +257,7 @@ impl Svg<'_> {
             self.out += &format!(
                 "<text x=\"{}\" y=\"{}\" font-size=\"{}\"{}>{}</text>\n",
                 xs.join(" "),
-                num(row.rect.y + row.size * draw::BASELINE),
+                num(row.rect.y + draw::baseline(row.size)),
                 num(row.size),
                 if row.bold { " font-weight=\"bold\"" } else { "" },
                 escape(&row.text),
@@ -321,7 +322,7 @@ impl Svg<'_> {
         self.out += &format!(
             "<text x=\"{}\" y=\"{}\" font-size=\"{}\"{}{}>{}</text>\n",
             num(draw::text_left(area, width, align)),
-            num(area.y + size * draw::BASELINE),
+            num(area.y + draw::baseline(size)),
             num(size),
             if bold { " font-weight=\"bold\"" } else { "" },
             if italic { " font-style=\"italic\"" } else { "" },
@@ -398,14 +399,16 @@ mod tests {
         assert_eq!(svg.matches("stroke-width=\"2\"").count(), 3, "{svg}");
         assert!(svg.contains("<polygon"), "{svg}");
         assert!(svg.contains(">Customer</text>"), "{svg}");
-        assert!(svg.contains(">\u{2212}</text>") && svg.contains(">name : String</text>"), "{svg}");
+        // Members as in Astah: the visibility right before the name.
+        assert!(svg.contains(">- name : String</text>"), "{svg}");
         // White as on the canvas, not Astah's yellow.
         assert!(svg.contains("fill=\"#ffffff\""), "{svg}");
         assert!(!svg.contains("#ffffcc"), "{svg}");
     }
 
-    /// Measures a hyphen and a hash narrower than the other characters, as most fonts do.
-    struct Narrow;
+    /// Measures a hyphen and a hash narrower than the other characters, as most fonts do, with
+    /// UmlCraft's visibility column on or off.
+    struct Narrow(bool);
 
     impl TextMeasure for Narrow {
         fn width(&self, text: &str, _: f32, _: bool) -> f32 {
@@ -417,13 +420,22 @@ mod tests {
                 })
                 .sum()
         }
+
+        fn visibility_column(&self) -> bool {
+            self.0
+        }
     }
 
     #[test]
     fn member_names_start_in_one_column() {
         let (doc, ids) = order_system();
-        let scene = build(doc.model(), ids.class_diagram, &Preview::default(), &Narrow);
-        let svg = render(&scene, &Narrow);
+        let svg = |column: bool| {
+            let scene = build(doc.model(), ids.class_diagram, &Preview::default(), &Narrow(column));
+            render(&scene, &Narrow(column))
+        };
+        // Off, the default, a member is one text as in Astah.
+        assert!(svg(false).contains(">- total : Money</text>"));
+        let svg = svg(true);
         let xs = |text: &str| -> Vec<String> {
             let lines = svg.lines().filter(|l| l.ends_with(&format!(">{text}</text>")));
             lines

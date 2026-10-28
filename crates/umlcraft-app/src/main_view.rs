@@ -78,9 +78,15 @@ impl MainView {
         if settings.dark == Some(true) {
             Theme::change(ThemeMode::Dark, Some(window), cx);
         }
-        let workspace =
-            cx.new(|cx| Workspace::new(blank_document(), None).with_measure(AppMeasure::new(cx)));
-        let canvas = cx.new(|cx| DiagramCanvas::new(workspace.clone(), cx));
+        let column = settings.visibility_column;
+        let workspace = cx.new(|cx| {
+            Workspace::new(blank_document(), None).with_measure(AppMeasure::new(cx, column))
+        });
+        let canvas = cx.new(|cx| {
+            let mut canvas = DiagramCanvas::new(workspace.clone(), cx);
+            canvas.visibility_column = column;
+            canvas
+        });
         let properties = cx.new(|cx| PropertiesPanel::new(workspace.clone(), window, cx));
         let tree = cx.new(|cx| TreeState::new(cx));
         install_menus(&settings, cx);
@@ -240,8 +246,9 @@ impl MainView {
     }
 
     fn replace_document(&mut self, doc: Document, path: Option<PathBuf>, cx: &mut Context<Self>) {
+        let column = self.settings.visibility_column;
         self.workspace.update(cx, |ws, cx| {
-            *ws = Workspace::new(doc, path).with_measure(AppMeasure::new(cx));
+            *ws = Workspace::new(doc, path).with_measure(AppMeasure::new(cx, column));
             cx.notify();
         });
         self.collapsed.clear();
@@ -563,7 +570,7 @@ impl MainView {
         let ws = self.workspace.read(cx);
         let Some(diagram) = ws.active_diagram else { return };
         let model = ws.doc.model();
-        let measure = FontMeasure::new(window);
+        let measure = FontMeasure::new(window, self.settings.visibility_column);
         let scene = scene::build(model, diagram, &Preview::default(), &measure);
         // Fine units keep the letters evenly spaced in programs such as Word.
         let svg = umlcraft_notation::svg::render_scaled(
@@ -787,9 +794,7 @@ impl MainView {
 
     fn paste_clip(&mut self, as_reference: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some((source, clip)) = self.clipboard.clone() else { return };
-        let Some(origin) = clip.nodes.iter().map(|n| n.bounds).reduce(|a, b| a.union(&b)) else {
-            return;
-        };
+        let Some(origin) = clip.bounds() else { return };
         let same_diagram = self.workspace.read(cx).active_diagram == Some(source);
         let offset = if same_diagram && !as_reference {
             self.paste_count += 1;
@@ -1048,7 +1053,8 @@ impl MainView {
             }
             None => div().child(match ws.tool {
                 Tool::Select => t!("status.hint").to_string(),
-                Tool::Node(_) => t!("status.hint_node").to_string(),
+                Tool::Node(_) | Tool::Text => t!("status.hint_node").to_string(),
+                Tool::Line => t!("status.hint_line").to_string(),
                 Tool::Edge(_) => t!("status.hint_edge").to_string(),
             }),
         };

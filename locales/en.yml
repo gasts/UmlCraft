@@ -117,6 +117,8 @@ tool:
   shallowHistory: History
   deepHistory: Deep history
   transition: Transition
+  text: Text
+  line: Line
   component: Component
   artifact: Artifact
   node: Node
@@ -160,6 +162,9 @@ prop:
   hide_operations: Hide operations
   hide_instance_name: Hide name
   hide_instance_type: Hide classifier
+  dashed: Dashed
+  start_arrow: Arrow at start
+  end_arrow: Arrow at end
   hide_slots: Hide slots
   hide_empty_slots: Hide slots without value
   iconic: Show as circle
@@ -242,6 +247,7 @@ status:
   hint: "Wheel: scroll · Ctrl+wheel: zoom · middle button: pan"
   hint_node: "Click to place the element · Esc: cancel"
   hint_edge: "Drag from source to target or click both · Esc: cancel"
+  hint_line: "Drag from start to end · Esc: cancel"
 canvas:
   no_diagram: No diagram open. Double-click one or use the model tree's context menu.
 dialog:
@@ -351,6 +357,7 @@ edit:
   paste: Paste
   wrap_in_fragment: Surround with fragment
   import_source: Import source code
+  text: Change text
 skipped:
   method_body: method bodies
   initializer: initializer blocks
@@ -418,6 +425,7 @@ kind:
   finalState: Final state
   pseudostate: Pseudostate
   transition: Transition
+  text: Text
   region: Region
   internalTransition: Internal transition
   initialPseudostate: Initial pseudostate

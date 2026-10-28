@@ -1772,16 +1772,32 @@ impl Importer<'_> {
                     return None;
                 }
                 let at = r.obj(label, "location").and_then(|l| r.point(l))?;
+                // Astah centers the text in the stored box by Java's whole-pixel width; the box
+                // is as wide as the exact width (newer files) or the whole-pixel one (older).
+                // Labels broken into several lines are left as they are.
+                let text = r.text(label, "label");
+                let one_line = r.g.field(label, "height").and_then(Value::as_f64) < Some(20.0);
+                let stored =
+                    r.g.field(label, "width")
+                        .and_then(Value::as_f64)
+                        .filter(|_| one_line)
+                        .map(|w| w as f32);
+                let java = umlcraft_notation::metrics::java_width(&text, 12.0, false);
+                let inset = stored.zip(java).map_or(0.0, |(w, j)| (w - j) / 2.0);
                 Some(Point::new(
-                    at.x + moved.x + shift.x - center,
+                    at.x + moved.x + inset + shift.x - center,
                     moved.y - umlcraft_notation::sequence::LABEL_ABOVE,
                 ))
             });
         }
         presentation.style = self.fill(p);
         // Astah hides the parentheses of every reply; only for calls it is a choice.
-        presentation.style.hide_parameters = props_sort != MessageSort::Reply
-            && r.g.field(p, "parameterVisibility").and_then(Value::as_bool) == Some(false);
+        let flag = |name| r.g.field(p, name).and_then(Value::as_bool);
+        let call = props_sort != MessageSort::Reply;
+        presentation.style.hide_parameters = call && flag("parameterVisibility") == Some(false);
+        presentation.style.hide_parameter_types =
+            call && flag("parameterTypeVisibility") == Some(false);
+        presentation.style.show_return_type = call && flag("returnValueVisibility") == Some(true);
         self.insert(diagram, presentation, false);
     }
 

@@ -139,7 +139,7 @@ pub fn interaction_use_text(model: &Model, id: Id) -> String {
 
 /// The label of a message: `name(arguments)` for calls, the return value for replies.
 pub fn message_text(model: &Model, message: Id) -> String {
-    let (stereotype, text) = message_parts(model, message, true, true);
+    let (stereotype, text) = message_parts(model, message, &Style::default(), true);
     match stereotype {
         Some(s) => format!("{s} {text}").trim_end().to_owned(),
         None => text,
@@ -147,15 +147,17 @@ pub fn message_text(model: &Model, message: Id) -> String {
 }
 
 /// A message's stereotypes (with «create» and «destroy» for those messages) and its text. Calls
-/// show their arguments in parentheses, as Astah does, unless `parameters` is off. A reply shows
+/// show their arguments in parentheses, as Astah does, unless the presentation's `style` hides
+/// them; a call without arguments shows the parameters of its operation instead. A reply shows
 /// its name; with `reply_value`, its return value instead if it has one (on the diagram, Astah
 /// shows that after the call).
 fn message_parts(
     model: &Model,
     message: Id,
-    parameters: bool,
+    style: &Style,
     reply_value: bool,
 ) -> (Option<String>, String) {
+    let parameters = !style.hide_parameters;
     let Some(e) = model.get(message) else { return (None, String::new()) };
     let ElementKind::Message(p) = e.kind() else { return (None, e.name().to_owned()) };
     let operation = p.operation.and_then(|o| model.get(o)).map(|o| o.name());
@@ -163,14 +165,10 @@ fn message_parts(
     let text = match p.sort {
         MessageSort::Reply if reply_value && !p.return_value.is_empty() => p.return_value.clone(),
         MessageSort::Reply => name.to_owned(),
-        // A found message without arguments shows the signature of the operation it calls, as
-        // in Astah: `findRegions(b: User) : List<Region>`.
-        _ if parameters
-            && p.gate == MessageGate::Found
-            && p.arguments.is_empty()
-            && p.operation.is_some() =>
-        {
-            p.operation.map(|o| signature(model, o, name)).unwrap_or_default()
+        // A call without arguments shows the parameters of the operation it calls, as in
+        // Astah: `findRegions(b:User)`, with the return type where shown: `… : List<Region>`.
+        _ if parameters && p.arguments.is_empty() && p.operation.is_some() => {
+            p.operation.map(|o| signature(model, o, name, style)).unwrap_or_default()
         }
         _ if parameters && !name.is_empty() => format!("{name}({})", p.arguments),
         _ => name.to_owned(),
@@ -190,24 +188,39 @@ fn message_parts(
     (stereotype, text)
 }
 
-/// `text` in lines no wider than `room`, broken at spaces; a word wider than `room` stands on a
-/// line of its own.
-fn break_at_spaces(text: &str, room: f32, measure: &dyn TextMeasure) -> Vec<String> {
+/// `text` in lines no wider than `room`, broken at spaces and, as Astah does, after a colon
+/// that a word follows (`erstelleHitzewarnungen(b:` | `Benutzer)`); a piece wider than `room`
+/// stands on a line of its own.
+fn break_lines(text: &str, room: f32, measure: &dyn TextMeasure) -> Vec<String> {
+    // Each piece with what joins it to the one before: a space, or nothing after a colon.
+    let mut pieces: Vec<(&str, &str)> = Vec::new();
+    for (i, word) in text.split(' ').enumerate() {
+        let mut join = if i == 0 { "" } else { " " };
+        let mut rest = word;
+        while let Some(at) = rest.find(':').filter(|&at| at + 1 < rest.len()) {
+            pieces.push((join, &rest[..=at]));
+            join = "";
+            rest = &rest[at + 1..];
+        }
+        pieces.push((join, rest));
+    }
     let mut lines: Vec<String> = Vec::new();
-    for word in text.split(' ') {
+    for (join, piece) in pieces {
         match lines.last_mut() {
-            Some(line) if crate::scene::label_width(&format!("{line} {word}"), measure) <= room => {
-                line.push(' ');
-                line.push_str(word);
+            Some(line)
+                if crate::scene::label_width(&format!("{line}{join}{piece}"), measure) <= room =>
+            {
+                line.push_str(join);
+                line.push_str(piece);
             }
-            _ => lines.push(word.to_owned()),
+            _ => lines.push(piece.to_owned()),
         }
     }
     lines
 }
 
 /// `name(p: Type, q: Type) : Result`, an operation called by a message without arguments.
-fn signature(model: &Model, operation: Id, name: &str) -> String {
+fn signature(model: &Model, operation: Id, name: &str, style: &Style) -> String {
     let Some(o) = model.get(operation) else { return format!("{name}()") };
     let parameters: Vec<String> = o
         .children()
@@ -216,8 +229,8 @@ fn signature(model: &Model, operation: Id, name: &str) -> String {
         .filter_map(|c| match c.kind() {
             ElementKind::Parameter(p) if p.direction != ParameterDirection::Return => {
                 Some(match crate::member::type_label(model, &p.type_ref) {
-                    Some(t) => format!("{}: {t}", c.name()),
-                    None => c.name().to_owned(),
+                    Some(t) if !style.hide_parameter_types => format!("{}:{t}", c.name()),
+                    _ => c.name().to_owned(),
                 })
             }
             _ => None,
@@ -225,6 +238,7 @@ fn signature(model: &Model, operation: Id, name: &str) -> String {
         .collect();
     let mut text = format!("{name}({})", parameters.join(", "));
     if let ElementKind::Operation(p) = o.kind()
+        && style.show_return_type
         && let Some(t) = crate::member::type_label(model, &p.return_type)
     {
         text.push_str(&format!(" : {t}"));
@@ -299,7 +313,7 @@ struct Msg {
     gate_x: Option<f32>,
     loop_x: Option<f32>,
     label: Option<Point>,
-    parameters: bool,
+    style: Style,
     sort: MessageSort,
     gate: MessageGate,
 }
@@ -501,7 +515,7 @@ pub(crate) fn arrange(
                 gate_x,
                 loop_x,
                 label: labels.name,
-                parameters: !p.style.hide_parameters,
+                style: p.style.clone(),
                 sort: props.map_or(MessageSort::Synchronous, |m| m.sort),
                 gate: props.map_or(MessageGate::None, |m| m.gate),
             })
@@ -842,7 +856,7 @@ fn message_edge(
     };
 
     let (stereotype, text) =
-        m.element.map(|e| message_parts(model, e, m.parameters, false)).unwrap_or_default();
+        m.element.map(|e| message_parts(model, e, &m.style, false)).unwrap_or_default();
     let guard = match m.element.and_then(|e| model.get(e)).map(|e| e.kind()) {
         Some(ElementKind::Message(p)) if !p.guard.trim().is_empty() => format!("[{}] ", p.guard),
         _ => String::new(),
@@ -890,7 +904,7 @@ fn message_edge(
         && let Some(first) = labels.first().filter(|l| l.align == LabelAlign::Left).cloned()
     {
         let room = to.center() - first.anchor.x;
-        let lines = break_at_spaces(&first.text, room, measure);
+        let lines = break_lines(&first.text, room, measure);
         if lines.len() > 1 {
             let count = lines.len();
             labels.splice(
@@ -923,6 +937,13 @@ fn message_edge(
             underline: false,
             keyword: false,
         });
+    }
+    // Astah centers a label's text by Java's whole-pixel width, mostly a little wider than the
+    // exact one. (Labels placed by hand carry that from the import.)
+    for label in labels.iter_mut().filter(|l| l.align == LabelAlign::Center) {
+        let exact = measure.width(&label.text, FONT_SIZE, false);
+        let rounded = measure.rounded_width(&label.text, FONT_SIZE, false);
+        label.anchor.x -= (rounded - exact).max(0.0) / 2.0;
     }
     let node_tips = [points[0], points[points.len() - 1]];
     EdgeShape {

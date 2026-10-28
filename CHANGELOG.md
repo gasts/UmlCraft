@@ -5,6 +5,14 @@ today.
 
 ## Unreleased
 
+- **Members look as in Astah**: the visibility stands right before the name again (`- name`).
+  UmlCraft's own column, which lines up all names of a compartment, is now a setting
+  (`visibilityColumn` in `settings.json`), off by default.
+- **Closer to Astah**: classes at 14 px are as wide as in Astah, and a class whose members no
+  longer fit its size grows as Astah's does. A call without arguments shows the parameters
+  of the operation it calls (`check(item:Item)`), with their types and the return type as
+  chosen in Astah; these choices go back to Astah too. Message labels sit where Astah puts
+  them, and long ones of found messages break where Astah breaks them.
 - **Bound classes**: a class such as `ArrayList<String>` that binds a template, with its
   «bind» line to the template and what it substitutes (`<E->String>`), is drawn as in Astah
   and goes to and from Astah as a binding. In the editor, the class's "Binds" field takes the
@@ -52,9 +60,12 @@ today.
   - lifelines can hide their classifier or name, as in Astah (a switch in the properties
     panel). Hidden ones are reported by the export to Astah.
 - **Free texts and lines**: texts and lines drawn on a diagram without a model element, such
-  as a guard written next to a fragment or a reply drawn by hand, come along from `.asta`
-  files, dashed and with arrowheads as in Astah, can be moved and deleted, and go back to
-  Astah. Projects with free texts or lines cannot be opened by UmlCraft 0.7.0 and older.
+  as a guard written next to a fragment or a reply drawn by hand. The new Text and Line tools
+  on every diagram create them; a double-click edits a text in place, the properties panel
+  makes a line dashed or gives it arrowheads, and a line's ends can be dragged one by one.
+  They copy and paste with the rest of a selection. They come along from `.asta` files, look as in
+  Astah, move and delete like other items and go back to Astah. Projects with free texts or
+  lines cannot be opened by UmlCraft 0.7.0 and older.
 - Export to Astah no longer fails on sequence diagrams with a found or lost message whose
   label was moved.
 - Tagged values of languages carry UmlCraft's own names: `java.`, `csharp.` and `cpp.`

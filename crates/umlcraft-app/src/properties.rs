@@ -13,7 +13,7 @@ use rust_i18n::t;
 use umlcraft_model::{
     ActivityNodeKind, Aggregation, AssociationEnd, AssociationProps, DiagramKind, ElementData,
     ElementKind, Id, InstanceKind, InstanceProps, InteractionOperator, LifelineProps, LinkEnd,
-    LinkProps, MessageSort, Model, Multiplicity, Navigability, Style, TemplateParameterKind,
+    LinkProps, MessageSort, Model, Multiplicity, Navigability, Shape, Style, TemplateParameterKind,
     TypeRef,
 };
 use umlcraft_notation::member::{self, member_text};
@@ -1120,6 +1120,47 @@ impl Render for PropertiesPanel {
         let ws = self.workspace.read(cx);
         let model = ws.doc.model();
         let body = v_flex().gap_3().p_3();
+        // A free text or line has no element; its own options are shown instead.
+        let free = match &ws.selection[..] {
+            [only] => ws.active_diagram.and_then(|d| model.view(d)?.get(*only)),
+            _ => None,
+        };
+        match free.map(|p| (p.id, &p.shape)) {
+            Some((_, Shape::Text { text, .. })) => {
+                return body
+                    .child(field(
+                        t!("prop.type").into(),
+                        div().text_sm().child(t!("kind.text").to_string()).into_any_element(),
+                    ))
+                    .child(div().text_sm().whitespace_normal().child(text.clone()));
+            }
+            Some((presentation, &Shape::Line { dashed, start_arrow, end_arrow, .. })) => {
+                let workspace = self.workspace.clone();
+                let flag = move |id: &'static str, label: String, checked: bool, which: usize| {
+                    let workspace = workspace.clone();
+                    Checkbox::new(id).label(label).checked(checked).on_click(
+                        move |checked: &bool, _, cx| {
+                            let checked = *checked;
+                            workspace.update(cx, |ws, cx| {
+                                ws.update_free_line(presentation, |dashed, start, end| {
+                                    *[dashed, start, end][which] = checked;
+                                });
+                                cx.notify();
+                            });
+                        },
+                    )
+                };
+                return body
+                    .child(field(
+                        t!("prop.type").into(),
+                        div().text_sm().child(t!("tool.line").to_string()).into_any_element(),
+                    ))
+                    .child(flag("line-dashed", t!("prop.dashed").into(), dashed, 0))
+                    .child(flag("line-start-arrow", t!("prop.start_arrow").into(), start_arrow, 1))
+                    .child(flag("line-end-arrow", t!("prop.end_arrow").into(), end_arrow, 2));
+            }
+            _ => {}
+        }
         let Some(e) = ws.selected_element.and_then(|id| model.get(id)) else {
             return body
                 .child(div().text_sm().text_color(muted).child(t!("prop.nothing_selected")));

@@ -35,11 +35,11 @@ use crate::{
 const MIN_ZOOM: f32 = 0.25;
 /// The font of diagram texts. Astah uses Java's "Dialog", which is Arial on Windows.
 const DIAGRAM_FONT: &str = "Arial";
-/// How far below the top of its line Java puts the baseline of 12 px "Dialog" (12.06, measured
-/// in Astah's SVG) minus where GPUI puts it, relative to the font size. GPUI centers ascent plus
-/// descent in the line: (15.09375 − 10.86328 − 2.54297) / 2 + 10.86328 = 11.70703 for Arial's
-/// 1854 and 434 units per 2048 at 12 px in a line of `scene::line_height(12)`.
-const BASELINE_SHIFT: f32 = (12.06 - 11.70703) / 12.0;
+/// Where GPUI puts the baseline below the top of its line, relative to the font size. It
+/// centers ascent plus descent in the line: (15.09375 − 10.86328 − 2.54297) / 2 + 10.86328 =
+/// 11.70703 for Arial's 1854 and 434 units per 2048 at 12 px in a line of
+/// `scene::line_height(12)`. Texts are moved down to Astah's baseline (`draw::baseline`).
+const GPUI_BASELINE: f32 = 11.70703 / 12.0;
 const MAX_ZOOM: f32 = 4.0;
 const GRID: f32 = 20.0;
 /// Smallest node edge when resizing.
@@ -246,6 +246,17 @@ enum Drag {
     Pan {
         last: Point<Pixels>,
     },
+    /// Drawing a free line from `start`.
+    FreeLine {
+        start: MPoint,
+        current: MPoint,
+    },
+    /// Dragging end `end` (0 start, 1 end) of the free line `line`.
+    LineEnd {
+        line: Id,
+        end: usize,
+        current: MPoint,
+    },
 }
 
 enum Editor {
@@ -255,9 +266,12 @@ enum Editor {
 
 /// Text being edited in place, over the row it replaces.
 struct InlineEdit {
+    /// The element edited; for a free text, its presentation.
     element: Id,
     /// For a slot row: the object whose slot for the attribute `element` is edited.
     slot_of: Option<Id>,
+    /// `element` is a free text's presentation.
+    free_text: bool,
     /// Logical rectangle of the edited text.
     rect: Rect,
     editor: Editor,
@@ -280,18 +294,21 @@ pub struct DiagramCanvas {
     editing: Option<InlineEdit>,
     /// An element whose row is edited inline once the next scene shows it.
     edit_when_drawn: Option<Id>,
+    /// Members show their visibility in UmlCraft's own column (a setting).
+    pub visibility_column: bool,
 }
 
 /// Measures text with the window's font system, at 100 % zoom.
 pub struct FontMeasure<'a> {
     window: &'a Window,
     family: SharedString,
+    column: bool,
 }
 
 impl<'a> FontMeasure<'a> {
-    /// Measures in the diagram font.
-    pub fn new(window: &'a Window) -> Self {
-        Self { window, family: DIAGRAM_FONT.into() }
+    /// Measures in the diagram font; `column` turns on UmlCraft's visibility column.
+    pub fn new(window: &'a Window, column: bool) -> Self {
+        Self { window, family: DIAGRAM_FONT.into(), column }
     }
 }
 
@@ -313,6 +330,10 @@ impl TextMeasure for FontMeasure<'_> {
         );
         f32::from(line.width())
     }
+
+    fn visibility_column(&self) -> bool {
+        self.column
+    }
 }
 
 /// Measures text with the app's font system by adding up the advances of the characters, as
@@ -321,14 +342,16 @@ pub struct AppMeasure {
     text: Arc<TextSystem>,
     regular: FontId,
     bold: FontId,
+    column: bool,
 }
 
 impl AppMeasure {
-    pub fn new(cx: &App) -> Self {
+    /// `column` turns on UmlCraft's visibility column.
+    pub fn new(cx: &App, column: bool) -> Self {
         let text = cx.text_system().clone();
         let regular = text.resolve_font(&font(DIAGRAM_FONT));
         let bold = text.resolve_font(&font(DIAGRAM_FONT).bold());
-        Self { text, regular, bold }
+        Self { text, regular, bold, column }
     }
 }
 
@@ -338,6 +361,10 @@ impl TextMeasure for AppMeasure {
         let advance =
             |c| self.text.advance(font, px(font_size), c).map_or(0.0, |s| f32::from(s.width));
         text.chars().map(advance).sum()
+    }
+
+    fn visibility_column(&self) -> bool {
+        self.column
     }
 }
 
@@ -356,6 +383,7 @@ impl DiagramCanvas {
             drag: None,
             editing: None,
             edit_when_drawn: None,
+            visibility_column: false,
         }
     }
 
@@ -449,6 +477,9 @@ impl DiagramCanvas {
                 route: Some((original.id, scene::drag_handle(original, *handle, *current))),
                 ..Preview::default()
             },
+            Some(Drag::LineEnd { line, end, current }) => {
+                Preview { line_end: Some((*line, *end, *current)), ..Preview::default() }
+            }
             _ => Preview::default(),
         }
     }
@@ -543,6 +574,20 @@ impl DiagramCanvas {
                     cx.notify();
                 });
             }
+            Tool::Text => {
+                let origin = snap_point(p);
+                let text = self.workspace.update(cx, |ws, cx| {
+                    ws.tool = Tool::Select;
+                    cx.notify();
+                    ws.create_free_text(origin)
+                });
+                self.edit_when_drawn = text;
+                cx.notify();
+            }
+            Tool::Line => {
+                let start = snap_point(p);
+                self.drag = Some(Drag::FreeLine { start, current: start });
+            }
             Tool::Edge(edge_tool) => {
                 match (self.drag.clone(), self.connect_target(edge_tool, p, cx)) {
                     // Second click of click-click mode; a second click on the source makes a loop.
@@ -576,7 +621,11 @@ impl DiagramCanvas {
                     return;
                 }
                 // A message's label can be moved away from its line.
-                let label = scene::message_label_at(&self.scene, p, &FontMeasure::new(window));
+                let label = scene::message_label_at(
+                    &self.scene,
+                    p,
+                    &FontMeasure::new(window, self.visibility_column),
+                );
                 if let Some((message, origin)) = label.filter(|_| !extend) {
                     self.workspace.update(cx, |ws, _| ws.select(vec![message]));
                     self.drag = Some(Drag::MessageLabel { message, origin, start: p, current: p });
@@ -584,7 +633,11 @@ impl DiagramCanvas {
                     return;
                 }
                 // So can «include» and «extend».
-                let label = scene::keyword_label_at(&self.scene, p, &FontMeasure::new(window));
+                let label = scene::keyword_label_at(
+                    &self.scene,
+                    p,
+                    &FontMeasure::new(window, self.visibility_column),
+                );
                 if let Some((edge, origin, middle)) = label.filter(|_| !extend) {
                     self.workspace.update(cx, |ws, _| ws.select(vec![edge]));
                     self.drag =
@@ -661,6 +714,13 @@ impl DiagramCanvas {
             return true;
         }
         let Some(edge) = self.scene.edge(single) else { return false };
+        if self.is_free_line(single, cx) {
+            let near =
+                |q: &MPoint| (q.x - p.x).abs() <= tolerance && (q.y - p.y).abs() <= tolerance;
+            let Some(end) = edge.points.iter().position(near) else { return false };
+            self.drag = Some(Drag::LineEnd { line: single, end, current: edge.points[end] });
+            return true;
+        }
         let Some(handle) = edge.handle_at(p, tolerance) else { return false };
         match (handle, clicks) {
             (EdgeHandle::Waypoint(i), 2) => {
@@ -811,7 +871,9 @@ impl DiagramCanvas {
             | Drag::Reorder { current, .. }
             | Drag::MessageLabel { current, .. }
             | Drag::KeywordLabel { current, .. } => *current = p,
-            Drag::RegionLine { current, .. } => *current = snap_point(p),
+            Drag::RegionLine { current, .. }
+            | Drag::FreeLine { current, .. }
+            | Drag::LineEnd { current, .. } => *current = snap_point(p),
             Drag::Pan { last } => {
                 let delta = position - *last;
                 *last = position;
@@ -842,8 +904,32 @@ impl DiagramCanvas {
                     self.update_workspace(cx, |ws| ws.set_route(original.id, route));
                 }
             }
+            Some(Drag::FreeLine { start, .. }) => {
+                let end = snap_point(p);
+                // A click without dragging draws nothing.
+                if (end.x - start.x).abs() + (end.y - start.y).abs() > 4.0 {
+                    self.update_workspace(cx, |ws| {
+                        ws.create_free_line(start, end);
+                        ws.tool = Tool::Select;
+                    });
+                }
+            }
+            Some(Drag::LineEnd { line, end, current }) => {
+                self.update_workspace(cx, |ws| ws.set_free_line_end(line, end, current));
+            }
             Some(Drag::RubberBand { start, extend, .. }) => {
-                let hits = scene::nodes_in(&self.scene, Rect::from_corners(start, p));
+                let area = Rect::from_corners(start, p);
+                let mut hits = scene::nodes_in(&self.scene, area);
+                // Free lines count like nodes when both ends lie inside.
+                let lines: Vec<Id> = self
+                    .scene
+                    .edges
+                    .iter()
+                    .filter(|e| e.points.iter().all(|&q| area.contains(q)))
+                    .filter(|e| self.is_free_line(e.id, cx))
+                    .map(|e| e.id)
+                    .collect();
+                hits.extend(lines);
                 self.update_workspace(cx, |ws| {
                     if extend {
                         let mut selection = ws.selection.clone();
@@ -943,6 +1029,16 @@ impl DiagramCanvas {
         let row = scene::row_at(&self.scene, p);
         let mut slot_of = None;
         let (presentation, element, role, rect) = match row {
+            Some((node, _)) if matches!(node.figure, Figure::Text) => {
+                let text = self.free_text(node.id, cx).unwrap_or_default();
+                let rect = node.rect;
+                self.workspace.update(cx, |ws, cx| {
+                    ws.select(vec![node.id]);
+                    cx.notify();
+                });
+                self.open_editor(node.id, None, true, rect, text, true, window, cx);
+                return true;
+            }
             Some((node, row)) => {
                 let Some(element) = row.element else { return false };
                 let rect = if row.role == RowRole::Name && matches!(node.figure, Figure::Note) {
@@ -994,6 +1090,32 @@ impl DiagramCanvas {
             ws.selected_element = Some(element);
             cx.notify();
         });
+        self.open_editor(element, slot_of, false, rect, text, multi_line, window, cx);
+        true
+    }
+
+    /// The text of the free text `presentation` on the active diagram.
+    fn free_text(&self, presentation: Id, cx: &App) -> Option<String> {
+        let ws = self.workspace.read(cx);
+        match &ws.doc.model().view(ws.active_diagram?)?.get(presentation)?.shape {
+            umlcraft_model::Shape::Text { text, .. } => Some(text.clone()),
+            _ => None,
+        }
+    }
+
+    /// Opens the in-place editor for `element` over `rect`, holding `text`.
+    #[allow(clippy::too_many_arguments)]
+    fn open_editor(
+        &mut self,
+        element: Id,
+        slot_of: Option<Id>,
+        free_text: bool,
+        rect: Rect,
+        text: String,
+        multi_line: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // Focus once the editor is on screen; the click itself still focuses the canvas.
         let editor = if multi_line {
             let state = cx.new(|cx| TextareaState::new(window, cx).default_value(text));
@@ -1018,10 +1140,15 @@ impl DiagramCanvas {
                 });
             (Editor::Line(state), subscription)
         };
-        self.editing =
-            Some(InlineEdit { element, slot_of, rect, editor: editor.0, _subscription: editor.1 });
+        self.editing = Some(InlineEdit {
+            element,
+            slot_of,
+            free_text,
+            rect,
+            editor: editor.0,
+            _subscription: editor.1,
+        });
         cx.notify();
-        true
     }
 
     /// Writes the in-place edit back, if one is open.
@@ -1033,6 +1160,7 @@ impl DiagramCanvas {
         };
         let element = edit.element;
         match edit.slot_of {
+            _ if edit.free_text => self.update_workspace(cx, |ws| ws.set_free_text(element, &text)),
             Some(object) => self.update_workspace(cx, |ws| ws.set_slot(object, element, &text)),
             None => self.update_workspace(cx, |ws| ws.apply_text(element, &text)),
         }
@@ -1094,6 +1222,8 @@ struct Painter<'a> {
     /// The fill color chosen for the node being painted; only on a light background, where the
     /// texts stay readable on it.
     node_fill: Option<Hsla>,
+    /// Members show their visibility in UmlCraft's own column.
+    column: bool,
 }
 
 impl Painter<'_> {
@@ -1228,19 +1358,21 @@ impl Painter<'_> {
             LabelAlign::Center => (TextAlign::Center, Some(self.t.len(area.width))),
             LabelAlign::Right => (TextAlign::Right, Some(self.t.len(area.width))),
         };
-        let origin = area.origin().offset(0.0, font_size * BASELINE_SHIFT);
+        let shift = umlcraft_notation::draw::baseline(font_size) - font_size * GPUI_BASELINE;
+        let origin = area.origin().offset(0.0, shift);
         line.paint(self.t.pt(origin), line_height, align, width, self.window, self.cx).ok();
         measured
     }
 
     fn row(&mut self, row: &Row) {
         let color = self.c.text;
-        let column = scene::visibility_column(&row.text)
-            .filter(|_| row.role == RowRole::Member && row.align == LabelAlign::Left);
+        let column = scene::visibility_column(&row.text).filter(|_| {
+            self.column && row.role == RowRole::Member && row.align == LabelAlign::Left
+        });
         let width = match column {
             // The visibility symbol centered in a column as wide as a "+", the rest after it.
             Some((symbol, rest)) => {
-                let slot = AppMeasure::new(self.cx).width("+", row.size, row.bold);
+                let slot = AppMeasure::new(self.cx, true).width("+", row.size, row.bold);
                 let r = row.rect;
                 let cell = Rect::new(r.x, r.y, slot, r.height);
                 self.text(symbol, cell, row.size, row.bold, row.italic, color, LabelAlign::Center);
@@ -1366,6 +1498,23 @@ impl Painter<'_> {
         }
     }
 
+    /// Filled square grips at `points`.
+    fn grips(&mut self, points: &[MPoint]) {
+        let s = self.c.selection;
+        let half = 3.5 / self.t.zoom;
+        for p in points {
+            let square = Rect::new(p.x - half, p.y - half, 2.0 * half, 2.0 * half);
+            self.window.paint_quad(quad(
+                self.t.rect(square),
+                px(1.0),
+                s,
+                px(1.0),
+                s,
+                BorderStyle::Solid,
+            ));
+        }
+    }
+
     fn selection(&mut self, r: Rect, handles: bool) {
         let s = self.c.selection;
         self.window.paint_quad(quad(
@@ -1430,7 +1579,7 @@ impl Render for DiagramCanvas {
         let font_family: SharedString = DIAGRAM_FONT.into();
         let scene = {
             let ws = self.workspace.read(cx);
-            let measure = FontMeasure::new(window);
+            let measure = FontMeasure::new(window, self.visibility_column);
             match ws.active_diagram {
                 Some(d) => scene::build(ws.doc.model(), d, &self.preview(ws), &measure),
                 None => Scene::empty(),
@@ -1441,13 +1590,21 @@ impl Render for DiagramCanvas {
         // A row just added from the context menu is edited as soon as it is drawn.
         if let Some(element) = self.edit_when_drawn.take() {
             let row = scene.nodes.iter().flat_map(|n| &n.rows).find(|r| r.element == Some(element));
-            if let Some(at) = row.map(|r| r.rect.center()) {
+            let text = scene.node(element).filter(|n| matches!(n.figure, Figure::Text));
+            if let Some(at) = row.map(|r| r.rect.center()).or(text.map(|n| n.rect.center())) {
                 cx.defer_in(window, move |this, window, cx| {
                     this.start_edit_at(at, window, cx);
                 });
             }
         }
         let selection = self.workspace.read(cx).selection.clone();
+        // A single selected free line shows grips at its ends.
+        let line_ends = match selection[..] {
+            [single] if self.is_free_line(single, cx) => {
+                scene.edge(single).map(|e| e.points.clone()).unwrap_or_default()
+            }
+            _ => Vec::new(),
+        };
         let theme = cx.theme();
         // In the light theme diagrams look like Astah's: black on white.
         let (fill, ink) = if theme.is_dark() {
@@ -1465,6 +1622,7 @@ impl Render for DiagramCanvas {
             selection: theme.blue,
         };
         let (pan, zoom, drag) = (self.pan, self.zoom, self.drag.clone());
+        let column = self.visibility_column;
         let editing_element = self.editing.as_ref().map(|e| e.element);
         let bounds_cell = self.bounds.clone();
         let this = cx.entity();
@@ -1572,8 +1730,15 @@ impl Render for DiagramCanvas {
                         }
                         let t = Transform { origin: bounds.origin, pan, zoom };
                         window.with_content_mask(Some(ContentMask { bounds }), |window| {
-                            let mut p =
-                                Painter { t, c: colors, font_family, window, cx, node_fill: None };
+                            let mut p = Painter {
+                                t,
+                                c: colors,
+                                font_family,
+                                window,
+                                cx,
+                                node_fill: None,
+                                column,
+                            };
                             p.grid(bounds);
                             for node in &scene.nodes {
                                 p.node(node, editing_element);
@@ -1593,6 +1758,7 @@ impl Render for DiagramCanvas {
                             if single && let Some(edge) = scene.edge(selection[0]) {
                                 p.edge_handles(edge);
                             }
+                            p.grips(&line_ends);
                             match &drag {
                                 Some(Drag::RubberBand { start, current, .. }) => {
                                     p.rubber_band(Rect::from_corners(*start, *current));
@@ -1647,6 +1813,10 @@ impl Render for DiagramCanvas {
                                     };
                                     let s = p.c.selection;
                                     p.line(&[a, b], 1.5, s, LineStyle::Dashed);
+                                }
+                                Some(Drag::FreeLine { start, current }) => {
+                                    let s = p.c.selection;
+                                    p.line(&[*start, *current], 1.5, s, LineStyle::Solid);
                                 }
                                 Some(Drag::Connect { source, current, .. }) => {
                                     if let Some(node) = scene.node(*source) {

@@ -348,6 +348,13 @@ pub struct Style {
     /// Messages: leave out the parentheses with the arguments.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_parameters: bool,
+    /// Messages that show the parameters of the operation they call (calls without arguments):
+    /// leave out the parameters' types.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hide_parameter_types: bool,
+    /// Messages that show the parameters of the operation they call: add its return type.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub show_return_type: bool,
     /// System boundaries: where the box of the name's text lies relative to the boundary's top
     /// left, as Astah keeps a free text (the text starts 10 right of the box, its baseline 17
     /// below the box's top). Unset: centered at the top.

@@ -117,6 +117,8 @@ tool:
   shallowHistory: Historie
   deepHistory: Tiefe Historie
   transition: Transition
+  text: Text
+  line: Linie
   component: Komponente
   artifact: Artefakt
   node: Knoten
@@ -160,6 +162,9 @@ prop:
   hide_operations: Operationen ausblenden
   hide_instance_name: Namen ausblenden
   hide_instance_type: Classifier ausblenden
+  dashed: Gestrichelt
+  start_arrow: Pfeil am Anfang
+  end_arrow: Pfeil am Ende
   hide_slots: Slots ausblenden
   hide_empty_slots: Slots ohne Wert ausblenden
   iconic: Als Kreis darstellen
@@ -242,6 +247,7 @@ status:
   hint: "Mausrad: verschieben · Strg+Mausrad: zoomen · mittlere Taste: Ansicht ziehen"
   hint_node: "Klicken, um das Element zu platzieren · Esc: abbrechen"
   hint_edge: "Vom Quell- zum Zielelement ziehen oder nacheinander klicken · Esc: abbrechen"
+  hint_line: "Vom Anfang zum Ende ziehen · Esc: abbrechen"
 canvas:
   no_diagram: Kein Diagramm geöffnet. Doppelklick oder Kontextmenü im Modellbaum.
 dialog:
@@ -351,6 +357,7 @@ edit:
   paste: Einfügen
   wrap_in_fragment: Mit Fragment umschließen
   import_source: Quellcode importieren
+  text: Text ändern
 skipped:
   method_body: Methodenrümpfe
   initializer: Initialisierungsblöcke
@@ -418,6 +425,7 @@ kind:
   finalState: Endzustand
   pseudostate: Pseudozustand
   transition: Transition
+  text: Text
   region: Region
   internalTransition: Interne Transition
   initialPseudostate: Startzustand

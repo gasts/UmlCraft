@@ -47,6 +47,34 @@ pub struct Clip {
     pub relationships: Vec<ClipElement>,
     pub nodes: Vec<ClipNode>,
     pub edges: Vec<ClipEdge>,
+    /// Free texts and lines, which show no element and are copied as they are.
+    pub free: Vec<Presentation>,
+}
+
+impl Clip {
+    /// The area the copied nodes, texts and lines cover.
+    pub fn bounds(&self) -> Option<Rect> {
+        let free = self.free.iter().filter_map(|p| match &p.shape {
+            Shape::Text { bounds, .. } => Some(*bounds),
+            Shape::Line { from, to, .. } => Some(Rect::from_corners(*from, *to)),
+            _ => None,
+        });
+        self.nodes.iter().map(|n| n.bounds).chain(free).reduce(|a, b| a.union(&b))
+    }
+}
+
+/// `p` moved by `offset`, if it is a free text or line.
+fn moved_free(p: &Presentation, offset: Point) -> Option<Presentation> {
+    let mut p = p.clone();
+    match &mut p.shape {
+        Shape::Text { bounds, .. } => *bounds = bounds.translate(offset.x, offset.y),
+        Shape::Line { from, to, .. } => {
+            *from = from.offset(offset.x, offset.y);
+            *to = to.offset(offset.x, offset.y);
+        }
+        _ => return None,
+    }
+    Some(p)
 }
 
 fn snapshot(model: &Model, id: Id) -> Option<ClipElement> {
@@ -81,7 +109,12 @@ pub fn copy(model: &Model, diagram: Id, selection: &[Id]) -> Option<Clip> {
             })
         })
         .collect();
-    if nodes.is_empty() {
+    let free: Vec<Presentation> = selection
+        .iter()
+        .filter_map(|&p| view.get(p))
+        .filter_map(|p| moved_free(p, Point::default()))
+        .collect();
+    if nodes.is_empty() && free.is_empty() {
         return None;
     }
     let selected: HashSet<Id> = nodes.iter().map(|n| n.element).collect();
@@ -133,7 +166,7 @@ pub fn copy(model: &Model, diagram: Id, selection: &[Id]) -> Option<Clip> {
             labels: *labels,
         });
     }
-    Some(Clip { roots, relationships, nodes, edges })
+    Some(Clip { roots, relationships, nodes, edges, free })
 }
 
 /// `name` if no sibling under `owner` has it, else `name2`, `name3`, …; empty names stay empty.
@@ -287,6 +320,12 @@ pub fn paste(
         }
         created.push(tx.add_presentation(diagram, presentation)?);
     }
+    // Free items are drawings, not elements: pasting them as reference duplicates them too.
+    for free in &clip.free {
+        let Some(mut presentation) = moved_free(free, offset) else { continue };
+        presentation.id = Id::generate();
+        created.push(tx.add_presentation(diagram, presentation)?);
+    }
     Ok(created)
 }
 
@@ -415,6 +454,35 @@ mod tests {
         assert!(inner2 != inner && t2 != t);
         assert_eq!(type_of("inner"), Some(TypeRef::Element(inner2)));
         assert_eq!(type_of("value"), Some(TypeRef::Element(t2)));
+    }
+
+    #[test]
+    fn free_texts_and_lines_are_copied_and_pasted() {
+        let (mut doc, ids) = order_system();
+        let d = ids.class_diagram;
+        let (text, line) = doc
+            .edit("setup", |tx| {
+                let text = Presentation::text(Rect::new(10.0, 10.0, 60.0, 25.0), "note".into());
+                let mut line = Presentation::line(Point::new(0.0, 100.0), Point::new(50.0, 120.0));
+                if let Shape::Line { dashed, .. } = &mut line.shape {
+                    *dashed = true;
+                }
+                Ok((tx.add_presentation(d, text)?, tx.add_presentation(d, line)?))
+            })
+            .unwrap();
+        let clip = copy(doc.model(), d, &[text, line]).unwrap();
+        assert!(clip.nodes.is_empty() && clip.free.len() == 2);
+        assert_eq!(clip.bounds(), Some(Rect::new(0.0, 10.0, 70.0, 110.0)));
+        let created =
+            doc.edit("paste", |tx| paste(tx, d, &clip, Point::new(5.0, 5.0), true)).unwrap();
+        let view = doc.model().view(d).unwrap();
+        assert_eq!(created.len(), 2);
+        assert!(!created.contains(&text) && !created.contains(&line));
+        assert_eq!(view.get(created[0]).unwrap().bounds(), Some(Rect::new(15.0, 15.0, 60.0, 25.0)));
+        let Shape::Line { from, dashed, .. } = view.get(created[1]).unwrap().shape else {
+            panic!("a line")
+        };
+        assert_eq!((from, dashed), (Point::new(5.0, 105.0), true));
     }
 
     #[test]

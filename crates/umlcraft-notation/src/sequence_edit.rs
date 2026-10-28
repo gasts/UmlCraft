@@ -1147,6 +1147,58 @@ mod tests {
     }
 
     #[test]
+    fn a_call_without_arguments_shows_its_operations_parameters() {
+        use umlcraft_model::{ParameterProps, TypeRef};
+        let (mut doc, ids) = order_system();
+        let d = ids.sequence_diagram;
+        let model = doc.model();
+        let submit = model
+            .elements()
+            .find(|e| e.name() == "submit" && matches!(e.kind(), ElementKind::Message(_)))
+            .unwrap()
+            .id();
+        let order = ids.order;
+        let presentation = model.shown_on(submit)[0].1;
+        doc.edit("operation", |tx| {
+            let check = TypeRef::Text("Bool".into());
+            let op =
+                tx.create(order, ElementData::new("check", ElementKind::operation(Some(check))))?;
+            let parameter = ParameterProps {
+                type_ref: Some(TypeRef::Text("Item".into())),
+                ..ParameterProps::default()
+            };
+            tx.create(op, ElementData::new("item", ElementKind::Parameter(parameter)))?;
+            tx.update(submit, |data| {
+                data.name = String::new();
+                if let ElementKind::Message(p) = &mut data.kind {
+                    p.operation = Some(op);
+                }
+            })
+        })
+        .unwrap();
+        let label = |doc: &Document| {
+            let scene = scene_of(doc, d);
+            scene
+                .edge(presentation)
+                .unwrap()
+                .labels
+                .iter()
+                .map(|l| l.text.clone())
+                .collect::<String>()
+        };
+        // As Astah: the parameters with their types, no space after the colon.
+        assert!(label(&doc).contains("check(item:Item)"), "{}", label(&doc));
+        doc.edit("style", |tx| {
+            tx.update_presentation(d, presentation, |p| {
+                p.style.hide_parameter_types = true;
+                p.style.show_return_type = true;
+            })
+        })
+        .unwrap();
+        assert!(label(&doc).contains("check(item) : Bool"), "{}", label(&doc));
+    }
+
+    #[test]
     fn calls_get_bars_and_replies_end_them() {
         let (mut doc, d, a, b) = two_lifelines();
         // The second lifeline lines up with the first; a frame surrounds both.

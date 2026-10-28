@@ -14,6 +14,9 @@ pub struct Settings {
     pub recent: Vec<PathBuf>,
     pub language: Option<String>,
     pub dark: Option<bool>,
+    /// Draw members' visibility in a column of its own, so all names of a compartment start
+    /// in one line. Off by default: members then look as in Astah.
+    pub visibility_column: bool,
 }
 
 impl Settings {

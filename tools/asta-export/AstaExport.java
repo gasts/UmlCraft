@@ -1911,6 +1911,16 @@ public final class AstaExport {
             if (style != null && Boolean.TRUE.equals(style.get("hideParameters"))) {
                 link.setProperty("parameter_visibility", "false");
             }
+            // A call without arguments shows its operation's parameters, with their types and
+            // the return type as chosen.
+            if (link.getModel() instanceof IMessage message && !message.isReturnMessage()) {
+                boolean hideTypes = style != null
+                        && Boolean.TRUE.equals(style.get("hideParameterTypes"));
+                boolean showReturn = style != null
+                        && Boolean.TRUE.equals(style.get("showReturnType"));
+                link.setProperty("parameter_type_visibility", String.valueOf(!hideTypes));
+                link.setProperty("return_value_visibility", String.valueOf(showReturn));
+            }
             Map<String, Object> labels = (Map<String, Object>) p.get("labels");
             if (labels != null && labels.get("name") instanceof Map<?, ?> offset) {
                 Map<String, Object> head = head(laneShapes.get(from));

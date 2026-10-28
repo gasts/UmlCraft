@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use rust_i18n::t;
 use umlcraft_model::{
     Aggregation, DiagramKind, Document, EdgeLabels, ElementData, ElementKind, Id, LineShape, Model,
-    ModelError, Multiplicity, Navigability, Point, Rect, Shape, Size, Style,
+    ModelError, Multiplicity, Navigability, Point, Presentation, Rect, Shape, Size, Style,
     TemplateParameterProps, Tx, TypeRef, Visibility,
 };
 use umlcraft_notation::clipboard::{self, Clip};
@@ -221,6 +221,103 @@ impl Workspace {
             self.selection = vec![node];
             self.selected_element = Some(element);
         }
+    }
+
+    /// The box Astah gives a free text: as wide as its widest line plus 20, 8 higher than its
+    /// lines.
+    fn free_text_bounds(&self, origin: Point, text: &str) -> Rect {
+        let lines: Vec<&str> = text.split('\n').collect();
+        let width = lines
+            .iter()
+            .map(|l| self.measure.width(l, scene::FONT_SIZE, false))
+            .fold(0.0, f32::max);
+        let height = 8.0 + lines.len() as f32 * scene::line_height(scene::FONT_SIZE);
+        Rect::new(origin.x, origin.y, width + 20.0, height)
+    }
+
+    /// Adds a free text at `origin` to the active diagram and selects it.
+    pub fn create_free_text(&mut self, origin: Point) -> Option<Id> {
+        let diagram = self.active_diagram?;
+        let text = t!("kind.text").to_string();
+        let bounds = self.free_text_bounds(origin, &text);
+        let label = t!("edit.create").to_string();
+        let result =
+            self.edit(label, |tx| tx.add_presentation(diagram, Presentation::text(bounds, text)));
+        let id = self.report(result)?;
+        self.select(vec![id]);
+        Some(id)
+    }
+
+    /// Adds a free line from `from` to `to` to the active diagram and selects it.
+    pub fn create_free_line(&mut self, from: Point, to: Point) {
+        let Some(diagram) = self.active_diagram else { return };
+        let label = t!("edit.create").to_string();
+        let result =
+            self.edit(label, |tx| tx.add_presentation(diagram, Presentation::line(from, to)));
+        if let Some(id) = self.report(result) {
+            self.select(vec![id]);
+        }
+    }
+
+    /// Moves end `end` (0 start, 1 end) of the free line `presentation` to `to`.
+    pub fn set_free_line_end(&mut self, presentation: Id, end: usize, to: Point) {
+        let Some(diagram) = self.active_diagram else { return };
+        let view = self.doc.model().view(diagram);
+        let Some(&Shape::Line { from, to: target, .. }) =
+            view.and_then(|v| v.get(presentation)).map(|p| &p.shape)
+        else {
+            return;
+        };
+        // A click on a grip without dragging changes nothing.
+        if [from, target][end.min(1)] == to {
+            return;
+        }
+        let label = t!("edit.move").to_string();
+        let result = self.edit(label, |tx| {
+            tx.update_presentation(diagram, presentation, |p| {
+                if let Shape::Line { from, to: target, .. } = &mut p.shape {
+                    *if end == 0 { from } else { target } = to;
+                }
+            })
+        });
+        self.report(result);
+    }
+
+    /// Changes the text of the free text `presentation`; its box fits the new text.
+    pub fn set_free_text(&mut self, presentation: Id, text: &str) {
+        let Some(diagram) = self.active_diagram else { return };
+        let view = self.doc.model().view(diagram);
+        let Some(Shape::Text { bounds, .. }) =
+            view.and_then(|v| v.get(presentation)).map(|p| &p.shape)
+        else {
+            return;
+        };
+        let bounds = self.free_text_bounds(bounds.origin(), text);
+        let label = t!("edit.text").to_string();
+        let result = self.edit(label, |tx| {
+            tx.update_presentation(diagram, presentation, |p| {
+                p.shape = Shape::Text { bounds, text: text.to_owned() };
+            })
+        });
+        self.report(result);
+    }
+
+    /// Changes how the free line `presentation` is drawn.
+    pub fn update_free_line(
+        &mut self,
+        presentation: Id,
+        f: impl FnOnce(&mut bool, &mut bool, &mut bool),
+    ) {
+        let Some(diagram) = self.active_diagram else { return };
+        let label = t!("edit.properties").to_string();
+        let result = self.edit(label, |tx| {
+            tx.update_presentation(diagram, presentation, |p| {
+                if let Shape::Line { dashed, start_arrow, end_arrow, .. } = &mut p.shape {
+                    f(dashed, start_arrow, end_arrow);
+                }
+            })
+        });
+        self.report(result);
     }
 
     pub fn connect(&mut self, tool: EdgeTool, source: Id, target: Id) {
@@ -965,6 +1062,55 @@ mod tests {
         ws.set_bounds(class, manual);
         ws.apply_text(element, "X");
         assert_eq!(bounds(&ws, class), Some(manual));
+    }
+
+    #[test]
+    fn free_texts_and_lines_are_created_edited_and_moved() {
+        let (doc, ids) = order_system();
+        let mut ws = Workspace::new(doc, None);
+        let d = ids.sequence_diagram;
+        ws.open_diagram(d);
+        let shape =
+            |ws: &Workspace, id: Id| ws.doc.model().view(d).unwrap().get(id).unwrap().shape.clone();
+
+        let text = ws.create_free_text(Point::new(40.0, 400.0)).unwrap();
+        assert_eq!(ws.selection, vec![text]);
+        ws.set_free_text(text, "first\nsecond line");
+        let Shape::Text { bounds, text: written } = shape(&ws, text) else { panic!() };
+        assert_eq!(written, "first\nsecond line");
+        // As wide as the widest line plus 20, 8 higher than two lines.
+        let widest = ApproxMeasure.width("second line", scene::FONT_SIZE, false);
+        assert!((bounds.width - (widest + 20.0)).abs() < 1e-3, "{bounds:?}");
+        assert!((bounds.height - (8.0 + 2.0 * scene::line_height(scene::FONT_SIZE))).abs() < 1e-3);
+
+        ws.create_free_line(Point::new(10.0, 300.0), Point::new(150.0, 300.0));
+        let line = ws.selection[0];
+        ws.update_free_line(line, |dashed, start, _| (*dashed, *start) = (true, true));
+        ws.move_nodes(&[text, line], 5.0, 10.0);
+        let Shape::Line { from, to, dashed, start_arrow, end_arrow } = shape(&ws, line) else {
+            panic!()
+        };
+        assert_eq!((from, to), (Point::new(15.0, 310.0), Point::new(155.0, 310.0)));
+        assert_eq!((dashed, start_arrow, end_arrow), (true, true, false));
+        assert_eq!(
+            shape(&ws, text).clone(),
+            Shape::Text {
+                bounds: Rect::new(45.0, 410.0, bounds.width, bounds.height),
+                text: "first\nsecond line".into(),
+            }
+        );
+        // Undo takes back the move.
+        ws.doc.undo();
+        let Shape::Line { from, .. } = shape(&ws, line) else { panic!() };
+        assert_eq!(from, Point::new(10.0, 300.0));
+        // One end moves on its own; a grip clicked without dragging adds no undo step.
+        ws.set_free_line_end(line, 1, Point::new(150.0, 360.0));
+        let Shape::Line { from, to, .. } = shape(&ws, line) else { panic!() };
+        assert_eq!((from, to), (Point::new(10.0, 300.0), Point::new(150.0, 360.0)));
+        ws.set_free_line_end(line, 0, from);
+        ws.doc.undo();
+        let Shape::Line { to, .. } = shape(&ws, line) else { panic!() };
+        assert_eq!(to, Point::new(150.0, 300.0));
     }
 
     #[test]
