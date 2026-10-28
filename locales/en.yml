@@ -4,6 +4,7 @@ toolbar:
   redo: Redo
   theme: Light/Dark
   language: Deutsch
+  settings: Settings
   zoom_reset: "Reset zoom to 100 % (Ctrl+0)"
   zoom_fit: Fit
 menu:
@@ -65,6 +66,7 @@ menu:
   python: Python
   import_python_files: Import Python files …
   import_python_folder: Import Python folder …
+  settings: Settings …
   help: Help
   open_sample: Open sample project
   open_diagram: Open diagram
@@ -336,6 +338,17 @@ export_dropped:
   guardPosition: Guards moved above their operand
   instanceNameVisibility: Hidden names of instances
   instanceTypeVisibility: Hidden classifiers of instances
+settings:
+  title: Settings
+  language: Language
+  system_language: System language
+  theme: Theme
+  light: Light
+  dark: Dark
+  classes: Classes
+  visibility_column: Visibility in a column of its own
+  visibility_column_detail: "Lines up the names of all attributes and operations of a class. Off, the visibility stands right before the name, as in Astah."
+  close: Close
 project:
   untitled: New project
 edit:

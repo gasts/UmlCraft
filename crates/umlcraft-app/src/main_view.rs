@@ -808,21 +808,58 @@ impl MainView {
     }
 
     fn toggle_theme(&mut self, _: &ToggleTheme, window: &mut Window, cx: &mut Context<Self>) {
-        let dark = !cx.theme().is_dark();
+        self.set_dark(!cx.theme().is_dark(), window, cx);
+    }
+
+    fn toggle_language(&mut self, _: &ToggleLanguage, window: &mut Window, cx: &mut Context<Self>) {
+        let next = if &*rust_i18n::locale() == "de" { "en" } else { "de" };
+        self.set_language(Some(next.to_owned()), window, cx);
+    }
+
+    fn open_settings(&mut self, _: &OpenSettings, window: &mut Window, cx: &mut Context<Self>) {
+        crate::settings_dialog::open(cx.entity().downgrade(), window, cx);
+    }
+
+    // ----- Settings --------------------------------------------------------------------------
+
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    pub fn set_dark(&mut self, dark: bool, window: &mut Window, cx: &mut Context<Self>) {
         Theme::change(if dark { ThemeMode::Dark } else { ThemeMode::Light }, Some(window), cx);
         self.settings.dark = Some(dark);
         self.settings.save();
     }
 
-    fn toggle_language(&mut self, _: &ToggleLanguage, window: &mut Window, cx: &mut Context<Self>) {
-        let next = if &*rust_i18n::locale() == "de" { "en" } else { "de" };
-        rust_i18n::set_locale(next);
-        self.settings.language = Some(next.to_owned());
+    /// Switches the user interface to `language`, or with `None` to the system's language.
+    pub fn set_language(
+        &mut self,
+        language: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.settings.language = language;
+        rust_i18n::set_locale(&self.settings.ui_language());
         self.settings.save();
         self.reload_menus(cx);
         self.sync_from_workspace(window, cx);
         self.properties.update(cx, |_, cx| cx.notify());
         window.refresh();
+    }
+
+    /// Turns UmlCraft's visibility column on or off, for drawing, sizing boxes and exporting.
+    pub fn set_visibility_column(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.settings.visibility_column = on;
+        self.settings.save();
+        self.canvas.update(cx, |canvas, cx| {
+            canvas.visibility_column = on;
+            cx.notify();
+        });
+        self.workspace.update(cx, |ws, cx| {
+            ws.measure = Box::new(AppMeasure::new(cx, on));
+            cx.notify();
+        });
     }
 
     fn reload_menus(&mut self, cx: &mut Context<Self>) {
@@ -888,6 +925,8 @@ impl MainView {
                 t!("toolbar.language").into(),
                 Box::new(ToggleLanguage),
             ))
+            .child(separator())
+            .child(action_button("settings", t!("toolbar.settings").into(), Box::new(OpenSettings)))
     }
 
     fn model_browser(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1285,6 +1324,8 @@ fn menus(settings: &Settings) -> Vec<Menu> {
                     ImportSource { language: SourceLanguage::Python, folder: true },
                 ),
             ])),
+            MenuItem::separator(),
+            menu_item("menu.settings", OpenSettings),
         ]),
         Menu::new(t!("menu.help").to_string()).items([menu_item("menu.open_sample", OpenSample)]),
     ]
@@ -1416,6 +1457,7 @@ impl Render for MainView {
             .on_action(cx.listener(Self::paste_as_reference))
             .on_action(cx.listener(Self::toggle_theme))
             .on_action(cx.listener(Self::toggle_language))
+            .on_action(cx.listener(Self::open_settings))
             .on_action(cx.listener(|this, _: &Undo, _, cx| {
                 this.with_workspace(cx, |ws| {
                     ws.doc.undo();

@@ -7,11 +7,15 @@ use serde::{Deserialize, Serialize};
 
 const MAX_RECENT: usize = 8;
 
+/// The languages of the user interface, each with its name in itself.
+pub const LANGUAGES: [(&str, &str); 2] = [("de", "Deutsch"), ("en", "English")];
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     /// Most recently used project files, newest first.
     pub recent: Vec<PathBuf>,
+    /// `None` follows the system's language.
     pub language: Option<String>,
     pub dark: Option<bool>,
     /// Draw members' visibility in a column of its own, so all names of a compartment start
@@ -46,11 +50,26 @@ impl Settings {
         }
     }
 
+    /// The language to show: the chosen one, else the system's.
+    pub fn ui_language(&self) -> String {
+        self.language.clone().unwrap_or_else(|| system_language().to_owned())
+    }
+
     pub fn add_recent(&mut self, path: &Path) {
         self.recent.retain(|p| p != path);
         self.recent.insert(0, path.to_path_buf());
         self.recent.truncate(MAX_RECENT);
     }
+}
+
+/// The system's language if UmlCraft speaks it, else English.
+fn system_language() -> &'static str {
+    language_of(&sys_locale::get_locale().unwrap_or_default())
+}
+
+/// The language of the user interface for a locale such as `de-AT`.
+fn language_of(locale: &str) -> &'static str {
+    LANGUAGES.iter().map(|&(code, _)| code).find(|code| locale.starts_with(code)).unwrap_or("en")
 }
 
 #[cfg(test)]
@@ -67,5 +86,14 @@ mod tests {
         assert_eq!(s.recent.len(), MAX_RECENT);
         assert_eq!(s.recent[0], Path::new("p5.ucraft"));
         assert_eq!(s.recent.iter().filter(|p| *p == Path::new("p5.ucraft")).count(), 1);
+    }
+
+    #[test]
+    fn system_locales_map_to_a_known_language() {
+        assert_eq!(language_of("de-AT"), "de");
+        assert_eq!(language_of("de"), "de");
+        assert_eq!(language_of("en-US"), "en");
+        assert_eq!(language_of("fr-FR"), "en");
+        assert_eq!(language_of(""), "en");
     }
 }

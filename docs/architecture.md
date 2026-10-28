@@ -71,7 +71,9 @@ when the app opens them (`sequence_edit::upgrade_document`, not an undoable edit
 - `main_view.rs` contains menus, tabs, palette, model tree and the file operations.
 - `png.rs` rasterizes the SVG export (`umlcraft_notation::svg`) with `resvg` for PNG export, at
   twice the canvas size and with the system's fonts, on a background thread.
-- `settings.rs` stores recent files, language and theme in `%APPDATA%\UmlCraft\settings.json`.
+- `settings.rs` stores recent files, language, theme and the visibility column in
+  `%APPDATA%\UmlCraft\settings.json`; `settings_dialog.rs` shows the last three in a dialog
+  (`gpui-component`'s `Dialog`), which applies each change at once through `MainView`.
 - Texts come from `locales/{de,en}.yml` (rust-i18n). Without a setting, the system language is used.
 
 ## Notation

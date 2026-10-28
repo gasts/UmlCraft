@@ -6,6 +6,7 @@ mod main_view;
 mod png;
 mod properties;
 mod settings;
+mod settings_dialog;
 mod workspace;
 
 use gpui_kit::*;
@@ -46,6 +47,7 @@ actions!(
         AlignBottom,
         ToggleTheme,
         ToggleLanguage,
+        OpenSettings,
         OpenSample,
         Copy,
         Cut,
@@ -116,11 +118,7 @@ pub enum TreeCommandKind {
 
 fn main() {
     let settings = settings::Settings::load();
-    let language = settings.language.clone().unwrap_or_else(|| {
-        let system = sys_locale::get_locale().unwrap_or_default();
-        if system.starts_with("de") { "de".into() } else { "en".into() }
-    });
-    rust_i18n::set_locale(&language);
+    rust_i18n::set_locale(&settings.ui_language());
 
     gpui_kit::application().with_assets(gpui_kit::assets::Assets).run(move |cx| {
         gpui_kit::init(cx);
@@ -152,6 +150,7 @@ fn main() {
             KeyBinding::new("ctrl-=", ZoomIn, None),
             KeyBinding::new("ctrl--", ZoomOut, None),
             KeyBinding::new("ctrl-shift-0", ZoomToFit, None),
+            KeyBinding::new("ctrl-,", OpenSettings, None),
         ]);
 
         let bounds = Bounds::centered(None, size(px(1280.0), px(820.0)), cx);
