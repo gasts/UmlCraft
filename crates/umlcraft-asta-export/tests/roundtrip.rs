@@ -705,6 +705,87 @@ fn system_boundary_through_astah() {
     assert!((got.width - bounds.width).abs() < 0.01 && (got.height - bounds.height).abs() < 0.01);
 }
 
+#[test]
+fn hidden_slots_through_astah() {
+    let (mut doc, ids) = order_system();
+    let d = ids.object_diagram;
+    let node = doc.model().view(d).unwrap().presentations()[0].id;
+    doc.edit("hide", |tx| tx.update_presentation(d, node, |p| p.style.hide_attributes = true))
+        .unwrap();
+    let Some(back) = through_astah(doc.model(), "slots") else { return };
+    let hidden: Vec<bool> = back
+        .elements()
+        .filter(|e| matches!(e.kind(), ElementKind::Instance(_)))
+        .flat_map(|e| back.shown_on(e.id()))
+        .map(|(d, n)| back.view(d).unwrap().get(n).unwrap().style.hide_attributes)
+        .collect();
+    assert_eq!(hidden.iter().filter(|&&h| h).count(), 1, "{hidden:?}");
+}
+
+#[test]
+fn bound_classes_through_astah() {
+    let (mut doc, ids) = order_system();
+    let d = ids.class_diagram;
+    doc.edit("bound", |tx| {
+        let owner = tx.model().get(d).unwrap().owner().unwrap();
+        let pair = tx.create(owner, ElementData::new("Pair", ElementKind::class()))?;
+        for name in ["T1", "T2"] {
+            let parameter = ElementKind::TemplateParameter(TemplateParameterProps::default());
+            tx.create(pair, ElementData::new(name, parameter))?;
+        }
+        let holder = tx.create(owner, ElementData::new("Holder", ElementKind::class()))?;
+        let binding = |arguments| {
+            Some(TypeRef::Expr(Box::new(TypeExpr {
+                base: TypeRef::Element(pair),
+                arguments,
+                prefix: String::new(),
+                modifier: String::new(),
+            })))
+        };
+        let mut bound = Vec::new();
+        for (name, arguments) in [
+            ("", vec![TypeRef::Element(holder), TypeRef::Text("int".into())]),
+            ("HolderPair", vec![TypeRef::Element(holder), TypeRef::Element(holder)]),
+        ] {
+            let mut kind = ElementKind::class();
+            if let ElementKind::Class(p) = &mut kind {
+                p.binding = binding(arguments);
+            }
+            let class = tx.create(owner, ElementData::new(name, kind))?;
+            let mut bind = ElementData::new(
+                "",
+                ElementKind::Dependency(DirectedProps { client: class, supplier: pair }),
+            );
+            bind.stereotypes = vec!["bind".into()];
+            bound.push((class, tx.create(owner, bind)?));
+        }
+        let n_pair = tx.add_node(d, Some(pair), Rect::new(500.0, 40.0, 80.0, 50.0))?;
+        tx.add_node(d, Some(holder), Rect::new(500.0, 300.0, 80.0, 50.0))?;
+        for (i, (class, bind)) in bound.into_iter().enumerate() {
+            let y = 120.0 + 90.0 * i as f32;
+            let node = tx.add_node(d, Some(class), Rect::new(700.0, y, 140.0, 50.0))?;
+            tx.add_edge(d, Some(bind), node, n_pair, Vec::new())?;
+        }
+        Ok(())
+    })
+    .unwrap();
+    let Some(back) = through_astah(doc.model(), "bound") else { return };
+    use umlcraft_notation::member::{binding_text, display_name};
+    let shown: BTreeSet<String> = back
+        .elements()
+        .filter_map(|e| match e.kind() {
+            ElementKind::Dependency(p) if e.data().stereotypes == ["bind"] => Some(format!(
+                "{} {}",
+                display_name(&back, p.client),
+                binding_text(&back, p.client, p.supplier)?
+            )),
+            _ => None,
+        })
+        .collect();
+    let expected = ["HolderPair <T1->Holder,T2->Holder>", "Pair<Holder,int> <T1->Holder,T2->int>"];
+    assert_eq!(shown, expected.into_iter().map(String::from).collect());
+}
+
 /// Template parameters, leaf operations and what association ends carry besides their role.
 fn templates_and_ends(model: &Model) -> BTreeSet<String> {
     let label = |t: &Option<TypeRef>| type_text(model, t);
@@ -864,4 +945,23 @@ fn round_trip_through_astah() {
     pretty_assertions::assert_eq!(interactions(back), interactions(original));
     // Astah keeps where lifelines and messages are.
     pretty_assertions::assert_eq!(sequence_geometry(back), sequence_geometry(original));
+}
+
+#[test]
+fn subsystems_through_astah() {
+    use umlcraft_notation::palette::{self, NodeTool, create_node};
+    let (mut doc, ids) = order_system();
+    let d = ids.class_diagram;
+    doc.edit("subsystem", |tx| {
+        create_node(tx, d, NodeTool::Subsystem, Point::new(500.0, 300.0), "Billing")
+    })
+    .unwrap();
+    let Some(back) = through_astah(doc.model(), "subsystem") else { return };
+    let subsystems: Vec<_> = back.elements().filter(|e| palette::is_subsystem(e)).collect();
+    assert_eq!(subsystems.len(), 1);
+    let e = subsystems[0];
+    assert!(matches!(e.kind(), ElementKind::Package));
+    // One stereotype, not one from the import and one exported as such.
+    assert_eq!(e.data().stereotypes, [palette::SUBSYSTEM]);
+    assert_eq!(back.shown_on(e.id()).len(), 1);
 }

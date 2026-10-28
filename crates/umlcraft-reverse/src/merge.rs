@@ -733,7 +733,7 @@ fn classifier_props(kind: &ElementKind) -> ClassifierProps {
         ElementKind::Class(p)
         | ElementKind::Interface(p)
         | ElementKind::Enumeration(p)
-        | ElementKind::DataType(p) => *p,
+        | ElementKind::DataType(p) => p.clone(),
         _ => ClassifierProps::default(),
     }
 }

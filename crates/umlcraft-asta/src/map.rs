@@ -299,6 +299,8 @@ struct Importer<'g> {
     diagrams: Vec<(Id, ObjId)>,
     /// Template classifiers, whose parameters are created once every classifier exists.
     templates: Vec<(Id, ObjId)>,
+    /// Bound classes, whose bindings are set once every template parameter exists.
+    bound: Vec<(Id, ObjId)>,
 }
 
 pub fn import(graph: &Graph) -> Option<Imported> {
@@ -319,10 +321,12 @@ pub fn import(graph: &Graph) -> Option<Imported> {
         behaviors: Vec::new(),
         diagrams: Vec::new(),
         templates: Vec::new(),
+        bound: Vec::new(),
     };
     let root_id = im.model.root();
     im.walk(root, root_id);
     im.template_parameters();
+    im.bindings();
     for (owner, feature) in std::mem::take(&mut im.features) {
         im.feature(owner, feature);
     }
@@ -452,7 +456,13 @@ impl Importer<'_> {
             }
             match self.r.class(child) {
                 "UPackageImp" | "USubsystemImp" | "UModelImp" => {
-                    let data = self.data(child, ElementKind::Package, &[]);
+                    let mut data = self.data(child, ElementKind::Package, &[]);
+                    // Astah keeps subsystems as a class of their own; UmlCraft as a stereotype.
+                    if self.r.class(child) == "USubsystemImp"
+                        && !data.stereotypes.iter().any(|s| s == palette::SUBSYSTEM)
+                    {
+                        data.stereotypes.insert(0, palette::SUBSYSTEM.to_owned());
+                    }
                     if let Some(package) = self.create(id, data, Some(child)) {
                         self.walk(child, package);
                     }
@@ -460,9 +470,12 @@ impl Importer<'_> {
                 "UClassifierImp" | "UInterfaceImp" | "UActorImp" | "UUseCaseImp"
                 | "UComponentImp" | "UArtifactImp" | "UNodeImp" => {
                     // Anonymous classifiers bind a template to arguments; they live on as type
-                    // expressions such as `List<Projekt>` (see `type_of`).
-                    if !self.r.list(child, "templateBinding").is_empty()
+                    // expressions such as `List<Projekt>` (see `type_of`), and as bound classes
+                    // where a diagram shows them.
+                    let bound = !self.r.list(child, "templateBinding").is_empty();
+                    if bound
                         && self.r.name(child).is_empty()
+                        && self.r.list(child, "presentation").is_empty()
                     {
                         continue;
                     }
@@ -476,6 +489,9 @@ impl Importer<'_> {
                     if let Some(classifier) = self.create(id, data, Some(child)) {
                         if self.r.obj(child, "ownedTemplateSignatrue").is_some() {
                             self.templates.push((classifier, child));
+                        }
+                        if bound {
+                            self.bound.push((classifier, child));
                         }
                         // The feature lists hold the order Astah displays; ownership does not.
                         for list in ["structuralFeature", "behavioralFeature"] {
@@ -500,16 +516,21 @@ impl Importer<'_> {
                 }
                 // Parameters come with their operation, association ends with their association.
                 "JUParameterImp" | "UParameterImp" | "UAssociationEndImp" => {}
-                "UAssociationImp" | "UGeneralizationImp" | "UDependencyImp" | "UUsageImp"
-                | "UAbstractionImp" | "URealizationImp" | "UIncludeImp" | "UExtendImp" => {
+                "UAssociationImp"
+                | "UGeneralizationImp"
+                | "UDependencyImp"
+                | "UUsageImp"
+                | "UAbstractionImp"
+                | "URealizationImp"
+                | "UIncludeImp"
+                | "UExtendImp"
+                | "UTemplateBindingImp" => {
                     self.relationships.push((id, child));
                 }
                 "UDiagramImp" | "USequenceDiagramImp" => self.diagrams.push((id, child)),
                 "UComponentInstanceImp" | "UNodeInstanceImp" | "UObjectImp" => {
                     self.instances.push((id, child));
                 }
-                // Bindings live on in the bound types' names, see `Reader::type_name`.
-                "UTemplateBindingImp" => {}
                 // Constraints on association ends come with their association.
                 "UConstraintImp"
                     if self
@@ -550,6 +571,7 @@ impl Importer<'_> {
             is_abstract: self.r.flag(object, "abst"),
             is_leaf: self.r.flag(object, "leaf"),
             is_active: self.r.flag(object, "active"),
+            binding: None,
         };
         let stereotypes = self.r.stereotypes(object);
         let has = |s: &str| stereotypes.iter().any(|t| t == s);
@@ -679,16 +701,27 @@ impl Importer<'_> {
     /// and the arguments), or else the type's name as text.
     fn type_of(&self, ty: ObjId, depth: usize) -> Option<TypeRef> {
         let r = self.r;
-        if let Some(&id) = self.ids.get(&ty)
+        let name = r.name(ty);
+        let anonymous = name.is_empty() && !r.list(ty, "templateBinding").is_empty();
+        // Types stay expressions even where a diagram shows the bound class.
+        if let Some(&id) = self.ids.get(&ty).filter(|_| !anonymous)
             && self.model.get(id).is_some_and(|e| {
                 e.kind().is_classifier() || matches!(e.kind(), ElementKind::TemplateParameter(_))
             })
         {
             return Some(TypeRef::Element(id));
         }
-        let name = r.name(ty);
+        if anonymous {
+            return self.bound_type(ty, depth);
+        }
+        (!name.is_empty()).then_some(TypeRef::Text(name))
+    }
+
+    /// The template and arguments a classifier binds, as `Pair<int,Holder>`.
+    fn bound_type(&self, ty: ObjId, depth: usize) -> Option<TypeRef> {
+        let r = self.r;
         let binding = r.list(ty, "templateBinding").first().copied();
-        if let Some(binding) = binding.filter(|_| name.is_empty() && depth < 8)
+        if let Some(binding) = binding.filter(|_| depth < 8)
             && let Some(signature) = r.obj(binding, "signature")
         {
             let base = r.obj(signature, "template").and_then(|t| self.type_of(t, depth + 1))?;
@@ -708,7 +741,20 @@ impl Importer<'_> {
                 modifier: String::new(),
             })));
         }
-        (!name.is_empty()).then_some(TypeRef::Text(name))
+        None
+    }
+
+    /// Sets the bindings of bound classes, now that templates and their parameters exist.
+    fn bindings(&mut self) {
+        for (id, object) in std::mem::take(&mut self.bound) {
+            let binding = self.bound_type(object, 0);
+            let Some(e) = self.model.get(id) else { continue };
+            let mut data = e.data().clone();
+            if let ElementKind::Class(p) = &mut data.kind {
+                p.binding = binding;
+                let _ = self.model.apply(Op::UpdateElement { id, data });
+            }
+        }
     }
 
     /// The argument of a template parameter substitution: a type, or a value such as `20`.
@@ -863,6 +909,26 @@ impl Importer<'_> {
                 specific.zip(general).map(|(specific, general)| {
                     ElementKind::Generalization(GeneralizationProps { specific, general })
                 })
+            }
+            // A binding shown on a diagram is a «bind» dependency of the bound class on its
+            // template; the class holds what it binds (see `bindings`). Bindings of types that
+            // are not shown live on in the types.
+            "UTemplateBindingImp" => {
+                let template = r.obj(object, "signature").and_then(|s| r.obj(s, "template"));
+                let client = r.obj(object, "boundElement").and_then(|o| self.classifier(o));
+                let Some((client, supplier)) =
+                    client.zip(template.and_then(|t| self.classifier(t)))
+                else {
+                    return;
+                };
+                let mut data = self.data(
+                    object,
+                    ElementKind::Dependency(DirectedProps { client, supplier }),
+                    &["bind"],
+                );
+                data.stereotypes.insert(0, "bind".into());
+                self.create(owner, data, Some(object));
+                return;
             }
             // Astah's fields are swapped against UML: `addition` is the including use case.
             "UIncludeImp" => mapped("addition").zip(mapped("base")).map(|(including, addition)| {
@@ -1702,11 +1768,16 @@ impl Importer<'_> {
         let r = self.r;
         let class = r.class(p);
         let element = match class {
-            // The frame of a class or use case diagram, when shown, is a node presentation of
-            // the diagram.
+            // The frame of a class, use case, component or deployment diagram, when shown, is a
+            // node presentation of the diagram.
             "FramePresentation"
-                if matches!(kind, DiagramKind::Class | DiagramKind::UseCase)
-                    && r.g.field(p, "visibility").and_then(Value::as_bool) == Some(true) =>
+                if matches!(
+                    kind,
+                    DiagramKind::Class
+                        | DiagramKind::UseCase
+                        | DiagramKind::Component
+                        | DiagramKind::Deployment
+                ) && r.g.field(p, "visibility").and_then(Value::as_bool) == Some(true) =>
             {
                 diagram
             }
@@ -1743,6 +1814,19 @@ impl Importer<'_> {
                 && r.g.field(p, "notationType").and_then(Value::as_i64) == Some(1);
             style.auto_size = scene::is_boxed_classifier(&element_kind)
                 && r.g.field(p, "doAutoResize").and_then(Value::as_bool) == Some(true);
+        }
+        // Instances may hide their name or classifier, objects their slots.
+        if matches!(
+            class,
+            "ObjectClassPresentation"
+                | "ComponentInstancePresentation"
+                | "NodeInstancePresentation"
+        ) {
+            let off = |field: &str| r.g.field(p, field).and_then(Value::as_bool) == Some(false);
+            style.hide_instance_name = off("instanceNameVisibility");
+            style.hide_instance_type = off("instanceTypeVisibility");
+            style.hide_attributes =
+                class == "ObjectClassPresentation" && off("allAttributeVisibility");
         }
         // Orthogonal states keep where the lines between their regions go, as distances from
         // their top edge (regions one below the other) or left edge (side by side).
@@ -1972,10 +2056,16 @@ impl Importer<'_> {
                 at.y + moved.y + g.shift.y - middle.y,
             ))
         });
+        // A binding's substitutions (`<T->int>`) take the place of a name.
+        let binding = r.class(p) == "TemplateBindingPresentation";
         let mut labels = EdgeLabels {
-            name: label("namePresentation", middle),
-            keyword: keyword
-                .filter(|_| matches!(r.class(p), "IncludePresentation" | "ExtendPresentation")),
+            name: label(if binding { "boundInfoPresentation" } else { "namePresentation" }, middle),
+            keyword: keyword.filter(|_| {
+                matches!(
+                    r.class(p),
+                    "IncludePresentation" | "ExtendPresentation" | "TemplateBindingPresentation"
+                )
+            }),
             ..Default::default()
         };
         (

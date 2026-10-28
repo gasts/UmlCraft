@@ -247,7 +247,7 @@ impl TypeRef {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClassifierProps {
     #[serde(default, skip_serializing_if = "is_default")]
@@ -256,6 +256,23 @@ pub struct ClassifierProps {
     pub is_leaf: bool,
     #[serde(default, skip_serializing_if = "is_default")]
     pub is_active: bool,
+    /// A bound class: the template with the arguments for its parameters, in order, such as
+    /// `Pair<int,Holder>`. A class without a name of its own is shown by it, as in Astah.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding: Option<TypeRef>,
+}
+
+impl ClassifierProps {
+    /// The template a bound class binds.
+    pub fn bound_template(&self) -> Option<Id> {
+        match &self.binding {
+            Some(TypeRef::Expr(e)) => match e.base {
+                TypeRef::Element(id) => Some(id),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1203,6 +1220,7 @@ impl ElementKind {
             t.for_each_id(&mut |id| f(id, RefRole::Type));
         };
         match self {
+            Self::Class(p) => p.binding.iter().for_each(|t| types(t, f)),
             Self::Attribute(p) => p.type_ref.iter().for_each(|t| types(t, f)),
             Self::Operation(p) => p.return_type.iter().for_each(|t| types(t, f)),
             Self::Parameter(p) => p.type_ref.iter().for_each(|t| types(t, f)),
@@ -1269,6 +1287,7 @@ impl ElementKind {
             t.iter_mut().for_each(|t| t.for_each_id_mut(f));
         };
         match self {
+            Self::Class(p) => type_ref(&mut p.binding, &mut f),
             Self::Attribute(p) => type_ref(&mut p.type_ref, &mut f),
             Self::Operation(p) => type_ref(&mut p.return_type, &mut f),
             Self::Parameter(p) => type_ref(&mut p.type_ref, &mut f),
@@ -1365,6 +1384,7 @@ impl ElementKind {
             }
         };
         match self {
+            Self::Class(p) => unlink_type(&mut p.binding),
             Self::Attribute(p) => unlink_type(&mut p.type_ref),
             Self::Operation(p) => unlink_type(&mut p.return_type),
             Self::Parameter(p) => unlink_type(&mut p.type_ref),

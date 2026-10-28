@@ -76,9 +76,10 @@ enum Field {
     Default,
     Slots,
     InState,
+    Binding,
 }
 
-const TEXT_FIELDS: [Field; 18] = [
+const TEXT_FIELDS: [Field; 19] = [
     Field::Name,
     Field::Declaration,
     Field::Stereotypes,
@@ -97,6 +98,7 @@ const TEXT_FIELDS: [Field; 18] = [
     Field::Default,
     Field::Slots,
     Field::InState,
+    Field::Binding,
 ];
 
 /// Inputs for one association end.
@@ -134,6 +136,8 @@ pub struct PropertiesPanel {
     in_state: Entity<InputState>,
     bounds: Entity<InputState>,
     default: Entity<InputState>,
+    /// Classes: the template they bind, with its arguments (`Pair<int,Holder>`).
+    binding: Entity<InputState>,
     parameter_kind: Entity<Choice>,
     sort: Entity<Choice>,
     operator: Entity<Choice>,
@@ -329,6 +333,7 @@ impl PropertiesPanel {
         let in_state = cx.new(|cx| InputState::new(window, cx).placeholder("filled, paid"));
         let bounds = cx.new(|cx| InputState::new(window, cx).placeholder("Number, Comparable<T>"));
         let default = input(window, cx);
+        let binding = cx.new(|cx| InputState::new(window, cx).placeholder("List<String>"));
         let parameter_kind =
             cx.new(|cx| SelectState::new(parameter_kind_items(), None, window, cx));
         let sort = cx.new(|cx| SelectState::new(sort_items(), None, window, cx));
@@ -364,6 +369,7 @@ impl PropertiesPanel {
         watch(&in_state, Field::InState, cx);
         watch(&bounds, Field::Bounds, cx);
         watch(&default, Field::Default, cx);
+        watch(&binding, Field::Binding, cx);
         for (i, end) in ends.iter().enumerate() {
             watch(&end.role, Field::Role(i), cx);
             watch(&end.multiplicity, Field::Multiplicity(i), cx);
@@ -536,6 +542,7 @@ impl PropertiesPanel {
             in_state,
             bounds,
             default,
+            binding,
             parameter_kind,
             sort,
             operator,
@@ -707,6 +714,24 @@ impl PropertiesPanel {
                     _ => {}
                 });
             }
+            Field::Binding => {
+                // A template with its arguments, linked as a declaration links its types; text
+                // that names no template is ignored.
+                let text = Self::value(&self.binding, cx);
+                let model = self.workspace.read(cx).doc.model();
+                let current = match model.get(id).map(|e| e.kind()) {
+                    Some(ElementKind::Class(p)) => p.binding.clone(),
+                    _ => return,
+                };
+                let binding = (!text.is_empty()).then(|| member::parse_type(model, id, &text));
+                let names_template = matches!(&binding, Some(TypeRef::Expr(e)) if matches!(e.base, TypeRef::Element(_)));
+                if binding != current && (binding.is_none() || names_template) {
+                    self.workspace.update(cx, |ws, cx| {
+                        ws.set_binding(id, binding);
+                        cx.notify();
+                    });
+                }
+            }
             Field::InState => {
                 let value = Self::value(&self.in_state, cx);
                 let value = value.strip_prefix('[').unwrap_or(&value);
@@ -837,6 +862,12 @@ impl PropertiesPanel {
             }
             _ => Default::default(),
         };
+        let binding_text = match &data.kind {
+            ElementKind::Class(p) => {
+                p.binding.as_ref().map(|b| member::type_text(model, b)).unwrap_or_default()
+            }
+            _ => String::new(),
+        };
         // What a message, lifeline or instance may refer to.
         let references = match &data.kind {
             ElementKind::Message(_) => operations_for(model, id),
@@ -956,6 +987,7 @@ impl PropertiesPanel {
                 set(&self.value_type, object_type, window, cx);
                 set(&self.in_state, p.in_state.clone(), window, cx);
             }
+            ElementKind::Class(_) => set(&self.binding, binding_text, window, cx),
             ElementKind::TemplateParameter(p) => {
                 let [value_type, bounds, default] = parameter_texts;
                 set(&self.value_type, value_type, window, cx);
@@ -1201,6 +1233,10 @@ impl Render for PropertiesPanel {
                                 p.is_leaf = v;
                             }
                         },
+                    ))
+                    .child(field(
+                        t!("prop.binding").into(),
+                        Input::new(&self.binding).small().into_any_element(),
                     ));
             }
             ElementKind::TemplateParameter(p) => {
@@ -1747,6 +1783,35 @@ impl Render for PropertiesPanel {
                         p.id,
                         |s, v| s.hide_operations = v,
                     ));
+            }
+            if let Some(ElementKind::Instance(instance)) = &shown {
+                body = body
+                    .child(style_flag(
+                        "hide-instance-name",
+                        t!("prop.hide_instance_name").into(),
+                        p.style.hide_instance_name,
+                        workspace.clone(),
+                        p.id,
+                        |s, v| s.hide_instance_name = v,
+                    ))
+                    .child(style_flag(
+                        "hide-instance-type",
+                        t!("prop.hide_instance_type").into(),
+                        p.style.hide_instance_type,
+                        workspace.clone(),
+                        p.id,
+                        |s, v| s.hide_instance_type = v,
+                    ));
+                if instance.instance == umlcraft_model::InstanceKind::Object {
+                    body = body.child(style_flag(
+                        "hide-slots",
+                        t!("prop.hide_slots").into(),
+                        p.style.hide_attributes,
+                        workspace.clone(),
+                        p.id,
+                        |s, v| s.hide_attributes = v,
+                    ));
+                }
             }
             if matches!(shown, Some(ElementKind::Interface(_))) {
                 body = body.child(style_flag(

@@ -68,6 +68,18 @@ fn frame(rect: Rect, fill: Paint) -> Primitive {
     }
 }
 
+/// Astah draws components and artifacts with 2 px lines.
+fn thick_frame(rect: Rect) -> Primitive {
+    Primitive::Frame {
+        rect,
+        width: 2.0,
+        radius: 0.0,
+        fill: Paint::Fill,
+        border: Paint::Line,
+        style: LineStyle::Solid,
+    }
+}
+
 fn ellipse(center: Point, rx: f32, ry: f32) -> Primitive {
     Primitive::Ellipse { center, rx, ry, fill: Paint::Fill, width: 1.0 }
 }
@@ -215,7 +227,7 @@ pub fn figure(node: &NodeShape) -> Vec<Primitive> {
                 width: 2.0,
             }]
         }
-        Figure::Package { tab } => {
+        Figure::Package { tab, subsystem } => {
             // Astah draws packages with 2 px lines.
             let body = Rect::new(r.x, r.y + tab.height, r.width, r.height - tab.height);
             let thick = |rect| Primitive::Frame {
@@ -226,7 +238,25 @@ pub fn figure(node: &NodeShape) -> Vec<Primitive> {
                 border: Paint::Line,
                 style: solid,
             };
-            vec![thick(*tab), thick(body)]
+            let mut result = vec![thick(*tab), thick(body)];
+            if *subsystem {
+                // A fork 7 wide ending 5 left of the tab's right edge, 4 to 11 below its top.
+                let (right, top) = (tab.right() - 5.0, tab.y);
+                let (left, mid) = (right - 7.0, right - 3.5);
+                result.extend([
+                    line(vec![Point::new(mid, top + 4.0), Point::new(mid, top + 7.5)], solid),
+                    line(
+                        vec![
+                            Point::new(left, top + 11.0),
+                            Point::new(left, top + 7.5),
+                            Point::new(right, top + 7.5),
+                            Point::new(right, top + 11.0),
+                        ],
+                        solid,
+                    ),
+                ]);
+            }
+            result
         }
         Figure::Actor => {
             // Astah's figure in the middle of the box, with 2 px lines: a head of radius 9
@@ -405,14 +435,14 @@ pub fn figure(node: &NodeShape) -> Vec<Primitive> {
         }
         Figure::Circle => vec![ellipse(r.center(), r.width / 2.0, r.height / 2.0)],
         Figure::Component { icon } => {
-            // UML's component icon: a box with two small tabs sticking out on its left.
-            let body = Rect::new(icon.x + 3.0, icon.y, icon.width - 3.0, icon.height);
+            // UML's component icon: a box with two small tabs sticking out 2 on its left.
+            let body = Rect::new(icon.x + 2.0, icon.y, icon.width - 2.0, icon.height);
             let tab = |y: f32| Rect::new(icon.x, y, 6.0, 3.0);
             vec![
-                frame(r, Paint::Fill),
+                thick_frame(r),
                 frame(body, Paint::Fill),
-                frame(tab(icon.y + icon.height * 0.25 - 1.5), Paint::Fill),
-                frame(tab(icon.y + icon.height * 0.75 - 1.5), Paint::Fill),
+                frame(tab(icon.y + 3.0), Paint::Fill),
+                frame(tab(icon.y + 8.0), Paint::Fill),
             ]
         }
         Figure::Artifact { icon } => {
@@ -420,7 +450,7 @@ pub fn figure(node: &NodeShape) -> Vec<Primitive> {
             let fold = 4.0;
             let (x, y, right, bottom) = (icon.x, icon.y, icon.right(), icon.bottom());
             vec![
-                frame(r, Paint::Fill),
+                thick_frame(r),
                 Primitive::Polygon {
                     points: vec![
                         Point::new(x, y),
@@ -442,28 +472,28 @@ pub fn figure(node: &NodeShape) -> Vec<Primitive> {
             ]
         }
         Figure::Cube { depth } => {
+            // Astah: the outline and the front face's top and right edges, all 2 px.
             let d = *depth;
             let front = Rect::new(r.x, r.y + d, r.width - d, r.height - d);
+            let outline = vec![
+                Point::new(r.x, front.y),
+                Point::new(r.x + d, r.y),
+                Point::new(r.right(), r.y),
+                Point::new(r.right(), r.bottom() - d),
+                Point::new(front.right(), r.bottom()),
+                Point::new(r.x, r.bottom()),
+            ];
+            let mut closed = outline.clone();
+            closed.extend(outline.iter().take(2).copied());
             vec![
-                Primitive::Polygon {
-                    points: vec![
-                        Point::new(r.x, r.y + d),
-                        Point::new(r.x + d, r.y),
-                        Point::new(r.right(), r.y),
-                        Point::new(front.right(), front.y),
-                    ],
-                    fill: Paint::Fill,
-                },
-                Primitive::Polygon {
-                    points: vec![
-                        Point::new(front.right(), front.y),
-                        Point::new(r.right(), r.y),
-                        Point::new(r.right(), r.bottom() - d),
-                        Point::new(front.right(), front.bottom()),
-                    ],
-                    fill: Paint::Fill,
-                },
-                frame(front, Paint::Fill),
+                Primitive::Polygon { points: outline, fill: Paint::Fill },
+                thick(closed),
+                thick(vec![
+                    Point::new(r.x, front.y),
+                    Point::new(front.right(), front.y),
+                    Point::new(front.right(), front.bottom()),
+                ]),
+                thick(vec![Point::new(front.right(), front.y), Point::new(r.right(), r.y)]),
             ]
         }
         Figure::Partition { header } => vec![

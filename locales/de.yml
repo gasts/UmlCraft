@@ -76,6 +76,7 @@ tool:
   interface: Schnittstelle
   enumeration: Aufzählung
   package: Paket
+  subsystem: Subsystem
   note: Notiz
   actor: Akteur
   useCase: Anwendungsfall
@@ -157,6 +158,9 @@ prop:
   display: Darstellung im Diagramm
   hide_attributes: Attribute ausblenden
   hide_operations: Operationen ausblenden
+  hide_instance_name: Namen ausblenden
+  hide_instance_type: Classifier ausblenden
+  hide_slots: Slots ausblenden
   iconic: Als Kreis darstellen
   condition: Bedingung
   extension_points: Erweiterungspunkte
@@ -201,6 +205,7 @@ prop:
   object_type: Typ
   in_state: Zustand
   type_bounds: Schranken
+  binding: Bindet
   default: Vorgabe
   variadic: Variadisch (beliebig viele Argumente)
 template_kind:
@@ -317,6 +322,10 @@ export_dropped:
   extraOperand: Weitere Operanden kombinierter Fragmente (ihre Nachrichten bleiben im ersten)
   region: Regionen eines Zustands nach der zweiten (ihr Inhalt kommt in die zweite)
   internalTransition: Interne Transitionen von Zuständen, die nicht auf ihrem Diagramm stehen
+  binding: Bindungen gebundener Klassen, deren Template keine Klasse ist
+  bindingArgument: Argumente gebundener Klassen, die weder Klassen noch primitive Typen sind
+  instanceNameVisibility: Ausgeblendete Namen von Instanzen
+  instanceTypeVisibility: Ausgeblendete Classifier von Instanzen
 project:
   untitled: Neues Projekt
 edit:
@@ -360,6 +369,7 @@ skipped:
 kind:
   model: Projekt
   package: Paket
+  subsystem: Subsystem
   class: Klasse
   interface: Schnittstelle
   enumeration: Aufzählung

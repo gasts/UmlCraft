@@ -3,6 +3,25 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
+## Unreleased
+
+- **Bound classes**: a class such as `ArrayList<String>` that binds a template, with its
+  «bind» line to the template and what it substitutes (`<E->String>`), is drawn as in Astah
+  and goes to and from Astah as a binding. In the editor, the class's "Binds" field takes the
+  template and its arguments, such as `Pair<int,Holder>`; the «bind» line follows.
+- **Subsystems**: a new tool in class and component diagrams and in the model tree's menu. A
+  subsystem is a package with Astah's fork in its tab; subsystems from `.asta` files no longer
+  turn into plain packages.
+- **Component and deployment diagrams look like Astah's**: component and artifact names in
+  regular type, Astah's icons and text positions, 2 px lines, node cubes 4 deep. Instances
+  show their classifier's stereotypes too.
+- Instances and objects can hide their name (`: Client`) or classifier, and objects their
+  slots, with switches in the properties panel; `.asta` files keep them too. Hidden slots go
+  back to Astah.
+- Component and deployment diagrams from `.asta` files keep their frame.
+- Notes wrap long lines at their width instead of growing wider.
+- Texts on the canvas sit a fraction of a pixel closer to where Astah puts them.
+
 ## 0.7.0 – 2026-10-26
 
 - **New app icon**: an initial state with its transition into a state, as in a state machine

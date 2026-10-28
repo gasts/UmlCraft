@@ -261,14 +261,20 @@ pub fn order_system() -> (Document, OrderSystem) {
 
             // Components: the shop uses payment, which billing provides; shop.jar holds the shop.
             let classifier = ClassifierProps::default();
-            let shop =
-                tx.create(domain, ElementData::new("Shop", ElementKind::Component(classifier)))?;
-            let billing =
-                tx.create(domain, ElementData::new("Billing", ElementKind::Component(classifier)))?;
+            let shop = tx.create(
+                domain,
+                ElementData::new("Shop", ElementKind::Component(classifier.clone())),
+            )?;
+            let billing = tx.create(
+                domain,
+                ElementData::new("Billing", ElementKind::Component(classifier.clone())),
+            )?;
             let payment =
                 tx.create(domain, ElementData::new("Payment", ElementKind::interface()))?;
-            let jar =
-                tx.create(domain, ElementData::new("shop.jar", ElementKind::Artifact(classifier)))?;
+            let jar = tx.create(
+                domain,
+                ElementData::new("shop.jar", ElementKind::Artifact(classifier.clone())),
+            )?;
             let provides = tx.create(
                 domain,
                 ElementData::new(
@@ -308,10 +314,14 @@ pub fn order_system() -> (Document, OrderSystem) {
             tx.add_edge(component_diagram, Some(manifests), n_jar, n_shop, vec![])?;
 
             // Deployment: the shop runs on web1, an application server, next to the database.
-            let app_server =
-                tx.create(domain, ElementData::new("AppServer", ElementKind::Node(classifier)))?;
-            let db_server =
-                tx.create(domain, ElementData::new("DBServer", ElementKind::Node(classifier)))?;
+            let app_server = tx.create(
+                domain,
+                ElementData::new("AppServer", ElementKind::Node(classifier.clone())),
+            )?;
+            let db_server = tx.create(
+                domain,
+                ElementData::new("DBServer", ElementKind::Node(classifier.clone())),
+            )?;
             let network = tx.create(
                 domain,
                 ElementData::new("", ElementKind::association(app_server, db_server)),

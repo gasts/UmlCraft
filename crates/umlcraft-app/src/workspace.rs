@@ -5,7 +5,7 @@ use rust_i18n::t;
 use umlcraft_model::{
     Aggregation, DiagramKind, Document, EdgeLabels, ElementData, ElementKind, Id, LineShape, Model,
     ModelError, Multiplicity, Navigability, Point, Rect, Shape, Size, Style,
-    TemplateParameterProps, Tx, Visibility,
+    TemplateParameterProps, Tx, TypeRef, Visibility,
 };
 use umlcraft_notation::clipboard::{self, Clip};
 use umlcraft_notation::member;
@@ -806,7 +806,7 @@ impl Workspace {
             match item {
                 NewItem::Element(tool) => {
                     let name = if tool.is_named() { name } else { String::new() };
-                    tx.create(owner, ElementData::new(name, tool.element_kind()))
+                    tx.create(owner, tool.element_data(name))
                 }
                 NewItem::Attribute => tx.create(
                     owner,
@@ -853,6 +853,15 @@ impl Workspace {
     pub fn update_element(&mut self, id: Id, f: impl FnOnce(&mut ElementData)) {
         let label = t!("edit.properties").to_string();
         let result = self.edit(label, |tx| tx.update(id, f));
+        self.report(result);
+    }
+
+    /// Makes a class bind a template (`Pair<int,Holder>`), or nothing, with its «bind» line on
+    /// the open diagram.
+    pub fn set_binding(&mut self, class: Id, binding: Option<TypeRef>) {
+        let label = t!("edit.properties").to_string();
+        let diagram = self.active_diagram;
+        let result = self.edit(label, |tx| palette::set_binding(tx, diagram, class, binding));
         self.report(result);
     }
 

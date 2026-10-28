@@ -263,9 +263,15 @@ pub struct Style {
     pub stroke: Option<Color>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font_size: Option<f32>,
-    /// Classifier boxes: hide the attribute compartment.
+    /// Classifier boxes: hide the attribute compartment; objects: the slot compartment.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_attributes: bool,
+    /// Instances: leave out the instance's name (`: Client`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hide_instance_name: bool,
+    /// Instances: leave out what they are an instance of (`client` instead of `client : Client`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hide_instance_type: bool,
     /// Classifier boxes: hide the operation compartment.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_operations: bool,

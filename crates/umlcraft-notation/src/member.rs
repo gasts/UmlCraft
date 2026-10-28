@@ -35,6 +35,39 @@ pub fn type_text(model: &Model, type_ref: &TypeRef) -> String {
     }
 }
 
+/// The name an element is shown by: its own, or for a bound class without one what it binds
+/// (`Pair<int,Holder>`), as Astah shows it.
+pub fn display_name(model: &Model, id: Id) -> String {
+    let Some(e) = model.get(id) else { return String::new() };
+    match e.kind() {
+        ElementKind::Class(p) if e.name().is_empty() => {
+            p.binding.as_ref().map(|b| type_text(model, b)).unwrap_or_default()
+        }
+        _ => e.name().to_owned(),
+    }
+}
+
+/// What a «bind» dependency of a bound class on its template substitutes, as Astah writes it
+/// below the line: `<T1->int,T2->Holder>`. `None` unless `client` binds `template`.
+pub fn binding_text(model: &Model, client: Id, template: Id) -> Option<String> {
+    let ElementKind::Class(p) = model.get(client)?.kind() else { return None };
+    if p.bound_template() != Some(template) {
+        return None;
+    }
+    let Some(TypeRef::Expr(e)) = &p.binding else { return None };
+    let parameters = template_parameters(model, template);
+    let pairs: Vec<String> = e
+        .arguments
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+            let formal = parameters.get(i).and_then(|&t| model.get(t)).map(|t| t.name());
+            format!("{}->{}", formal.unwrap_or_default(), type_text(model, a))
+        })
+        .collect();
+    Some(format!("<{}>", pairs.join(",")))
+}
+
 /// Template parameters owned by `owner`, in order.
 pub fn template_parameters(model: &Model, owner: Id) -> Vec<Id> {
     model

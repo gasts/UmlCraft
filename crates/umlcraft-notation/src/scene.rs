@@ -126,8 +126,10 @@ pub enum Figure {
     },
     /// Interface drawn as a small circle.
     Lollipop,
+    /// Package, with Astah's fork icon in the tab for a subsystem.
     Package {
         tab: Rect,
+        subsystem: bool,
     },
     Actor,
     /// Ellipse; with extension points, a line at `separator` divides name and points.
@@ -730,11 +732,28 @@ pub fn build(model: &Model, diagram: Id, preview: &Preview, measure: &dyn TextMe
                 points = self_loop(source_rect);
             }
             let element = p.element.and_then(|e| model.get(e));
+            // A bound class's «bind» stands above the line like «include», what it
+            // substitutes below it in place of a name.
+            let binding = element.and_then(|e| match e.kind() {
+                ElementKind::Dependency(d) if e.data().stereotypes.iter().any(|s| s == "bind") => {
+                    crate::member::binding_text(model, d.client, d.supplier)
+                }
+                _ => None,
+            });
+            let keyword = binding.is_some().then(|| "<<bind>>".to_owned());
             let label = element.and_then(|e| {
-                let stereotypes = e.data().stereotypes.join(", ");
+                let stereotypes: Vec<&str> = e
+                    .data()
+                    .stereotypes
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|s| binding.is_none() || *s != "bind")
+                    .collect();
+                let stereotypes = stereotypes.join(", ");
                 let parts: Vec<String> = [
                     (!stereotypes.is_empty()).then(|| format!("<<{stereotypes}>>")),
                     (!e.name().is_empty()).then(|| e.name().to_owned()),
+                    binding.clone(),
                 ]
                 .into_iter()
                 .flatten()
@@ -758,7 +777,7 @@ pub fn build(model: &Model, diagram: Id, preview: &Preview, measure: &dyn TextMe
                 anchors,
                 p.style.line_shape,
                 &points,
-                (label, element.is_some_and(|e| !e.name().is_empty())),
+                (label, element.is_some_and(|e| !e.name().is_empty()), keyword),
                 to_lollipop,
                 labels,
                 measure,
@@ -919,7 +938,8 @@ fn layout_element(
                 Rect::new(r.x, r.y + 20.0, r.width, line_height(FONT_SIZE)),
                 LabelAlign::Center,
             );
-            (r, Figure::Package { tab }, vec![row])
+            let subsystem = crate::palette::is_subsystem(e);
+            (r, Figure::Package { tab, subsystem }, vec![row])
         }
         ElementKind::Actor(_) => {
             // Astah: a stick figure of fixed size in the middle of the box, the bold name
@@ -961,10 +981,10 @@ fn layout_element(
         ElementKind::ActivityNode(p) => layout_activity_node(model, id, p, bounds, measure),
         ElementKind::State(p) => layout_state(model, id, p, regions, bounds, measure),
         ElementKind::Component(_) | ElementKind::Artifact(_) | ElementKind::Node(_) => {
-            layout_box(model, id, e.kind(), None, bounds, measure)
+            layout_box(model, id, e.kind(), None, style, bounds, measure)
         }
         ElementKind::Instance(p) if p.instance == InstanceKind::Object => {
-            layout_object(model, id, p.classifier, bounds, measure)
+            layout_object(model, id, p.classifier, style, bounds, measure)
         }
         ElementKind::Instance(p) => {
             let figure = match p.instance {
@@ -972,7 +992,7 @@ fn layout_element(
                 InstanceKind::Component => ElementKind::Component(Default::default()),
                 InstanceKind::Node => ElementKind::Node(Default::default()),
             };
-            layout_box(model, id, &figure, Some(p.classifier), bounds, measure)
+            layout_box(model, id, &figure, Some(p.classifier), style, bounds, measure)
         }
         ElementKind::FinalState => (bounds, Figure::ActivityFinal, Vec::new()),
         ElementKind::Pseudostate(p) => {
@@ -1015,13 +1035,17 @@ fn layout_element(
                 .split('\n')
                 .map(|l| Line::new(l.trim_end_matches('\r'), 12.0, RowRole::Name, Some(id)))
                 .collect();
-            // Astah starts the text 2 from the top left corner.
+            // Astah starts the text 2 from the top left corner and wraps it at the right edge;
+            // the note only grows wider for a word that does not fit.
             let h = line_height(12.0);
-            let text_w = lines.iter().map(|l| l.width(measure)).fold(0.0, f32::max);
+            let word_w = lines.iter().map(|l| l.widest_word(measure)).fold(0.0, f32::max);
+            let width = bounds.width.max(word_w + 4.0);
+            let lines: Vec<Line> =
+                lines.into_iter().flat_map(|l| l.wrapped(width - 4.0, measure)).collect();
             let r = Rect::new(
                 bounds.x,
                 bounds.y,
-                bounds.width.max(text_w + 4.0),
+                width,
                 bounds.height.max(4.0 + h * lines.len() as f32),
             );
             let rows = lines
@@ -1119,64 +1143,73 @@ fn layout_activity_node(
 /// States: the name, centered; below a line the internal activities (`entry / …`), or room for
 /// the substates of a composite state.
 /// Depth of a deployment node's cube.
-const CUBE_DEPTH: f32 = 12.0;
+const CUBE_DEPTH: f32 = 4.0;
 
-/// Components, artifacts, nodes and instances: a box (or cube) with stereotypes and the name at
-/// the top. `instance_of` is set for instances, which show `name : Type` underlined; `figure`
-/// then is the kind of element they are an instance of.
+/// Components, artifacts, nodes and instances as Astah draws them: a box (or cube) with
+/// stereotypes and the name at the top. `instance_of` is set for instances, which show
+/// `name : Type` underlined and their classifier's stereotypes below their own; `figure` then is
+/// the kind of element they are an instance of.
+///
+/// Astah's rows start 4 below the top of a box and right at the top of a cube's front face.
+/// Component and artifact names are regular; texts are centered left of the icon, which takes
+/// 15 off the right of a component and 11 off an artifact.
 fn layout_box(
     model: &Model,
     id: Id,
     figure: &ElementKind,
     instance_of: Option<Option<Id>>,
+    style: &Style,
     bounds: Rect,
     measure: &dyn TextMeasure,
 ) -> (Rect, Figure, Vec<Row>) {
-    const PAD: f32 = 6.0;
-    const ICON: Size = Size { width: 12.0, height: 16.0 };
+    // Astah's boxes leave at least 10 beside the widest text.
+    const MIN_PAD_X: f32 = 10.0;
+    const PAD_Y: f32 = 4.0;
     let e = model.get(id).expect("caller checked");
+    let classifier = instance_of.flatten().and_then(|c| model.get(c));
     let mut lines = Vec::new();
-    let stereotypes = &e.data().stereotypes;
-    if !stereotypes.is_empty() {
-        lines.push(Line::new(
-            stereotype_text(stereotypes),
-            FONT_SIZE,
-            RowRole::Stereotype,
-            Some(id),
-        ));
+    let own = Some(&e.data().stereotypes);
+    for stereotypes in [own, classifier.map(|c| &c.data().stereotypes)].into_iter().flatten() {
+        if !stereotypes.is_empty() {
+            lines.push(Line::new(
+                stereotype_text(stereotypes),
+                FONT_SIZE,
+                RowRole::Stereotype,
+                Some(id),
+            ));
+        }
     }
     let mut name = match instance_of {
         Some(classifier) => {
-            let type_name = classifier.and_then(|c| model.get(c)).map(|c| c.name());
-            let text = match type_name {
-                Some(t) if e.name().is_empty() => format!(": {t}"),
-                Some(t) => format!("{} : {t}", e.name()),
-                None => e.name().to_owned(),
-            };
+            let (text, _) = instance_text(model, id, classifier, style);
             let mut line = Line::new(text, FONT_SIZE, RowRole::Name, Some(id));
             line.underline = true;
             line
         }
         None => {
             let mut line = Line::new(e.name(), FONT_SIZE, RowRole::Name, Some(id));
-            line.bold = true;
+            line.bold = matches!(figure, ElementKind::Node(_));
             line
         }
     };
     name.italic = matches!(figure, ElementKind::Component(p) if p.is_abstract);
     lines.push(name);
 
-    let depth = if matches!(figure, ElementKind::Node(_)) { CUBE_DEPTH } else { 0.0 };
-    let has_icon = matches!(figure, ElementKind::Component(_) | ElementKind::Artifact(_));
-    let icon_room = if has_icon { ICON.width + PAD } else { 0.0 };
+    let (depth, icon_room) = match figure {
+        ElementKind::Node(_) => (CUBE_DEPTH, 0.0),
+        ElementKind::Component(_) => (0.0, 15.0),
+        ElementKind::Artifact(_) => (0.0, 11.0),
+        _ => (0.0, 0.0),
+    };
+    let top = if depth > 0.0 { 0.0 } else { PAD_Y };
     let widest = lines.iter().map(|l| l.width(measure)).fold(0.0, f32::max);
     let h = line_height(FONT_SIZE);
     let text_h = h * lines.len() as f32;
     let r = Rect::new(
         bounds.x,
         bounds.y,
-        bounds.width.max(widest + 2.0 * (PAD + icon_room) + depth).max(40.0),
-        bounds.height.max(text_h + 2.0 * PAD + depth).max(30.0),
+        bounds.width.max(widest + 2.0 * MIN_PAD_X + icon_room + depth).max(40.0),
+        bounds.height.max(text_h + 2.0 * PAD_Y + depth).max(30.0),
     );
     // The front face of a cube lies below its top and left of its side.
     let front = Rect::new(r.x, r.y + depth, r.width - depth, r.height - depth);
@@ -1184,26 +1217,49 @@ fn layout_box(
         .into_iter()
         .enumerate()
         .map(|(i, line)| {
-            let y = front.y + PAD + h * i as f32;
-            line.place(Rect::new(front.x, y, front.width, h), LabelAlign::Center)
+            let y = front.y + top + h * i as f32;
+            line.place(Rect::new(front.x, y, front.width - icon_room, h), LabelAlign::Center)
         })
         .collect();
-    let icon = Rect::new(front.right() - PAD - ICON.width, front.y + PAD, ICON.width, ICON.height);
     let figure = match figure {
-        ElementKind::Component(_) => Figure::Component { icon },
-        ElementKind::Artifact(_) => Figure::Artifact { icon },
+        // The icon 6 below the top: a component's 12 × 14 with its tabs 2 further left, an
+        // artifact's 10 × 14.
+        ElementKind::Component(_) => {
+            Figure::Component { icon: Rect::new(front.right() - 20.0, front.y + 6.0, 14.0, 14.0) }
+        }
+        ElementKind::Artifact(_) => {
+            Figure::Artifact { icon: Rect::new(front.right() - 16.0, front.y + 6.0, 10.0, 14.0) }
+        }
         ElementKind::Node(_) => Figure::Cube { depth },
         _ => Figure::Rectangle,
     };
     (r, figure, rows)
 }
 
+/// What an instance shows: `name : Type`, `: Type` without a name, less where `style` hides
+/// the name or the type. Also whether it starts with the colon.
+fn instance_text(model: &Model, id: Id, classifier: Option<Id>, style: &Style) -> (String, bool) {
+    let e = model.get(id).expect("caller checked");
+    let name = if style.hide_instance_name { "" } else { e.name() };
+    let type_name = classifier
+        .and_then(|c| model.get(c))
+        .map(|c| c.name())
+        .filter(|_| !style.hide_instance_type);
+    match type_name {
+        Some(t) if name.is_empty() => (format!(": {t}"), true),
+        Some(t) => (format!("{name} : {t}"), false),
+        None => (name.to_owned(), false),
+    }
+}
+
 /// An object as Astah draws it: a box like a class's, with `name : Class` underlined in the
-/// header and one compartment of slots (`total = 42`) below, 8 px high when empty.
+/// header and one compartment of slots (`total = 42`) below, 8 px high when empty, unless the
+/// style hides it.
 fn layout_object(
     model: &Model,
     id: Id,
     classifier: Option<Id>,
+    style: &Style,
     bounds: Rect,
     measure: &dyn TextMeasure,
 ) -> (Rect, Figure, Vec<Row>) {
@@ -1211,26 +1267,25 @@ fn layout_object(
     const PAD_Y: f32 = 4.0;
     let e = model.get(id).expect("caller checked");
     let mut header = Vec::new();
-    let stereotypes = &e.data().stereotypes;
-    if !stereotypes.is_empty() {
-        header.push(Line::new(
-            stereotype_text(stereotypes),
-            FONT_SIZE,
-            RowRole::Stereotype,
-            Some(id),
-        ));
+    // Its own stereotypes, then its class's, as Astah shows them.
+    let own = Some(&e.data().stereotypes);
+    let base = classifier.and_then(|c| model.get(c)).map(|c| &c.data().stereotypes);
+    for stereotypes in [own, base].into_iter().flatten() {
+        if !stereotypes.is_empty() {
+            header.push(Line::new(
+                stereotype_text(stereotypes),
+                FONT_SIZE,
+                RowRole::Stereotype,
+                Some(id),
+            ));
+        }
     }
-    let type_name = classifier.and_then(|c| model.get(c)).map(|c| c.name());
-    let text = match type_name {
-        Some(t) if e.name().is_empty() => format!(": {t}"),
-        Some(t) => format!("{} : {t}", e.name()),
-        None => e.name().to_owned(),
-    };
+    let (text, colon_first) = instance_text(model, id, classifier, style);
     let mut name = Line::new(text, FONT_SIZE, RowRole::Name, Some(id));
     name.underline = true;
     // Without a name Astah centers " : Class" but draws it from the colon on: the text sits
     // as far left as the missing space is wide.
-    let shift = if e.name().is_empty() && type_name.is_some() {
+    let shift = if colon_first {
         let astah = |l: &Line, text: &str| {
             l.width_of(text, measure, false).max(l.width_of(text, measure, true))
         };
@@ -1241,6 +1296,7 @@ fn layout_object(
     header.push(name);
     let slots: Vec<Line> = crate::object::slots(model, id)
         .into_iter()
+        .filter(|_| !style.hide_attributes)
         .map(|(attribute, value)| {
             let text = crate::object::slot_text(model, attribute, &value);
             Line::new(text, FONT_SIZE, RowRole::Slot, Some(attribute))
@@ -1250,7 +1306,8 @@ fn layout_object(
     let widest = header.iter().chain(&slots).map(|l| l.width(measure)).fold(0.0, f32::max);
     let block =
         |lines: &[Line]| 2.0 * PAD_Y + lines.iter().map(|l| line_height(l.size)).sum::<f32>();
-    let content_h = block(&header) + block(&slots);
+    let slots_h = if style.hide_attributes { 0.0 } else { block(&slots) };
+    let content_h = block(&header) + slots_h;
     let r = Rect::new(
         bounds.x,
         bounds.y,
@@ -1266,7 +1323,7 @@ fn layout_object(
         y += h;
     }
     y += PAD_Y;
-    let separators = vec![y];
+    let separators = if style.hide_attributes { Vec::new() } else { vec![y] };
     y += PAD_Y;
     for line in slots {
         let h = line_height(line.size);
@@ -1653,7 +1710,8 @@ fn layout_classifier(
             Some(id),
         ));
     }
-    let mut name = Line::new(e.name(), FONT_SIZE, RowRole::Name, Some(id));
+    let mut name =
+        Line::new(crate::member::display_name(model, id), FONT_SIZE, RowRole::Name, Some(id));
     name.bold = true;
     name.italic = matches!(kind, ElementKind::Class(p) if p.is_abstract);
     header.push(name);
@@ -1816,7 +1874,7 @@ fn edge_for(
     anchors: [Option<Point>; 2],
     shape: LineShape,
     waypoints: &[Point],
-    (name_label, has_name): (Option<String>, bool),
+    (name_label, has_name, bind_keyword): (Option<String>, bool, Option<String>),
     to_lollipop: bool,
     placed: &EdgeLabels,
     measure: &dyn TextMeasure,
@@ -1866,8 +1924,10 @@ fn edge_for(
     // Role, multiplicity and whether the role is underlined (static), per end.
     let mut ends: [(Option<String>, Option<String>, bool); 2] = Default::default();
     let mut label = name_label;
-    // «include» and «extend» stand above the middle of the line, apart from any name.
-    let mut keyword = None;
+    // «include», «extend» and «bind» stand above the middle of the line, apart from any name.
+    // Astah centers «bind» right above the middle however the line runs.
+    let bind = bind_keyword.is_some();
+    let mut keyword = bind_keyword;
     let end_marker = |end: &AssociationEnd| match (end.aggregation, end.navigability) {
         (Aggregation::Shared, _) => EndMarker::HollowDiamond,
         (Aggregation::Composite, _) => EndMarker::FilledDiamond,
@@ -1985,7 +2045,9 @@ fn edge_for(
         Some(offset) => at(text, center, offset),
         None => association_name(text, center, measure),
     });
-    edge.labels.extend(keyword.map(|text| keyword_label(text, (a, b), placed.keyword, measure)));
+    let across = (center.offset(-1.0, 0.0), center.offset(1.0, 0.0));
+    let segment = if bind { across } else { (a, b) };
+    edge.labels.extend(keyword.map(|text| keyword_label(text, segment, placed.keyword, measure)));
     // Astah shows which way an association's name reads, from its first end to its second,
     // with a small triangle next to the name.
     if association
@@ -2464,6 +2526,24 @@ mod tests {
         assert_eq!(separators.len(), 1);
         assert_eq!(object.rows.len(), 1);
         assert!(object.rows[0].underline);
+
+        // Astah's presentations may hide the name, the class or the slots.
+        let ada_node = scene.nodes[0].id;
+        let texts = |doc: &umlcraft_model::Document, hide: fn(&mut Style)| {
+            let mut doc = doc.clone();
+            doc.edit("hide", |tx| tx.update_presentation(d, ada_node, |p| hide(&mut p.style)))
+                .unwrap();
+            let scene = build(doc.model(), d, &Preview::default(), &ApproxMeasure);
+            let ada = scene.node(ada_node).unwrap();
+            let Figure::Classifier { separators, .. } = &ada.figure else { panic!() };
+            let rows: Vec<String> = ada.rows.iter().map(|r| r.text.clone()).collect();
+            (rows, separators.len())
+        };
+        let name = texts(&doc, |s| s.hide_instance_name = true);
+        assert_eq!(name, (vec![": Customer".to_owned(), "name = \"Ada\"".to_owned()], 1));
+        let class = texts(&doc, |s| s.hide_instance_type = true);
+        assert_eq!(class.0[0], "ada");
+        assert_eq!(texts(&doc, |s| s.hide_attributes = true), (vec!["ada : Customer".into()], 0));
     }
 
     #[test]
@@ -2693,6 +2773,107 @@ mod tests {
         doc.edit("delete", |tx| tx.remove_presentations(d, [extend].into_iter().collect()))
             .unwrap();
         assert!(doc.model().view(d).unwrap().get(anchor).is_none());
+    }
+
+    #[test]
+    fn bound_classes_show_what_they_bind() {
+        use umlcraft_model::{DirectedProps, TemplateParameterProps, TypeExpr};
+        let (mut doc, ids) = order_system();
+        let d = ids.class_diagram;
+        let (bound, bind) = doc
+            .edit("bound", |tx| {
+                let root = tx.model().root();
+                let pair = tx.create(root, ElementData::new("Pair", ElementKind::class()))?;
+                for name in ["T1", "T2"] {
+                    let parameter =
+                        ElementKind::TemplateParameter(TemplateParameterProps::default());
+                    tx.create(pair, ElementData::new(name, parameter))?;
+                }
+                let mut kind = ElementKind::class();
+                if let ElementKind::Class(p) = &mut kind {
+                    p.binding = Some(TypeRef::Expr(Box::new(TypeExpr {
+                        base: TypeRef::Element(pair),
+                        arguments: vec![TypeRef::Text("int".into()), TypeRef::Text("int".into())],
+                        prefix: String::new(),
+                        modifier: String::new(),
+                    })));
+                }
+                let class = tx.create(root, ElementData::new("", kind))?;
+                let mut data = ElementData::new(
+                    "",
+                    ElementKind::Dependency(DirectedProps { client: class, supplier: pair }),
+                );
+                data.stereotypes = vec!["bind".into()];
+                let dependency = tx.create(root, data)?;
+                let n_pair = tx.add_node(d, Some(pair), Rect::new(400.0, 400.0, 80.0, 50.0))?;
+                let n_class = tx.add_node(d, Some(class), Rect::new(700.0, 400.0, 120.0, 50.0))?;
+                let edge = tx.add_edge(d, Some(dependency), n_class, n_pair, Vec::new())?;
+                Ok((n_class, edge))
+            })
+            .unwrap();
+        let scene = build(doc.model(), d, &Preview::default(), &ApproxMeasure);
+        let node = scene.nodes.iter().find(|n| n.id == bound).unwrap();
+        assert!(node.rows.iter().any(|r| r.text == "Pair<int,int>"), "{:?}", node.rows);
+        let edge = scene.edge(bind).unwrap();
+        let texts: Vec<(&str, bool)> =
+            edge.labels.iter().map(|l| (l.text.as_str(), l.keyword)).collect();
+        assert_eq!(texts, [("<<bind>>", true), ("<T1->int,T2->int>", false)]);
+        // Astah centers «bind» above the middle and the substitutions below it.
+        let (a, b) = route::middle_segment(&edge.points, false);
+        let center = middle(a, b);
+        for label in &edge.labels {
+            let w = label_width(&label.text, &ApproxMeasure);
+            assert!((label.anchor.x + w / 2.0 - center.x).abs() < 0.01, "{label:?}");
+        }
+    }
+
+    #[test]
+    fn notes_wrap_their_text() {
+        use crate::palette::{NodeTool, create_node};
+        let (mut doc, ids) = order_system();
+        let d = ids.class_diagram;
+        let (note, node) = doc
+            .edit("note", |tx| {
+                let (note, node) =
+                    create_node(tx, d, NodeTool::Note, Point::new(500.0, 300.0), "")?;
+                tx.update(note, |data| {
+                    if let ElementKind::Comment(p) = &mut data.kind {
+                        p.body = "one two three four five six seven eight nine ten\nend".into();
+                    }
+                })?;
+                Ok((note, node))
+            })
+            .unwrap();
+        let width = doc.model().view(d).unwrap().get(node).unwrap().bounds().unwrap().width;
+        let scene = build(doc.model(), d, &Preview::default(), &ApproxMeasure);
+        let shape = scene.nodes.iter().find(|n| n.element == Some(note)).unwrap();
+        // Astah keeps the note's width and breaks the long line at spaces.
+        assert_eq!(shape.rect.width, width);
+        assert!(shape.rows.len() > 2, "{:?}", shape.rows);
+        assert_eq!(shape.rows.last().unwrap().text, "end");
+    }
+
+    #[test]
+    fn subsystems_are_packages_with_a_fork() {
+        use crate::palette::{NodeTool, create_node};
+        let (mut doc, ids) = order_system();
+        let d = ids.class_diagram;
+        let (sub, pkg) = doc
+            .edit("packages", |tx| {
+                let (sub, _) =
+                    create_node(tx, d, NodeTool::Subsystem, Point::new(500.0, 300.0), "Billing")?;
+                let (pkg, _) =
+                    create_node(tx, d, NodeTool::Package, Point::new(700.0, 300.0), "Shop")?;
+                Ok((sub, pkg))
+            })
+            .unwrap();
+        let scene = build(doc.model(), d, &Preview::default(), &ApproxMeasure);
+        let shape = |id| scene.nodes.iter().find(|n| n.element == Some(id)).unwrap();
+        assert!(matches!(shape(sub).figure, Figure::Package { subsystem: true, .. }));
+        assert!(matches!(shape(pkg).figure, Figure::Package { subsystem: false, .. }));
+        // Astah shows the fork, not the stereotype.
+        let texts: Vec<_> = shape(sub).rows.iter().map(|r| r.text.as_str()).collect();
+        assert_eq!(texts, ["Billing1"]);
     }
 
     #[test]
@@ -3437,6 +3618,12 @@ mod tests {
         }
         assert!(matches!(figure(&scene, "Shop"), Figure::Component { .. }));
         assert!(matches!(figure(&scene, "shop.jar"), Figure::Artifact { .. }));
+        // Astah: regular names, rows from 4 below the top, the icon 6 below it.
+        let shop = node(&scene, "Shop");
+        let row = shop.rows.iter().find(|r| r.text == "Shop").unwrap();
+        assert!(!row.bold);
+        let Figure::Component { icon } = shop.figure else { unreachable!() };
+        assert_eq!((icon.y - shop.rect.y, shop.rect.right() - icon.x), (6.0, 20.0));
         let labels: Vec<&str> =
             scene.edges.iter().flat_map(|e| &e.labels).map(|l| l.text.as_str()).collect();
         assert!(labels.contains(&"<<use>>") && labels.contains(&"<<manifest>>"), "{labels:?}");
@@ -3445,8 +3632,10 @@ mod tests {
         assert!(matches!(figure(&scene, "AppServer"), Figure::Cube { .. }));
         // Instances show their classifier, underlined, in the figure of their kind.
         let web1 = node(&scene, "web1 : AppServer");
-        assert!(matches!(web1.figure, Figure::Cube { .. }));
+        assert!(matches!(web1.figure, Figure::Cube { depth: 4.0 }));
         assert!(web1.rows[0].underline);
+        // An instance's row starts at the top of the cube's front face.
+        assert_eq!(web1.rows[0].rect.y, web1.rect.y + 4.0);
         assert!(matches!(figure(&scene, ": Shop"), Figure::Component { .. }));
         // A node takes what is deployed on it along.
         assert_eq!(with_contents(&scene, &[web1.id]).len(), 2);

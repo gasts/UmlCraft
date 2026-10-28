@@ -1078,6 +1078,7 @@ fn tree_menu(meta: &TreeMeta, menu: PopupMenu) -> PopupMenu {
     }
     let items = [
         NewItem::Element(NodeTool::Package),
+        NewItem::Element(NodeTool::Subsystem),
         NewItem::Element(NodeTool::Class),
         NewItem::Element(NodeTool::Interface),
         NewItem::Element(NodeTool::Enumeration),

@@ -76,6 +76,7 @@ tool:
   interface: Interface
   enumeration: Enumeration
   package: Package
+  subsystem: Subsystem
   note: Note
   actor: Actor
   useCase: Use case
@@ -157,6 +158,9 @@ prop:
   display: Display on diagram
   hide_attributes: Hide attributes
   hide_operations: Hide operations
+  hide_instance_name: Hide name
+  hide_instance_type: Hide classifier
+  hide_slots: Hide slots
   iconic: Show as circle
   condition: Condition
   extension_points: Extension points
@@ -201,6 +205,7 @@ prop:
   object_type: Type
   in_state: State
   type_bounds: Bounds
+  binding: Binds
   default: Default
   variadic: Variadic (any number of arguments)
 template_kind:
@@ -317,6 +322,10 @@ export_dropped:
   extraOperand: Further operands of combined fragments (their messages stay in the first one)
   region: Regions beyond the second of a state (what they hold goes into the second one)
   internalTransition: Internal transitions of states not shown on their diagram
+  binding: Bindings of bound classes whose template is not a class
+  bindingArgument: Arguments of bound classes that are neither classes nor primitive types
+  instanceNameVisibility: Hidden names of instances
+  instanceTypeVisibility: Hidden classifiers of instances
 project:
   untitled: New project
 edit:
@@ -360,6 +369,7 @@ skipped:
 kind:
   model: Project
   package: Package
+  subsystem: Subsystem
   class: Class
   interface: Interface
   enumeration: Enumeration

@@ -35,9 +35,11 @@ use crate::{
 const MIN_ZOOM: f32 = 0.25;
 /// The font of diagram texts. Astah uses Java's "Dialog", which is Arial on Windows.
 const DIAGRAM_FONT: &str = "Arial";
-/// How far below the top of its line Java puts the baseline of 12 px "Dialog" (12.06) minus
-/// where GPUI puts it (11.70), relative to the font size.
-const BASELINE_SHIFT: f32 = 0.36 / 12.0;
+/// How far below the top of its line Java puts the baseline of 12 px "Dialog" (12.06, measured
+/// in Astah's SVG) minus where GPUI puts it, relative to the font size. GPUI centers ascent plus
+/// descent in the line: (15.09375 − 10.86328 − 2.54297) / 2 + 10.86328 = 11.70703 for Arial's
+/// 1854 and 434 units per 2048 at 12 px in a line of `scene::line_height(12)`.
+const BASELINE_SHIFT: f32 = (12.06 - 11.70703) / 12.0;
 const MAX_ZOOM: f32 = 4.0;
 const GRID: f32 = 20.0;
 /// Smallest node edge when resizing.

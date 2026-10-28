@@ -6,11 +6,19 @@ use umlcraft_model::{
     DirectedProps, ElementData, ElementKind, ExtendProps, Id, IncludeProps, InstanceKind,
     InstanceProps, InteractionOperandProps, InteractionOperator, InteractionUseProps,
     LifelineProps, MessageGate, MessageSort, Model, ModelError, Point, PseudostateKind, Rect,
-    Result, Size, StateProps, Tx, Visibility,
+    Result, Size, StateProps, Tx, TypeRef, Visibility,
 };
 
 use crate::sequence::{self, Slot};
 use crate::sequence_edit;
+
+/// The stereotype that makes a package a subsystem.
+pub const SUBSYSTEM: &str = "subsystem";
+
+/// Whether `e` is a subsystem: a package marked «subsystem».
+pub fn is_subsystem(e: &umlcraft_model::Element) -> bool {
+    matches!(e.kind(), ElementKind::Package) && e.data().stereotypes.iter().any(|s| s == SUBSYSTEM)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NodeTool {
@@ -18,6 +26,8 @@ pub enum NodeTool {
     Interface,
     Enumeration,
     Package,
+    /// A package marked «subsystem», drawn with Astah's fork icon in its tab.
+    Subsystem,
     Note,
     Actor,
     UseCase,
@@ -99,7 +109,7 @@ pub fn palette(kind: DiagramKind) -> Vec<Tool> {
     use NodeTool as N;
     let (nodes, edges): (&[NodeTool], &[EdgeTool]) = match kind {
         DiagramKind::Class => (
-            &[N::Class, N::Interface, N::Enumeration, N::Package, N::Object, N::Note],
+            &[N::Class, N::Interface, N::Enumeration, N::Package, N::Subsystem, N::Object, N::Note],
             &[
                 E::Association,
                 E::Generalization,
@@ -165,7 +175,7 @@ pub fn palette(kind: DiagramKind) -> Vec<Tool> {
             &[E::Transition, E::NoteAnchor],
         ),
         DiagramKind::Component => (
-            &[N::Component, N::Interface, N::Artifact, N::Class, N::Package, N::Note],
+            &[N::Component, N::Interface, N::Artifact, N::Class, N::Package, N::Subsystem, N::Note],
             &[E::Dependency, E::Realization, E::Association, E::Generalization, E::NoteAnchor],
         ),
         DiagramKind::Deployment => (
@@ -195,6 +205,7 @@ impl NodeTool {
             Self::Interface => "interface",
             Self::Enumeration => "enumeration",
             Self::Package => "package",
+            Self::Subsystem => "subsystem",
             Self::Note => "comment",
             Self::Actor => "actor",
             Self::UseCase => "useCase",
@@ -299,7 +310,7 @@ impl NodeTool {
             Self::Class => ElementKind::Class(classifier),
             Self::Interface => ElementKind::Interface(classifier),
             Self::Enumeration => ElementKind::Enumeration(classifier),
-            Self::Package => ElementKind::Package,
+            Self::Package | Self::Subsystem => ElementKind::Package,
             Self::Note => ElementKind::Comment(CommentProps::default()),
             Self::Actor => ElementKind::Actor(classifier),
             Self::UseCase => ElementKind::UseCase(classifier),
@@ -338,11 +349,21 @@ impl NodeTool {
         }
     }
 
+    /// A new element of this tool named `name`. A subsystem is a package marked «subsystem», as
+    /// in UML 1.
+    pub fn element_data(self, name: impl Into<String>) -> ElementData {
+        let mut data = ElementData::new(name, self.element_kind());
+        if self == Self::Subsystem {
+            data.stereotypes = vec![SUBSYSTEM.into()];
+        }
+        data
+    }
+
     pub fn default_size(self) -> Size {
         match self {
             Self::Class => Size::new(160.0, 70.0),
             Self::Interface | Self::Enumeration => Size::new(160.0, 60.0),
-            Self::Package => Size::new(200.0, 140.0),
+            Self::Package | Self::Subsystem => Size::new(200.0, 140.0),
             Self::Note => Size::new(160.0, 60.0),
             Self::Actor => Size::new(40.0, 55.0),
             Self::UseCase => Size::new(90.0, 40.0),
@@ -776,7 +797,7 @@ pub fn create_node(
     };
     let name =
         if tool.is_named() { unique_name(tx.model(), owner, base_name) } else { String::new() };
-    let element = tx.create(owner, ElementData::new(name, kind))?;
+    let element = tx.create(owner, tool.element_data(name))?;
     let bounds = Rect::from_origin_size(origin, tool.default_size());
     let node = add_node_for(tx, diagram, element, bounds)?;
     Ok((element, node))
@@ -924,6 +945,74 @@ pub fn add_operand(tx: &mut Tx<'_>, fragment: Id) -> Result<Id> {
     Ok(id)
 }
 
+/// Makes `class` bind the template and arguments of `binding` (`Pair<int,Holder>`), or nothing
+/// with `None`. The class keeps one «bind» dependency on its template, drawn on `diagram` where
+/// that shows both; dependencies on a former template go.
+pub fn set_binding(
+    tx: &mut Tx<'_>,
+    diagram: Option<Id>,
+    class: Id,
+    binding: Option<TypeRef>,
+) -> Result<()> {
+    let template = match &binding {
+        None => None,
+        Some(TypeRef::Expr(e)) => match e.base {
+            TypeRef::Element(t) if tx.model().get(t).is_some_and(|t| t.kind().is_classifier()) => {
+                Some(t)
+            }
+            _ => None,
+        },
+        Some(_) => None,
+    };
+    if binding.is_some() && template.is_none() {
+        return Err(ModelError::Invalid("a binding names a template and its arguments".into()));
+    }
+    tx.update(class, |data| {
+        if let ElementKind::Class(p) = &mut data.kind {
+            p.binding = binding;
+        }
+    })?;
+    let binds: Vec<(Id, Id)> = tx
+        .model()
+        .elements()
+        .filter_map(|e| match e.kind() {
+            ElementKind::Dependency(d)
+                if d.client == class && e.data().stereotypes.iter().any(|s| s == "bind") =>
+            {
+                Some((e.id(), d.supplier))
+            }
+            _ => None,
+        })
+        .collect();
+    let stale: Vec<Id> =
+        binds.iter().filter(|&&(_, s)| Some(s) != template).map(|&(id, _)| id).collect();
+    if !stale.is_empty() {
+        tx.delete_many(&stale)?;
+    }
+    let Some(template) = template else { return Ok(()) };
+    let dependency = match binds.iter().find(|&&(_, s)| s == template) {
+        Some(&(id, _)) => id,
+        None => {
+            let kind = ElementKind::Dependency(DirectedProps { client: class, supplier: template });
+            let start = tx.model().element(class)?.owner().unwrap_or(tx.model().root());
+            let owner = owner_for(tx.model(), start, &kind).unwrap_or(tx.model().root());
+            let mut data = ElementData::new("", kind);
+            data.stereotypes = vec!["bind".into()];
+            tx.create(owner, data)?
+        }
+    };
+    let Some(diagram) = diagram else { return Ok(()) };
+    let Some(view) = tx.model().view(diagram) else { return Ok(()) };
+    let node_of =
+        |e: Id| view.presentations().iter().find(|p| p.element == Some(e) && !p.is_edge());
+    let drawn = view.presentations().iter().any(|p| p.element == Some(dependency));
+    if let (Some(from), Some(to), false) = (node_of(class), node_of(template), drawn) {
+        let (from, to) = (from.id, to.id);
+        tx.add_edge(diagram, Some(dependency), from, to, Vec::new())?;
+    }
+    Ok(())
+}
+
 /// Puts the messages and fragments `items` into a new combined fragment, together with
 /// everything between them. They must all be in the same interaction or operand.
 /// Returns (fragment, node).
@@ -999,6 +1088,60 @@ mod tests {
     use super::*;
     use umlcraft_model::Shape;
     use umlcraft_model::sample::order_system;
+
+    #[test]
+    fn bindings_keep_one_bind_line() {
+        let (mut doc, ids) = order_system();
+        let d = ids.class_diagram;
+        let at = |x| Point::new(x, 400.0);
+        let (class, templates) = doc
+            .edit("classes", |tx| {
+                let mut templates = Vec::new();
+                for x in [100.0, 300.0] {
+                    let (t, _) = create_node(tx, d, NodeTool::Class, at(x), "Template")?;
+                    tx.create(
+                        t,
+                        ElementData::new("T", ElementKind::TemplateParameter(Default::default())),
+                    )?;
+                    templates.push(t);
+                }
+                let (class, _) = create_node(tx, d, NodeTool::Class, at(500.0), "Bound")?;
+                Ok((class, templates))
+            })
+            .unwrap();
+        let bind_of = |model: &Model| -> Vec<Id> {
+            model
+                .elements()
+                .filter_map(|e| match e.kind() {
+                    ElementKind::Dependency(p) if p.client == class => Some(p.supplier),
+                    _ => None,
+                })
+                .collect()
+        };
+        let edges = |model: &Model| {
+            model.view(d).unwrap().presentations().iter().filter(|p| p.is_edge()).count()
+        };
+        let before = edges(doc.model());
+        let binding = |t| {
+            Some(TypeRef::Expr(Box::new(umlcraft_model::TypeExpr {
+                base: TypeRef::Element(t),
+                arguments: vec![TypeRef::Text("int".into())],
+                prefix: String::new(),
+                modifier: String::new(),
+            })))
+        };
+        for &t in &templates {
+            doc.edit("bind", |tx| set_binding(tx, Some(d), class, binding(t))).unwrap();
+            assert_eq!(bind_of(doc.model()), [t]);
+            assert_eq!(edges(doc.model()), before + 1);
+        }
+        doc.edit("unbind", |tx| set_binding(tx, Some(d), class, None)).unwrap();
+        assert!(bind_of(doc.model()).is_empty());
+        assert_eq!(edges(doc.model()), before);
+        // A binding names a template.
+        let text = Some(TypeRef::Text("int".into()));
+        assert!(doc.edit("bind", |tx| set_binding(tx, Some(d), class, text)).is_err());
+    }
 
     #[test]
     fn palettes_match_diagram_kinds() {

@@ -11,6 +11,7 @@ pub fn kind_label(e: &Element) -> String {
         ElementKind::ActivityNode(p) => NodeTool::for_activity_node(p.node).key(),
         ElementKind::Pseudostate(p) => NodeTool::for_pseudostate(p.pseudostate).key(),
         ElementKind::Instance(p) => NodeTool::for_instance(p.instance).key(),
+        _ if umlcraft_notation::palette::is_subsystem(e) => NodeTool::Subsystem.key(),
         kind => kind.type_name(),
     };
     t!(format!("kind.{key}")).to_string()
@@ -41,6 +42,7 @@ fn shown_name(model: &Model, e: &Element) -> String {
         ElementKind::ActivityEdge(p) => guard(&p.guard),
         ElementKind::Transition(p) => p.label(),
         ElementKind::InternalTransition(p) => p.label(),
+        ElementKind::Class(_) => umlcraft_notation::member::display_name(model, e.id()),
         _ => String::new(),
     };
     if shown.is_empty() { display_name(e) } else { shown }

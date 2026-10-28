@@ -494,3 +494,65 @@ fn reference_class_diagram() {
     assert!(close(*target_anchor, 0.4867, 0.2453), "{target_anchor:?}");
     assert!(close(labels.target_role, 9.79, -23.35), "{:?}", labels.target_role);
 }
+
+#[test]
+fn sample_bound_classes() {
+    let Some(path) = astah_file("Sample.asta") else { return };
+    let imported = umlcraft_asta::import(&path).unwrap();
+    let model = &imported.model;
+    use umlcraft_notation::member::{binding_text, display_name};
+    // Bound classes a diagram shows are classes of their own, named by what they bind.
+    let mut bound: Vec<String> = model
+        .elements()
+        .filter(|e| matches!(e.kind(), ElementKind::Class(p) if p.binding.is_some()))
+        .map(|e| display_name(model, e.id()))
+        .collect();
+    bound.sort();
+    assert_eq!(bound, ["ArrayList<String>", "Pair<String,Boolean>", "Pair<integer,String>"]);
+    // Their «bind» lines say what they substitute.
+    let mut binds: Vec<String> = model
+        .elements()
+        .filter_map(|e| match e.kind() {
+            ElementKind::Dependency(d) if e.data().stereotypes == ["bind"] => {
+                binding_text(model, d.client, d.supplier)
+            }
+            _ => None,
+        })
+        .collect();
+    binds.sort();
+    assert_eq!(binds, ["<E->String>", "<T1->String,T2->Boolean>", "<T1->integer,T2->String>"]);
+    // Attributes keep their types as expressions.
+    let a_pair = find(model, "aPair", |k| matches!(k, ElementKind::Attribute(_)));
+    let ElementKind::Attribute(p) = a_pair.kind() else { unreachable!() };
+    assert!(matches!(p.type_ref, Some(TypeRef::Expr(_))), "{:?}", p.type_ref);
+}
+
+#[test]
+fn sample_instances_hide_names_types_and_slots() {
+    let Some(path) = astah_file("Sample.asta") else { return };
+    let imported = umlcraft_asta::import(&path).unwrap();
+    let model = &imported.model;
+    let style = |name: &str| {
+        let e = find(model, name, |k| matches!(k, ElementKind::Instance(_)));
+        let (_, node) = model.shown_on(e.id())[0];
+        let diagram = model.shown_on(e.id())[0].0;
+        model.view(diagram).unwrap().get(node).unwrap().style.clone()
+    };
+    // `: Client`, `VideoStoreApplication` and `videoStoreServer : AppServer` in Astah.
+    assert!(style("client").hide_instance_name);
+    assert!(!style("client").hide_instance_type);
+    let application = style("VideoStoreApplication");
+    assert!(!application.hide_instance_name && application.hide_instance_type);
+    let server = style("videoStoreServer");
+    assert!(!server.hide_instance_name && !server.hide_instance_type);
+    // The objects inside the components show no slots.
+    let objects: Vec<_> = model
+        .elements()
+        .filter(
+            |e| matches!(e.kind(), ElementKind::Instance(p) if p.instance == InstanceKind::Object),
+        )
+        .flat_map(|e| model.shown_on(e.id()))
+        .map(|(d, n)| model.view(d).unwrap().get(n).unwrap().style.hide_attributes)
+        .collect();
+    assert!(!objects.is_empty() && objects.iter().all(|&hidden| hidden), "{objects:?}");
+}

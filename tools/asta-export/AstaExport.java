@@ -43,6 +43,7 @@ import com.change_vision.jude.api.inf.model.IAssociation;
 import com.change_vision.jude.api.inf.model.IAttribute;
 import com.change_vision.jude.api.inf.model.IClass;
 import com.change_vision.jude.api.inf.model.IClassifierTemplateParameter;
+import com.change_vision.jude.api.inf.model.ITemplateBinding;
 import com.change_vision.jude.api.inf.model.ICombinedFragment;
 import com.change_vision.jude.api.inf.model.IDependency;
 import com.change_vision.jude.api.inf.model.IDiagram;
@@ -138,6 +139,8 @@ public final class AstaExport {
     /// UmlCraft element id → Astah model element.
     private final Map<String, Object> created = new HashMap<>();
     private final List<String> templateParameters = new ArrayList<>();
+    /// Bound classes and their bindings.
+    private final Map<String, ITemplateBinding> bindings = new HashMap<>();
     private final List<String> features = new ArrayList<>();
     private final List<String> relationships = new ArrayList<>();
     private final List<String> diagrams = new ArrayList<>();
@@ -221,6 +224,11 @@ public final class AstaExport {
         // Before the features, whose types may name them.
         for (String id : templateParameters) {
             attempt(id, () -> templateParameter(id));
+        }
+        for (Map.Entry<String, Map<String, Object>> e : elements.entrySet()) {
+            if ("class".equals(type(e.getValue())) && e.getValue().get("binding") != null) {
+                attempt(e.getKey(), () -> bind(e.getKey()));
+            }
         }
         for (String id : features) {
             attempt(id, () -> {
@@ -328,9 +336,17 @@ public final class AstaExport {
     private Object element(String id, String type, Object owner) throws Exception {
         Map<String, Object> e = elements.get(id);
         Object made = switch (type) {
-            case "package" -> named(id, n -> basic.createPackage((IPackage) owner, n));
-            case "class", "dataType" -> named(id, n -> owner instanceof IPackage p
-                ? basic.createClass(p, n) : basic.createClass((IClass) owner, n));
+            // Astah keeps subsystems as a class of their own, not as a stereotype.
+            case "package" -> list(e.get("stereotypes")).contains("subsystem")
+                ? named(id, n -> basic.createSubsystem((IPackage) owner, n))
+                : named(id, n -> basic.createPackage((IPackage) owner, n));
+            // A bound class without a name gets one until it is bound (see `bind`); Astah
+            // accepts the empty name only then.
+            case "class", "dataType" -> e.get("binding") != null && name(e).isEmpty()
+                ? (owner instanceof IPackage p ? basic.createClass(p, "bound " + id)
+                    : basic.createClass((IClass) owner, "bound " + id))
+                : named(id, n -> owner instanceof IPackage p
+                    ? basic.createClass(p, n) : basic.createClass((IClass) owner, n));
             case "interface" -> named(id, n -> owner instanceof IPackage p
                 ? basic.createInterface(p, n) : basic.createInterface((IClass) owner, n));
             case "enumeration" -> named(id, n -> basic.createEnumeration(nearestPackage(id), n));
@@ -358,7 +374,7 @@ public final class AstaExport {
             // The API creates these in packages only.
             drop("nestedComponent");
         }
-        common(id, (IElement) made, Set.of());
+        common(id, (IElement) made, "package".equals(type) ? Set.of("subsystem") : Set.of());
         return made;
     }
 
@@ -482,6 +498,39 @@ public final class AstaExport {
         return "void";
     }
 
+    /// Binds a bound class to its template, with the arguments in the order of the template's
+    /// parameters. Astah takes classifiers and primitive types as arguments, nothing else.
+    private Object bind(String id) throws Exception {
+        Map<String, Object> e = elements.get(id);
+        Map<String, Object> binding = (Map<String, Object>) e.get("binding");
+        Map<String, Object> expr = binding.get("expr") instanceof Map<?, ?> x ? (Map<String, Object>) x : null;
+        Object template = expr != null && expr.get("base") instanceof Map<?, ?> base
+            && base.get("element") instanceof String templateId ? created.get(templateId) : null;
+        if (!(template instanceof IClass t) || !(created.get(id) instanceof IClass bound)) {
+            drop("binding");
+            return null;
+        }
+        ITemplateBinding made = basic.createTemplateBinding(bound, t);
+        IClassifierTemplateParameter[] parameters = t.getTemplateParameters();
+        List<Object> arguments = list(expr.get("arguments"));
+        for (int i = 0; i < arguments.size(); i++) {
+            if (i >= parameters.length) {
+                drop("bindingArgument");
+                continue;
+            }
+            try {
+                made.addActualParameter(parameters[i], type(arguments.get(i)));
+            } catch (InvalidEditingException x) {
+                drop("bindingArgument");
+            }
+        }
+        if (name(e).isEmpty()) {
+            bound.setName("");
+        }
+        bindings.put(id, made);
+        return made;
+    }
+
     /// A type as written: `List<Foo>`, `Foo[]`, `? extends Number`. Given such a text, the API
     /// binds a template classifier of that name to the arguments itself, through an anonymous
     /// bound classifier, which is how Astah stores bound templates.
@@ -556,7 +605,14 @@ public final class AstaExport {
                 INamedElement client = named(e.get("client"));
                 INamedElement supplier = named(e.get("supplier"));
                 INamedElement madeClient;
-                if (list(e.get("stereotypes")).contains("use")
+                ITemplateBinding binding = bindings.get(e.get("client"));
+                if (list(e.get("stereotypes")).contains("bind") && binding != null
+                        && binding.getTemplate() == supplier) {
+                    // The «bind» line of a bound class is Astah's binding itself.
+                    made = binding;
+                    implied = Set.of("bind");
+                    madeClient = client;
+                } else if (list(e.get("stereotypes")).contains("use")
                         && client instanceof IClass c && supplier instanceof IClass s) {
                     IUsage usage = basic.createUsage(c, s, name);
                     madeClient = usage.getClient();
@@ -1505,7 +1561,15 @@ public final class AstaExport {
             return;
         }
         if (Boolean.TRUE.equals(style.get("hideAttributes"))) {
-            node.setProperty("attribute_compartment_visibility", "false");
+            // An object's compartment holds its slots.
+            node.setProperty("instance".equals(type) ? "slot_visibility" : "attribute_compartment_visibility", "false");
+        }
+        // The API keeps neither an instance's hidden name nor its hidden classifier.
+        if (Boolean.TRUE.equals(style.get("hideInstanceName"))) {
+            drop("instanceNameVisibility");
+        }
+        if (Boolean.TRUE.equals(style.get("hideInstanceType"))) {
+            drop("instanceTypeVisibility");
         }
         if (Boolean.TRUE.equals(style.get("hideOperations"))) {
             node.setProperty("operation_compartment_visibility", "false");
