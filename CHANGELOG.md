@@ -5,11 +5,15 @@ today.
 
 ## Unreleased
 
-- **Structograms**: File › Open structogram … shows Nassi-Shneiderman diagrams from
-  [Structorizer](https://structorizer.fisch.lu) (`.nsd`) in a window of their own, drawn as
-  Structorizer draws them with syntax highlighting off, with zoom, panning and export as SVG
-  or PNG. The project stays open; `.nsd` files also open from the command line, the system and
-  the recent files.
+- **Structograms**: File › New structogram and File › Open structogram … edit
+  Nassi-Shneiderman diagrams of [Structorizer](https://structorizer.fisch.lu) (`.nsd`) in a
+  window of their own, drawn as Structorizer draws them with syntax highlighting off, with
+  zoom, panning and export as SVG or PNG. Elements of every kind are inserted before or after
+  the selection, edited in a dialog (double click or Enter), cut, copied, pasted, dragged,
+  moved, dyed with Structorizer's paint box, disabled and deleted; case and parallel elements
+  get and lose branches; undo and redo take every step back. Saved files open in Structorizer
+  as they are, and a file saved unchanged stays byte for byte. The project stays open; `.nsd`
+  files also open from the command line, the system and the recent files.
 
 ## 0.9.0 – 2026-10-29
 
