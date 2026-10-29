@@ -6749,6 +6749,7 @@ name = "umlcraft-nsd"
 version = "0.10.0"
 dependencies = [
  "pretty_assertions",
+ "quick-xml",
  "thiserror 2.0.21",
 ]
 

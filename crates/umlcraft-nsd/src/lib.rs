@@ -6,9 +6,11 @@
 //! the files it writes; Structorizer is GPL-licensed and none of its code is used here.
 
 pub mod model;
+pub mod read;
 pub mod text;
 
 pub use model::{
     Attr, Attrs, Branches, Color, Diagram, Element, ElementKind, Lines, RootKind, RootStyle,
     Sequence,
 };
+pub use read::{ReadError, read};
