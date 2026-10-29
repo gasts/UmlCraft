@@ -1,0 +1,14 @@
+== Lambda.lambda (line 6)
+| void lambda(List<String> list)
+  instruction
+    | list.forEach(s -> System.out.println(s));
+  instruction
+    | Runnable r = new Runnable() {
+    |     @Override
+    |     public void run() {
+    |         count++;
+    |     }
+    | };
+  instruction
+    | r.run();
+

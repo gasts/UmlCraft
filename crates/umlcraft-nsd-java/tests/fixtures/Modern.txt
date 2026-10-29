@@ -1,0 +1,47 @@
+== Modern.arrow (line 2)
+| String arrow(int day)
+  instruction
+    | String name;
+  case
+    | day
+    | 1
+    | 2, 3
+    | default
+    -
+      instruction
+        | name = "Monday";
+    -
+      instruction
+        | name = "Midweek";
+    -
+      instruction
+        | name = "Other";
+  jump
+    | return name
+
+== Modern.expression (line 12)
+| int expression(int day)
+  instruction
+    | int len;
+  case
+    | day
+    | 1
+    | 2
+    | default
+    -
+      instruction
+        | len = 6;
+    -
+      call
+        | work();
+      instruction
+        | len = 7;
+    -
+      instruction
+        | len = 0;
+  jump
+    | return len
+
+== Modern.work (line 24)
+| void work()
+

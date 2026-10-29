@@ -6756,6 +6756,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "umlcraft-nsd-java"
+version = "0.9.0"
+dependencies = [
+ "pretty_assertions",
+ "tree-sitter",
+ "tree-sitter-java",
+ "umlcraft-nsd",
+ "umlcraft-reverse",
+]
+
+[[package]]
 name = "umlcraft-reverse"
 version = "0.9.0"
 dependencies = [

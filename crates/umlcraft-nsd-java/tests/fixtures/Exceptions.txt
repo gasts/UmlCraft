@@ -1,0 +1,95 @@
+== Exceptions.tryCatch (line 5)
+| int tryCatch(String s)
+  try
+    | e
+    -
+      jump
+        | return Integer.parseInt(s)
+    -
+      jump
+        | return 0
+    -
+
+== Exceptions.multiCatch (line 13)
+| void multiCatch(Reader r)
+  try
+    | exception
+    -
+      instruction
+        | r.read();
+    -
+      case
+        | exception instanceof
+        | IOException
+        | RuntimeException
+        | %
+        -
+          instruction
+            | e = exception;
+          call
+            | log(e);
+        -
+          instruction
+            | e = exception;
+          call
+            | log(e);
+        -
+    -
+
+== Exceptions.unionCatch (line 23)
+| void unionCatch(Reader r)
+  try
+    | e
+    -
+      instruction
+        | r.read();
+    -
+      case
+        | e instanceof
+        | IOException, RuntimeException
+        | %
+        -
+          call
+            | log(e);
+        -
+    -
+
+== Exceptions.tryFinally (line 31)
+| void tryFinally(Reader r)
+  try
+    | e
+    -
+      instruction
+        | r.read();
+    -
+      call
+        | log(e);
+    -
+      instruction
+        | r.close();
+
+== Exceptions.onlyFinally (line 41)
+| void onlyFinally(Reader r)
+  try
+    -
+      instruction
+        | r.read();
+    -
+    -
+      instruction
+        | r.close();
+
+== Exceptions.withResources (line 49)
+| void withResources(java.io.File f)
+  try
+    -
+      instruction
+        | Reader r = new java.io.FileReader(f);
+      instruction
+        | r.read();
+    -
+    -
+
+== Exceptions.log (line 55)
+| void log(Exception e)
+

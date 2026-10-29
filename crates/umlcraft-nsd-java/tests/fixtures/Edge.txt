@@ -1,0 +1,103 @@
+== Edge.kind (line 4)
+| int kind(int day)
+  case
+    | day
+    | 6, 7
+    | 1
+    | default
+    -
+      jump
+        | return 0
+    -
+      alternative
+        | value > 0
+        -
+          jump
+            | return 2
+        -
+      jump
+        | return 1
+    -
+      jump
+        | throw new IllegalArgumentException("day")
+
+== Edge.calls (line 17)
+| void calls()
+  call
+    | this.reset();
+  instruction
+    | super.toString();
+  call
+    | reset();
+  instruction
+    | value = compute(1) + compute(2);
+
+== Edge.comments (line 24)
+| void comments()
+  while
+    | value < 10
+    # only a comment at the start
+    -
+      instruction
+        | value++;
+        # a comment at the end of a block
+  alternative
+    | value > 0
+    -
+    -
+
+== Edge.broken (line 35)
+| void broken()
+  instruction
+    | int a = 1;
+  instruction color=ff0000 disabled
+    | a = = 2;
+  instruction
+    | a++;
+! line 37: SyntaxError
+
+== Edge.caseDefaultWithLabel (line 41)
+| void caseDefaultWithLabel(int a)
+  case
+    | a
+    | 1
+    | default
+    -
+      instruction
+        | value = 1;
+    -
+      instruction
+        | value = 0;
+
+== Edge.chain (line 52)
+| String chain(StringBuilder sb)
+  instruction
+    | sb.append("a")
+    |   .append("b")
+    |   .append("c");
+  jump
+    | return sb.toString()
+
+== Edge.reset (line 59)
+| void reset()
+  instruction
+    | value = 0;
+
+== Edge.compute (line 63)
+| int compute(int x)
+  jump
+    | return x
+
+== Edge.Nested.Mode.on (line 71)
+| boolean on()
+  jump
+    | return this == ON
+
+== Edge.Nested.Nested (line 76)
+| Nested()
+  instruction
+    | this(1);
+
+== Edge.Nested.Nested (line 80)
+| Nested(int x)
+

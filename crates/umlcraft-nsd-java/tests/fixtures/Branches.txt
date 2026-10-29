@@ -1,0 +1,82 @@
+== Branches.simpleIf (line 2)
+| int simpleIf(int a)
+  alternative
+    | a > 0
+    -
+      instruction
+        | a = 1;
+    -
+  jump
+    | return a
+
+== Branches.ifElse (line 9)
+| int ifElse(int a)
+  alternative
+    | a > 0
+    -
+      instruction
+        | a = 1;
+    -
+      instruction
+        | a = -1;
+  jump
+    | return a
+
+== Branches.elseIfChain (line 18)
+| String elseIfChain(int a)
+  alternative
+    | a < 0
+    -
+      jump
+        | return "negative"
+    -
+      alternative
+        | a == 0
+        -
+          jump
+            | return "zero"
+        -
+          alternative
+            | a < 10
+            -
+              jump
+                | return "small"
+            -
+              jump
+                | return "large"
+
+== Branches.nested (line 30)
+| int nested(int a, int b)
+  alternative
+    | a > 0
+    -
+      alternative
+        | b > 0
+        -
+          jump
+            | return 1
+        -
+      jump
+        | return 2
+    -
+  jump
+    | return 3
+
+== Branches.logic (line 40)
+| boolean logic(int a, int b)
+  alternative
+    | a > 0 && b > 0 || a < -10
+    -
+      jump
+        | return true
+    -
+  jump
+    | return false
+
+== Branches.ternary (line 47)
+| int ternary(int a)
+  instruction
+    | int b = a > 0 ? a : -a;
+  jump
+    | return b
+
