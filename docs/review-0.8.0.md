@@ -332,16 +332,19 @@ sample that ships with Astah imports with nothing failed and no shape lost.
 - **Fix:** separate counters for unsupported, failed and dropped presentations, and report them.
 
 <a id="a-9"></a>
-#### A-9 · Low · Reader details · **Partly done**
+#### A-9 · Low · Reader details · **Done**
 
 Sources: F (crate section), O A-10.
 
-**Partly done (2026-10-29):** a panic on the reader thread becomes `AstaError::Damaged`;
+**Done (2026-10-29):** a panic on the reader thread becomes `AstaError::Damaged`;
 `WrongHandle` names the actual handle; an array whose class is no array class is a broken
 stream (`array_element`, reader and writer) instead of an array of objects; `View` keeps an
 index of its presentations by id, so `View::get` no longer scans (test
-`presentations_are_found_by_id_after_every_change`). Open: the per-instance clones of class
-descriptions and field names.
+`presentations_are_found_by_id_after_every_change`). Class and field names are `Arc<str>`,
+shared by the class description and every instance's `ClassData`, and reading an instance no
+longer clones its class descriptions: per instance and field only a reference count goes up.
+Values stay stored by name (not by position), as the writer and `map.rs` look them up; not
+measured on a large project.
 
 - `join().expect("stream thread panicked")` (`lib.rs:89`) turns any parser panic into an abort;
   map `Err` to an `AstaError`. (F)
@@ -406,17 +409,22 @@ requires the jars).
 - `Json.string()` has no bounds check after a backslash (`AstaExport.java:2458`, `:2466`). (F)
 
 <a id="a-12"></a>
-#### A-12 · Low · Small inconsistencies and duplication · **Partly done**
+#### A-12 · Low · Small inconsistencies and duplication · **Done**
 
 Sources: F, O A-10.
 
-**Partly done (2026-10-29):** the self-loop comment names `SELF_LOOP`; the font size in
+**Done (2026-10-29):** the self-loop comment names `SELF_LOOP`; the font size in
 `map.rs` and `layout.rs` is `scene::FONT_SIZE`; the `is_default_node_name` doc sits on its
 function; `asta-dump` no longer computes an annotation to discard it; `write_entity_store`,
 `write_asta` and `jser/write.rs` are documented as tooling. Flags are read through
 `Graph::bool_field` (twelve places), and the edge labels' position is one `place` closure for
-the end labels, the name and the keyword. Open: the Java fill normalisation, the unnamed
-measured numbers in the Java tool, and splitting `map.rs`.
+the end labels, the name and the keyword. The Java tool reads a style's fill in one place
+(`ownFill`) and names its measured numbers (`LABEL_SHIFT`, `GATE_DISTANCE`,
+`FIRST_OPERAND_TOP`, `BOUNDARY_NAME_TOP`); the export round trips pass with it. `map.rs` is
+split: `map/sequence.rs` (interactions, messages, fragments and their drawing, 450 lines) and
+`map/diagrams.rs` (the other diagrams' nodes, notes, boundaries and edges, 553 lines) hold
+further `impl Importer` blocks; `map.rs` keeps the reader, the model walk and the elements
+(about 1,500 lines). The moved code is unchanged apart from `pub(super)`.
 
 - Comment says 40, constant `SELF_LOOP` is 49.9 (`map.rs:1759` vs `:40`). Font size 12.0 is a
   literal in `map.rs:1786` and `layout.rs:330` although `scene::FONT_SIZE` exists. The
@@ -790,15 +798,18 @@ draws all lines above the nodes.
   drags them.
 
 <a id="n-9"></a>
-#### N-9 · Low · Region lines drawn outside small states · **Partly done**
+#### N-9 · Low · Region lines drawn outside small states · **Done**
 
 Source: O N-6, F (state lows). Confirmed.
 
-**Partly done (2026-10-29):** `layout_state` draws a state with regions at least header plus
+**Done (2026-10-29):** `layout_state` draws a state with regions at least header plus
 `n × MIN_REGION` high (wide, side by side), so every region keeps its 20 inside the state;
 `move_region_line` stores the offset clamped between its neighbors, as the drawing clamps it.
-Test with five regions in a state 40 high and a line dragged past its neighbor. Open: with the
-state on several diagrams, `add_region` still lets the last diagram decide.
+Test with five regions in a state 40 high and a line dragged past its neighbor. `add_region`
+takes the diagram the user divides the state on (the workspace passes the active one); only
+its drawing decides which region each substate goes to, else the first diagram that shows the
+state. Test `the_diagram_divided_on_decides_where_substates_go` with two diagrams that draw
+the substates the other way round.
 
 `scene.rs:1502-1507`, `:1535-1552`; `state_edit.rs:81`, `:123-130`, `:161-178`
 
@@ -848,8 +859,11 @@ Sources: F, O N-11.
 documented as the partition fill; `TextMeasure::astah_width` replaces the written-out
 "max(exact, rounded)" (labels, line breaks, tabs, SVG, test); the second `Fixed` test measure is
 gone; the layout functions take `&Element`, so no `expect("caller checked")` is left;
-`SELF_DROP` lives in `sequence.rs` and is used there too. Open: the shared
-stereotype-name-block layout and the remaining unnamed numbers.
+`SELF_DROP` lives in `sequence.rs` and is used there too. The stereotype rows of a box's
+header come from one `stereotype_lines` (`layout_box`, `layout_object`, `layout_classifier`),
+which share `BOX_PAD_X`, `BOX_PAD_Y`, `BOX_MIN_WIDTH` and `BOX_MIN_HEIGHT`; `sequence_edit.rs`
+names its fallbacks (`FIRST_LINE_TOP`, `MIN_LIFELINE`, `EMPTY_SPAN`). Open: the remaining
+unnamed numbers in `scene.rs`, `sequence.rs` and `draw.rs`.
 
 - The doc comment "States: the name, centered…" sits on `CUBE_DEPTH` (`scene.rs:1250-1253`).
 - `Paint::Translucent` is documented as the boundary fill (`draw.rs:36`); boundaries use
@@ -1076,15 +1090,20 @@ fragment is left without operands. Tests for all three.
   edit should remove the matching separator and guard offset.
 
 <a id="e-11"></a>
-#### E-11 · Low · Smaller editing defects · **Partly done**
+#### E-11 · Low · Smaller editing defects · **Done**
 
 Sources: O E-9, F (notation and object lows).
 
-**Partly done (2026-10-29):** `set_slot` strips a `name =` prefix only when it is the attribute's
+**Done (2026-10-29):** `set_slot` strips a `name =` prefix only when it is the attribute's
 name (test with `"k=v"`); new vertices find their owner by their center, as moved ones do;
 `create_fragment` takes `Option<Point>`, so (0,0) is a place; `show_element` refuses lifelines
-and fragments of another interaction on a sequence diagram. Open: `move_item` with nested bars
-and messages above the sender's bar, and the `numbers` edge cases.
+and fragments of another interaction on a sequence diagram. `move_item` takes the messages
+that start the bars it moves (a call into a busy lifeline keeps its bar), and a message moved
+off its sender's bar gets a sender bar there as `add_message` gives it; test
+`moving_a_call_takes_what_starts_inside_it_and_finds_a_sender_bar`. `numbers` never branches
+a message to self, whichever of two messages from one point sorts first, and of two calls
+arriving at one bar's top the first numbers what is sent from the bar; test
+`numbers_take_the_first_call_into_a_bar_and_never_branch_a_message_to_self`.
 
 - `object.rs:67-71`: `set_slot` applies `split_once('=')` unconditionally, after the properties
   panel already split once (`properties.rs:756-759`): `name = "k=v"` stores `v"`. Strip the prefix
@@ -1249,19 +1268,23 @@ Source: O R-6. Confirmed.
   `__init__`, two `total` (attrs ships such pairs). Where both exist, import only the `.pyi`.
 
 <a id="r-9"></a>
-#### R-9 · Medium · Name lookup is linear, so large flat namespaces are quadratic · **Partly done**
+#### R-9 · Medium · Name lookup is linear, so large flat namespaces are quadratic · **Done**
 
 Sources: O R-7, F M17. Confirmed.
 
-**Partly done (2026-10-29):** `Model` keeps an index owner → name → children
+**Done (2026-10-29):** `Model` keeps an index owner → name → children
 (`Model::children_named`), updated on insert, remove, rename and move and compared in `check`;
 `child_type` and `child_package` use it, so lookups in large flat namespaces no longer scan all
 children. `merge` finds a type's entries through a `HashMap` instead of `by_type.iter().find` and
 `.any`. Test for renames, moves and undo. For C# and C++ the type lookup ends at the global
 namespace, so global types are found by the index instead of a scan for a placeholder; the model
 side of operation signatures is computed once per class. Measured again with 8,000 global C++
-structs and 11 references each: 1.27 s (was 13.3 s). Open: imports cloned per simple name and
-the model scans in `retype`.
+structs and 11 references each: 1.27 s (was 13.3 s). The imports of a scope are one shared
+`Rc<[&Import]>` for all its types, definitions and resolved names, and the on-demand paths
+are borrowed, the implicit ones made once per import; the 8,000-struct import stays at about
+1.4 s, since the index had already removed the bulk. `retype` keeps its model scans
+(`referrers`, `shown_on`): it runs only when a type changes its kind between imports or files,
+not per name.
 
 `resolve.rs:58-70`, `:85-90`, `:385`, `:403-413`, `:527`; `merge.rs:204`, `:274`, `:487-503`,
 `:586-597`
@@ -1277,18 +1300,22 @@ the model scans in `retype`.
   `HashMap` for `by_type`; model signatures once per class.
 
 <a id="r-10"></a>
-#### R-10 · Low · Smaller import defects · **Partly done**
+#### R-10 · Low · Smaller import defects · **Done**
 
 Sources: O R-8, F (reverse lows).
 
-**Partly done (2026-10-29):** The preprocessor knows its dialect: only C++ continues a blanked line ending
+**Done (2026-10-29):** The preprocessor knows its dialect: only C++ continues a blanked line ending
 in `\`, and a line in a block comment, a C# verbatim or raw string or a C++ raw string is no
 directive (a byte scanner per line; tests in `preprocessor.rs`). C++ operators are spelled one
 way (`operator ==` and `operator==` are one, `operator new[]`); unnamed template parameters
 are named by position (`_1`); `typedef struct {…} Point, *PointPtr;` keeps `PointPtr` as an
-alias of `Point*`. C++ files include `.c`, `.inl`, `.ipp` and `.tpp`. Open: comments inside
-Java scoped names, a definition's own `using`s for its parameter types, and how a new C#
-partial class in two files is counted.
+alias of `Point*`. C++ files include `.c`, `.inl`, `.ipp` and `.tpp`. A member defined outside its
+type resolves its types in an entry of its own, the type's scope plus the definition's own
+imports, so `using namespace lib; void A::f(Str s) {}` finds `lib::Str` and joins a declared
+`f(lib::Str)` (fixture `cpp/definitions`). Java reads scoped names from the tree, so a
+comment inside one (`import lib /* the.library */ .Helper;` in `java/resolution`) leaks
+nothing. A type is counted once per import, as created when this import made it (also after a
+forward declaration), so a new C# partial class in two files is 1 created, 0 updated.
 
 - `preprocessor.rs:197`: C's line continuation is applied to C# too, so `// C:\temp\` swallows
   the next `#endif` and everything after it is blanked silently. Make splicing C++-only.
@@ -1490,8 +1517,10 @@ Sources: F, O U-10.
 get Ctrl+Shift+Z as their own redo on Windows and Linux, so it no longer redoes a model change
 and reloads the field. A resync of the element being edited (a background import finishing,
 an undo elsewhere) keeps the focused field's text and its pending edit while something typed
-is not written back yet. Open: quit and reopen handlers on macOS, and the silent `Arial`
-fallback on Linux.
+is not written back yet. The diagram font is chosen at startup from Arial, Liberation Sans and
+Arimo (both with Arial's metrics); with none installed the status bar says so, and the Linux
+packages recommend `fonts-liberation` / `liberation-sans-fonts`. Not tried on Linux. Open:
+quit and reopen handlers on macOS.
 
 `main.rs:123-155`
 
@@ -1620,8 +1649,10 @@ Sources: F M18, O X-1. Confirmed.
 rewrite and export round-trip tests fails instead of passing. Byte-level jser tests for
 `TC_LONGSTRING`, `TC_RESET`, `TC_CLASS`, `TC_ENUM`, a primitive array, and `BadMagic`, `Eof`,
 `BadHandle`, `BadTypeCode` (besides the earlier `WrongHandle`, `TooDeep` and class-chain tests).
-Open: proxies and externalizables, synthetic `.asta` fixtures with one mapping test per element
-kind, and fuzz targets. The export's report parsing is a pure function now
+Proxy classes (interfaces kept, written back byte for byte) and externalizable objects
+(block data kept and written back; raw protocol-1 data refused as `Externalizable`) have
+byte-level tests too. Open: synthetic `.asta` fixtures with one mapping test per element kind,
+and fuzz targets. The export's report parsing is a pure function now
 (`parse_report`) with a unit test.
 
 `umlcraft-asta/tests/import.rs:11-21`, `tests/rewrite.rs:7`;
@@ -1657,8 +1688,11 @@ to a commit SHA with the version as a comment, which Dependabot keeps current; t
 `rust-toolchain` steps name `toolchain: stable` since the ref no longer does. The release
 workflow calls `ci.yml` (now also `workflow_call`) as a `checks` job that the package builds
 need, so a tag with failing fmt, clippy, tests or `cargo deny` builds nothing. Both workflows
-parse as YAML; neither has run on GitHub yet. Open: a pinned toolchain, the duplicated resvg,
-and a release profile.
+parse as YAML and ran green on the push to `main`. The duplicated resvg is GPUI's own:
+gpui-pre 0.3.9 uses 0.46, as UmlCraft does (so `docs/icons.md` is right), and gpui-component
+0.8 pulls 0.45.1; nothing to align on our side. Dependabot ignores resvg with GPUI, and the
+first resvg bump (0.49) was closed for that reason. Open: a pinned toolchain and a release
+profile.
 
 - Toolchain is floating `stable`, edition 2024, no `rust-version`, no `rust-toolchain.toml`
   (`ci.yml:25`, `Cargo.toml:7`): a new clippy lint can turn CI red without a change; the code needs
