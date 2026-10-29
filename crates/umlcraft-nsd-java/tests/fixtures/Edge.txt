@@ -88,16 +88,64 @@
   jump
     | return x
 
-== Edge.Nested.Mode.on (line 71)
+== Edge.braced (line 68)
+| void braced(int a)
+  case
+    | a
+    | 1
+    | 2
+    | %
+    -
+      instruction
+        | value = 1;
+    -
+      instruction
+        | value = 2;
+    -
+
+== Edge.onlyDefault (line 80)
+| void onlyDefault(int a)
+  instruction
+    | value = a;
+  instruction
+    | value = 3;
+
+== Edge.unions (line 92)
+| void unions(java.io.Reader r)
+  try
+    | exception
+    -
+      instruction
+        | r.read();
+    -
+      case
+        | exception instanceof
+        | java.io.IOException, IllegalStateException
+        | RuntimeException
+        | %
+        -
+          instruction
+            | e = exception;
+          call
+            | reset();
+        -
+          instruction
+            | e = exception;
+          call
+            | reset();
+        -
+    -
+
+== Edge.Nested.Mode.on (line 106)
 | boolean on()
   jump
     | return this == ON
 
-== Edge.Nested.Nested (line 76)
+== Edge.Nested.Nested (line 111)
 | Nested()
   instruction
     | this(1);
 
-== Edge.Nested.Nested (line 80)
+== Edge.Nested.Nested (line 115)
 | Nested(int x)
 
