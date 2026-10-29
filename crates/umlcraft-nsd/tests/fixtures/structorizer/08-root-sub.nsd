@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32-35" preRepeat="until" postFor="to" preReturn="return" postForIn="in" preWhile="while" output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="???" changedby="tester" changed="2026-10-29" origin="Structorizer 3.32-35" text="&#34;summe(a: int; b: int): int&#34;" comment="" color="ffffff" type="sub" style="nice">
+	<children>
+		<instruction text="&#34;s &#60;- a + b&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+		<jump text="&#34;return s&#34;" comment="" color="ffffff" disabled="0"></jump>
+	</children>
+</root>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32-35" preRepeat="until" postFor="to" preReturn="return" postForIn="in" preWhile="while" output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="???" changedby="tester" changed="2026-10-29" origin="Structorizer 3.32-35" text="&#34;alt&#34;" comment="" color="ffffff" type="program" style="nice">
+	<children>
+		<alternative text="&#34;a &#62; b&#34;" comment="" color="ffffff" branch_colors="," disabled="0">
+			<qTrue color="ffffff">
+			</qTrue>
+			<qFalse color="ffffff">
+			</qFalse>
+		</alternative>
+	</children>
+</root>

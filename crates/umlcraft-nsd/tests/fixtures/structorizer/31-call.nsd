@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32-35" preRepeat="until" postFor="to" preReturn="return" postForIn="in" preWhile="while" output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="???" changedby="tester" changed="2026-10-29" origin="Structorizer 3.32-35" text="&#34;call&#34;" comment="" color="ffffff" type="program" style="nice">
+	<children>
+		<call text="&#34;summe(1, 2)&#34;" comment="" color="ffffff" disabled="0" ismethoddecl="0"></call>
+		<call text="&#34;x &#60;- summe(1,&#34;,&#34;2)&#34;" comment="" color="ffffff" disabled="0" ismethoddecl="0"></call>
+	</children>
+</root>

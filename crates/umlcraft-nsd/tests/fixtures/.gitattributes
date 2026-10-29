@@ -1,0 +1,2 @@
+# Written by Structorizer; the tests compare them byte for byte.
+*.nsd -text
