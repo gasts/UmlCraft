@@ -10,6 +10,11 @@ today.
   files; `.asta` files get UmlCraft under "Open with". The `.zip` stays for use without
   installing.
 - The mouse wheel over the ribbon switches its tabs.
+- **Structograms**: File › Open structogram … shows Nassi-Shneiderman diagrams from
+  [Structorizer](https://structorizer.fisch.lu) (`.nsd`) in a window of their own, drawn as
+  Structorizer draws them with syntax highlighting off, with zoom, panning and export as SVG
+  or PNG. The project stays open; `.nsd` files also open from the command line, the system and
+  the recent files.
 
 ## 0.10.0 – 2026-10-30
 
