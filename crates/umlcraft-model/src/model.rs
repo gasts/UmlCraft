@@ -372,7 +372,7 @@ impl Model {
         if !self.element(id)?.children.is_empty() {
             return Err(ModelError::HasChildren(id));
         }
-        if self.views.get(&id).is_some_and(|v| !v.presentations.is_empty()) {
+        if self.views.get(&id).is_some_and(|v| !v.presentations().is_empty()) {
             return Err(ModelError::DiagramNotEmpty(id));
         }
 
@@ -513,12 +513,12 @@ impl Model {
         if view.get(presentation.id).is_some() {
             return Err(ModelError::DuplicateId(presentation.id));
         }
-        if index > view.presentations.len() {
+        if index > view.presentations().len() {
             return Err(ModelError::IndexOutOfRange { index });
         }
         self.check_presentation(view, &presentation)?;
         let id = presentation.id;
-        self.views[&diagram].presentations.insert(index, presentation);
+        self.views[&diagram].insert(index, presentation);
         Ok(Op::RemovePresentation { diagram, id })
     }
 
@@ -528,30 +528,28 @@ impl Model {
         if view.edges_attached_to(id).next().is_some() {
             return Err(ModelError::EdgesAttached(id));
         }
-        let presentation = self.views[&diagram].presentations.remove(index);
+        let presentation = self.views[&diagram].remove(index);
         Ok(Op::InsertPresentation { diagram, index, presentation })
     }
 
     fn update_presentation(&mut self, diagram: Id, presentation: Presentation) -> Result<Op> {
         let view = self.view_of(diagram)?;
         let index = view.index_of(presentation.id).ok_or(ModelError::NotFound(presentation.id))?;
-        if discriminant(&view.presentations[index].shape) != discriminant(&presentation.shape) {
+        if discriminant(&view.presentations()[index].shape) != discriminant(&presentation.shape) {
             return Err(ModelError::ShapeChanged(presentation.id));
         }
         self.check_presentation(view, &presentation)?;
-        let old = std::mem::replace(&mut self.views[&diagram].presentations[index], presentation);
+        let old = self.views[&diagram].replace(index, presentation);
         Ok(Op::UpdatePresentation { diagram, presentation: old })
     }
 
     fn reorder_presentation(&mut self, diagram: Id, id: Id, index: usize) -> Result<Op> {
         let view = self.view_of(diagram)?;
         let old_index = view.index_of(id).ok_or(ModelError::NotFound(id))?;
-        if index >= view.presentations.len() {
+        if index >= view.presentations().len() {
             return Err(ModelError::IndexOutOfRange { index });
         }
-        let presentations = &mut self.views[&diagram].presentations;
-        let presentation = presentations.remove(old_index);
-        presentations.insert(index, presentation);
+        self.views[&diagram].reorder(old_index, index);
         Ok(Op::ReorderPresentation { diagram, id, index: old_index })
     }
 
@@ -695,7 +693,7 @@ impl Model {
         }
         for view in self.views.values() {
             let mut ids = HashSet::new();
-            for p in &view.presentations {
+            for p in view.presentations() {
                 if !ids.insert(p.id) {
                     return Err(ModelError::DuplicateId(p.id));
                 }
@@ -752,7 +750,8 @@ impl Model {
             .map(|e| ElementRecord { id: e.id, data: e.data.clone(), children: e.children.clone() })
             .collect();
         elements.sort_by_key(|r| r.id);
-        let views = self.views.iter().map(|(&id, view)| (id, view.presentations.clone())).collect();
+        let views =
+            self.views.iter().map(|(&id, view)| (id, view.presentations().to_vec())).collect();
         ModelRecords { root: self.root, elements, views }
     }
 
@@ -780,7 +779,7 @@ impl Model {
         let mut views: IndexMap<Id, View> = records
             .views
             .into_iter()
-            .map(|(id, presentations)| (id, View { presentations }))
+            .map(|(id, presentations)| (id, View::new(presentations)))
             .collect();
         // A diagram with nothing on it may lack its entry, as after a merge in Git.
         for e in elements.values() {

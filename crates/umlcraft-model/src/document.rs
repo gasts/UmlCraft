@@ -80,7 +80,18 @@ impl Document {
         f: impl FnOnce(&mut Tx<'_>) -> Result<R>,
     ) -> Result<R> {
         let mut tx = Tx { model: &mut self.model, inverse: Vec::new() };
-        match f(&mut tx) {
+        // A panicking edit is taken back too before the panic goes on, so the model never
+        // keeps changes that no undo step records.
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&mut tx)));
+        let outcome = match outcome {
+            Ok(outcome) => outcome,
+            Err(panic) => {
+                let inverse = std::mem::take(&mut tx.inverse);
+                revert(&mut self.model, inverse);
+                std::panic::resume_unwind(panic);
+            }
+        };
+        match outcome {
             Ok(result) => {
                 let inverse = tx.inverse;
                 if !inverse.is_empty() {

@@ -531,3 +531,39 @@ fn a_failed_attempt_takes_back_only_its_own_part() {
     assert!(doc.undo());
     assert!(doc.model().get(kept).is_none());
 }
+
+#[test]
+fn a_panicking_edit_leaves_the_model_as_it_was() {
+    let (mut doc, _) = order_system();
+    let before = doc.model().clone();
+    let root = before.root();
+    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = doc.edit("boom", |tx| -> Result<(), ModelError> {
+            tx.create(root, class("Half"))?;
+            panic!("an edit that breaks off");
+        });
+    }));
+    assert!(caught.is_err());
+    assert_eq!(doc.model(), &before);
+    assert!(!doc.can_undo() || doc.undo_label() != Some("boom"));
+}
+
+#[test]
+fn presentations_are_found_by_id_after_every_change() {
+    let (mut doc, ids) = order_system();
+    let d = ids.class_diagram;
+    let all = |doc: &Document| {
+        let view = doc.model().view(d).unwrap();
+        view.presentations().iter().all(|p| view.get(p.id).map(|q| q.id) == Some(p.id))
+    };
+    let first = doc.model().view(d).unwrap().presentations()[0].id;
+    let node = doc.edit("add", |tx| tx.add_node(d, None, Rect::new(0.0, 0.0, 10.0, 10.0))).unwrap();
+    doc.edit("front", |tx| tx.bring_to_front(d, first)).unwrap();
+    assert!(all(&doc));
+    assert_eq!(doc.model().view(d).unwrap().presentations().last().map(|p| p.id), Some(first));
+    doc.edit("remove", |tx| tx.remove_presentation(d, node)).unwrap();
+    assert!(all(&doc) && doc.model().view(d).unwrap().get(node).is_none());
+    assert!(doc.undo() && doc.undo() && doc.undo());
+    assert!(all(&doc) && doc.model().view(d).unwrap().get(node).is_none());
+    doc.model().check().unwrap();
+}

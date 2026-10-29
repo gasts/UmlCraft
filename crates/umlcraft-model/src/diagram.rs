@@ -1,5 +1,6 @@
 //! Diagrams and presentations: how elements are shown, independent of what they mean.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
@@ -509,20 +510,58 @@ impl<'de> Deserialize<'de> for Color {
 /// The presentations of one diagram, in z-order.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct View {
-    pub(crate) presentations: Vec<Presentation>,
+    presentations: Vec<Presentation>,
+    /// Where each presentation is in `presentations`, so lookups by id do not scan the list.
+    positions: HashMap<Id, usize>,
 }
 
 impl View {
+    pub(crate) fn new(presentations: Vec<Presentation>) -> Self {
+        let mut view = Self { presentations, positions: HashMap::new() };
+        view.reindex(0);
+        view
+    }
+
     pub fn presentations(&self) -> &[Presentation] {
         &self.presentations
     }
 
     pub fn get(&self, id: Id) -> Option<&Presentation> {
-        self.presentations.iter().find(|p| p.id == id)
+        self.index_of(id).map(|i| &self.presentations[i])
     }
 
     pub(crate) fn index_of(&self, id: Id) -> Option<usize> {
-        self.presentations.iter().position(|p| p.id == id)
+        self.positions.get(&id).copied()
+    }
+
+    pub(crate) fn insert(&mut self, index: usize, presentation: Presentation) {
+        self.presentations.insert(index, presentation);
+        self.reindex(index);
+    }
+
+    pub(crate) fn remove(&mut self, index: usize) -> Presentation {
+        let presentation = self.presentations.remove(index);
+        self.positions.remove(&presentation.id);
+        self.reindex(index);
+        presentation
+    }
+
+    /// Puts `presentation` in the place of the one with its id and returns that one.
+    pub(crate) fn replace(&mut self, index: usize, presentation: Presentation) -> Presentation {
+        std::mem::replace(&mut self.presentations[index], presentation)
+    }
+
+    pub(crate) fn reorder(&mut self, from: usize, to: usize) {
+        let presentation = self.presentations.remove(from);
+        self.presentations.insert(to, presentation);
+        self.reindex(from.min(to));
+    }
+
+    /// Updates the positions of the presentations from `from` on.
+    fn reindex(&mut self, from: usize) {
+        for (i, p) in self.presentations.iter().enumerate().skip(from) {
+            self.positions.insert(p.id, i);
+        }
     }
 
     /// Edges whose source or target is `presentation`.
