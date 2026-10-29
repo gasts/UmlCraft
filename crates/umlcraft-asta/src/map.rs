@@ -101,7 +101,7 @@ impl<'g> Reader<'g> {
     }
 
     fn flag(&self, id: ObjId, field: &str) -> bool {
-        self.g.field(id, field).and_then(Value::as_bool).unwrap_or(false)
+        self.g.bool_field(id, field).unwrap_or(false)
     }
 
     /// The numbers of an array or collection field.
@@ -1357,15 +1357,15 @@ impl Importer<'_> {
         }
         let mut data = self.data(object, ElementKind::diagram(kind), &[]);
         if let ElementKind::Diagram(props) = &mut data.kind {
-            let off = |field| self.r.g.field(object, field).and_then(Value::as_bool) == Some(false);
+            let off = |field| self.r.g.bool_field(object, field) == Some(false);
             props.hide_message_numbers = kind == DiagramKind::Sequence && off("indexVisible");
             props.hide_return_values = kind == DiagramKind::Sequence && off("ReturnValueVisible");
             props.flat_message_numbers = kind == DiagramKind::Sequence
-                && self.r.g.field(object, "flatIndex").and_then(Value::as_bool) == Some(true);
+                && self.r.g.bool_field(object, "flatIndex") == Some(true);
             props.hide_frame = kind == DiagramKind::Sequence
                 && self.r.list(object, "presentation").into_iter().any(|p| {
                     self.r.class(p) == "FramePresentation"
-                        && self.r.g.field(p, "visibility").and_then(Value::as_bool) == Some(false)
+                        && self.r.g.bool_field(p, "visibility") == Some(false)
                 });
         }
         let Some(diagram) = self.create(owner, data, Some(object)) else { return };
@@ -1675,8 +1675,7 @@ impl Importer<'_> {
                     presentation.style = self.fill(p);
                     presentation.style.iconic =
                         r.g.field(p, "notationType").and_then(Value::as_i64) == Some(1);
-                    let off =
-                        |field: &str| r.g.field(p, field).and_then(Value::as_bool) == Some(false);
+                    let off = |field: &str| r.g.bool_field(p, field) == Some(false);
                     presentation.style.hide_instance_name = off("nameVisibility");
                     presentation.style.hide_instance_type = off("baseVisibility");
                     presentation
@@ -1852,7 +1851,7 @@ impl Importer<'_> {
         }
         presentation.style = self.fill(p);
         // Astah hides the parentheses of every reply; only for calls it is a choice.
-        let flag = |name| r.g.field(p, name).and_then(Value::as_bool);
+        let flag = |name| r.g.bool_field(p, name);
         let call = props_sort != MessageSort::Reply;
         presentation.style.hide_parameters = call && flag("parameterVisibility") == Some(false);
         presentation.style.hide_parameter_types =
@@ -1948,7 +1947,7 @@ impl Importer<'_> {
             // presentation of the diagram.
             "FramePresentation"
                 if kind != DiagramKind::Sequence
-                    && r.g.field(p, "visibility").and_then(Value::as_bool) == Some(true) =>
+                    && r.g.bool_field(p, "visibility") == Some(true) =>
             {
                 diagram
             }
@@ -1977,14 +1976,12 @@ impl Importer<'_> {
         let height = r.num(p, "height").filter(|h| *h > 0.0).map_or(default.height, |h| h as f32);
         let mut style = self.fill(p);
         if class == "ClassifierPresentation" {
-            style.hide_attributes =
-                r.g.field(p, "allAttributeVisibility").and_then(Value::as_bool) == Some(false);
-            style.hide_operations =
-                r.g.field(p, "allOperationVisibility").and_then(Value::as_bool) == Some(false);
+            style.hide_attributes = r.g.bool_field(p, "allAttributeVisibility") == Some(false);
+            style.hide_operations = r.g.bool_field(p, "allOperationVisibility") == Some(false);
             style.iconic = matches!(element_kind, ElementKind::Interface(_))
                 && r.g.field(p, "notationType").and_then(Value::as_i64) == Some(1);
             style.auto_size = scene::is_boxed_classifier(&element_kind)
-                && r.g.field(p, "doAutoResize").and_then(Value::as_bool) == Some(true);
+                && r.g.bool_field(p, "doAutoResize") == Some(true);
         }
         if class == "RectPresentation" {
             style.name_offset = self.boundary_name(p).map(|(_, at)| at);
@@ -2000,7 +1997,7 @@ impl Importer<'_> {
                 | "ComponentInstancePresentation"
                 | "NodeInstancePresentation"
         ) {
-            let off = |field: &str| r.g.field(p, field).and_then(Value::as_bool) == Some(false);
+            let off = |field: &str| r.g.bool_field(p, field) == Some(false);
             style.hide_instance_name = off("instanceNameVisibility");
             style.hide_instance_type = off("instanceTypeVisibility");
             style.hide_attributes =
@@ -2008,7 +2005,7 @@ impl Importer<'_> {
             style.hide_empty_slots =
                 class == "ObjectClassPresentation" && off("noValueAttributeVisibility");
             style.auto_size = class == "ObjectClassPresentation"
-                && r.g.field(p, "doAutoResize").and_then(Value::as_bool) == Some(true);
+                && r.g.bool_field(p, "doAutoResize") == Some(true);
         }
         // Orthogonal states keep where the lines between their regions go, as distances from
         // their top edge (regions one below the other) or left edge (side by side).
@@ -2275,9 +2272,8 @@ impl Importer<'_> {
         let (a, b) = route::middle_segment(&line, g.curve);
         let middle = Point::new((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
 
-        // The top left corner of a label, relative to `origin`.
-        let label = |field: &str, origin: Point| {
-            let label = r.obj(p, field)?;
+        // The top left corner of a label presentation, relative to `origin`.
+        let place = |label: ObjId, origin: Point| {
             let at = r.obj(label, "location").and_then(|l| r.point(l))?;
             let moved = r.obj(label, "localMovement").and_then(|l| r.point(l)).unwrap_or_default();
             Some(Point::new(
@@ -2285,20 +2281,14 @@ impl Importer<'_> {
                 at.y + moved.y + g.shift.y - origin.y,
             ))
         };
+        let label = |field: &str, origin: Point| place(r.obj(p, field)?, origin);
         let (a_end, b_end) = if g.swapped { (end, start) } else { (start, end) };
         let (role_a, mult_a) =
             (label("roleAPresentation", a_end), label("multiplicityAPresentation", a_end));
         let (role_b, mult_b) =
             (label("roleBPresentation", b_end), label("multiplicityBPresentation", b_end));
         // «include» and «extend» are the stereotype label of the line.
-        let keyword = r.list(p, "stereotypePresentations").first().and_then(|&k| {
-            let at = r.obj(k, "location").and_then(|l| r.point(l))?;
-            let moved = r.obj(k, "localMovement").and_then(|l| r.point(l)).unwrap_or_default();
-            Some(Point::new(
-                at.x + moved.x + g.shift.x - middle.x,
-                at.y + moved.y + g.shift.y - middle.y,
-            ))
-        });
+        let keyword = r.list(p, "stereotypePresentations").first().and_then(|&k| place(k, middle));
         // A binding's substitutions (`<T->int>`) take the place of a name.
         let binding = r.class(p) == "TemplateBindingPresentation";
         let own_keyword = matches!(

@@ -47,6 +47,15 @@ pub enum StreamError {
 
 type Result<T> = std::result::Result<T, StreamError>;
 
+/// The element type of an array class (`[I`, `[Ljava.lang.String;`). A class that is no array
+/// is a broken stream, not an array of objects.
+pub(crate) fn array_element(class_name: &str) -> Result<FieldType> {
+    match class_name.as_bytes() {
+        [b'[', code, ..] => FieldType::from_code(*code),
+        _ => Err(StreamError::BadFieldType(class_name.chars().next().unwrap_or('?'))),
+    }
+}
+
 /// Index of an object in [`Graph::objects`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ObjId(pub usize);
@@ -282,6 +291,11 @@ impl Graph {
                 .map(|(_, v)| v),
             _ => None,
         }
+    }
+
+    /// A `boolean` field, `None` when it is missing or of another type.
+    pub fn bool_field(&self, id: ObjId, name: &str) -> Option<bool> {
+        self.field(id, name).and_then(Value::as_bool)
     }
 
     /// All fields called `name`, from the object's own class upwards. Classes of a hierarchy
@@ -718,8 +732,7 @@ impl<'a> Reader<'a> {
             TC_ARRAY => {
                 let class = self.class_desc()?.ok_or(StreamError::BadTypeCode { code, at })?;
                 let id = self.new_object(Object::Array { class, items: Vec::new() });
-                let element = self.graph.class(class).name.as_bytes().get(1).copied();
-                let element = FieldType::from_code(element.unwrap_or(b'L'))?;
+                let element = array_element(&self.graph.class(class).name)?;
                 let len = usize::try_from(self.i32()?).map_err(|_| StreamError::Eof(self.pos))?;
                 let mut items = Vec::with_capacity(len.min(1 << 16));
                 for _ in 0..len {

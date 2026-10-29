@@ -169,8 +169,7 @@ impl Writer<'_> {
                 self.class_desc(Some(*class))?;
                 let handle = self.handle();
                 self.objects.insert(id, handle);
-                let element = graph.class(*class).name.as_bytes().get(1).copied();
-                let element = FieldType::from_code(element.unwrap_or(b'L'))?;
+                let element = super::array_element(&graph.class(*class).name)?;
                 self.i32(items.len() as i32);
                 for item in items {
                     self.typed(element, item)?;
