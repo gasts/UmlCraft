@@ -100,10 +100,11 @@ struct Structograms(Vec<Open>);
 impl Global for Structograms {}
 
 /// What structogram windows ask of the main window: to remember a saved file among the
-/// recent ones, and to quit (asking about its own unsaved changes first).
+/// recent ones, and to quit (asking about its own unsaved changes first). `quit` answers
+/// whether the main window was still there to do it.
 struct MainHooks {
     saved: Box<SavedHook>,
-    quit: Box<dyn Fn(&mut App)>,
+    quit: Box<dyn Fn(&mut App) -> bool>,
 }
 
 type SavedHook = dyn Fn(&Path, &mut App);
@@ -114,7 +115,7 @@ impl Global for MainHooks {}
 pub fn connect(
     cx: &mut App,
     saved: impl Fn(&Path, &mut App) + 'static,
-    quit: impl Fn(&mut App) + 'static,
+    quit: impl Fn(&mut App) -> bool + 'static,
 ) {
     cx.set_global(MainHooks { saved: Box::new(saved), quit: Box::new(quit) });
 }
@@ -125,11 +126,11 @@ fn saved(path: &Path, cx: &mut App) {
     }
 }
 
-/// Quits through the main window, or right away (after asking) when it is gone.
+/// Quits through the main window, or right away (after asking) when it is closed.
 fn quit(cx: &mut App) {
-    if cx.has_global::<MainHooks>() {
-        cx.update_global::<MainHooks, _>(|hooks, cx| (hooks.quit)(cx));
-    } else {
+    let handled = cx.has_global::<MainHooks>()
+        && cx.update_global::<MainHooks, _>(|hooks, cx| (hooks.quit)(cx));
+    if !handled {
         confirm_all(cx, Box::new(|cx| cx.quit()));
     }
 }

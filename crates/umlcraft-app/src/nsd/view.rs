@@ -162,7 +162,7 @@ impl NsdView {
     fn redraw(&mut self) {
         let metrics = umlcraft_nsd::Metrics::for_platform();
         self.layout = Layout::of(self.editor.diagram(), metrics);
-        self.svg = umlcraft_nsd::svg::render(self.editor.diagram(), metrics);
+        self.svg = umlcraft_nsd::svg::render_layout(self.editor.diagram(), &self.layout, metrics);
         let (w, h) = self.layout.size;
         self.size = ((w + 1) as f32, (h + 1) as f32);
         self.raster = None;
@@ -630,7 +630,14 @@ impl NsdView {
         let owner = edit::owner(seq)?;
         let branch = seq.last()?.checked_add_signed(step)?;
         let e = path::element(self.editor.diagram(), &owner)?;
-        (branch < e.branches.len()).then(|| {
+        // A case without default hides its last branch.
+        let shown = match e.kind {
+            ElementKind::Case if e.text().last().is_some_and(|l| l.trim() == "%") => {
+                e.branches.len() - 1
+            }
+            _ => e.branches.len(),
+        };
+        (branch < shown).then(|| {
             let mut s = owner;
             s.push(branch);
             self.first_in(s)
@@ -755,7 +762,7 @@ impl NsdView {
             .as_deref()
             .and_then(Path::parent)
             .map(PathBuf::from)
-            .or_else(dirs_home)
+            .or_else(crate::main_view::documents_dir)
             .unwrap_or_default();
         let rx = cx.prompt_for_new_path(&directory, Some(&suggested));
         cx.spawn_in(window, async move |this, cx| {
@@ -873,7 +880,7 @@ impl NsdView {
         );
         let suggested = format!("{stem}.{extension}");
         let directory = self.path.as_deref().and_then(Path::parent).map(PathBuf::from);
-        let directory = directory.or_else(dirs_home).unwrap_or_default();
+        let directory = directory.or_else(crate::main_view::documents_dir).unwrap_or_default();
         let rx = cx.prompt_for_new_path(&directory, Some(&suggested));
         let svg = self.svg.clone();
         cx.spawn_in(window, async move |_, cx| {
@@ -1117,11 +1124,6 @@ fn drops_somewhere(span: &Span, slot: &Slot) -> bool {
 
 fn rect(r: umlcraft_nsd::layout::Rect) -> [i32; 4] {
     [r.x, r.y, r.w, r.h]
-}
-
-/// The home folder, where file dialogs of new diagrams start.
-fn dirs_home() -> Option<PathBuf> {
-    std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from)
 }
 
 /// The SVG rasterized at `scale`, as GPUI takes images (BGRA, not premultiplied).
