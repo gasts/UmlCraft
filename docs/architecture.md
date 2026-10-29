@@ -514,6 +514,25 @@ writes, and none of its code is used.
   Structorizer; a new element is only inserted when its dialog is confirmed. The diagram stays
   a white sheet in the dark theme; the area around it follows the theme. The window has
   toolbars instead of menus, because on macOS the menu bar belongs to the whole app.
+- **From Java** (`umlcraft-nsd-java`): tree-sitter-java reads the file; `Source::methods`
+  lists methods and constructors with a body (nested types included, not classes inside
+  methods) with their signatures as written, `Source::diagram` builds one with the elements
+  of `umlcraft-nsd` (`edit::new_element`, so every rule of the editor holds). Texts are the
+  code's (conditions without outer parentheses, jumps without their `;`); `f(x);` and
+  `this.f(x);` are calls, other statements instructions. A for loop with a condition is one
+  for element whose attributes follow its text as Structorizer reads it (free text); without
+  one, and `while (true)`, it is an endless loop. `switch` becomes a case element: labels
+  sharing a body are joined, the default goes last (`%` without one), a case that runs on gets
+  the following statements copied, and a switch expression's values are assigned or returned
+  where the expression stood. Several catches become a case on the exception's type. Comments
+  go to the element of the next statement, or of the one they end on. What has no element is
+  kept as near as possible (`continue` and unreadable code as red, disabled instructions, a
+  `synchronized` body in place) and named in the `Report`. `tests/snapshots.rs` holds every
+  fixture method as a readable tree; `tests/structorizer_structure.rs` compares the nesting
+  with Structorizer's own import of the same files (with `UMLCRAFT_NSD_REFS`), the deliberate
+  differences listed in `tests/structorizer_deviations.txt`; the `nsd-import` example runs a
+  whole source tree. In the app, `nsd/java.rs` holds the menu command and the dialog that
+  picks methods; each opens unsaved, with the report in a bar at the bottom.
 - Where the texts in triangular heads sit (an alternative's condition, a case's
   discriminator) follows no rule we found; a fit to Structorizer's positions puts them within
   a few pixels. Lines are exact.

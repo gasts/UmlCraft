@@ -19,6 +19,12 @@ today.
   get and lose branches; undo and redo take every step back. Saved files open in Structorizer
   as they are, and a file saved unchanged stays byte for byte. The project stays open; `.nsd`
   files also open from the command line, the system and the recent files.
+- **Structograms from Java** (File › Structogram from Java file …): pick methods of a `.java`
+  file (grouped by class, with search); each opens as an unsaved structogram with the code's
+  texts: statements, calls of the class's own methods, if chains, every loop, `switch` in all
+  its forms (arrow cases and switch expressions included), jumps and `try` with its catches.
+  Comments in the method go to the element they belong to. What a structogram cannot show as
+  written (`continue`, labels, local classes …) is listed at the bottom of the window.
 
 ## 0.10.0 – 2026-10-30
 
