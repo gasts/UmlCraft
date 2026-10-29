@@ -6673,6 +6673,7 @@ dependencies = [
  "anyhow",
  "embed-resource",
  "gpui-kit",
+ "image",
  "resvg 0.46.0",
  "rust-i18n",
  "serde",
@@ -6683,6 +6684,7 @@ dependencies = [
  "umlcraft-format",
  "umlcraft-model",
  "umlcraft-notation",
+ "umlcraft-nsd",
  "umlcraft-reverse",
 ]
 
@@ -6745,7 +6747,7 @@ dependencies = [
 
 [[package]]
 name = "umlcraft-nsd"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "pretty_assertions",
  "quick-xml",

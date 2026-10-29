@@ -13,6 +13,7 @@ menu:
   file: Datei
   new: Neues Projekt
   open: Öffnen …
+  open_structogram: Struktogramm öffnen …
   import_astah: Astah-Projekt importieren …
   export: Exportieren
   export_svg: Diagramm als SVG …
@@ -268,6 +269,7 @@ dialog:
   discard: Verwerfen
   cancel: Abbrechen
   ok: OK
+  structogram_open_failed: Das Struktogramm konnte nicht geöffnet werden.
   open_failed: Das Projekt konnte nicht geöffnet werden.
   save_failed: Das Projekt konnte nicht gespeichert werden.
   import_failed: Das Astah-Projekt konnte nicht importiert werden.
@@ -474,6 +476,13 @@ kind:
   link: Link
   interactionUse: Interaktionsverweis
 error:
+  nsd_xml: "Zeile %{line}, Spalte %{column}: kein gültiges XML (%{message})."
+  nsd_not_structorizer: Die Datei ist kein Struktogramm von Structorizer.
+  nsd_unexpected_element: "Zeile %{line}, Spalte %{column}: unbekanntes Element <%{name}> in <%{parent}>."
+  nsd_wrong_branches: "Zeile %{line}, Spalte %{column}: <%{element}> hat nicht die Zweige, die Structorizer schreibt."
+  nsd_unexpected_text: "Zeile %{line}, Spalte %{column}: unerwarteter Text in <%{parent}>."
+  nsd_encoding: "Die Datei ist als %{encoding} kodiert; Struktogramme sind UTF-8."
+  nsd_truncated: "Die Datei endet mitten in <%{element}>."
   named: "„%{name}“"
   unnamed: ein Element
   not_found: "%{a} gibt es nicht."

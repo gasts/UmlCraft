@@ -327,9 +327,54 @@ impl MainView {
         );
     }
 
+    fn open_structogram(
+        &mut self,
+        _: &OpenStructogram,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let rx = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: true,
+            prompt: None,
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(paths))) = rx.await else { return };
+            this.update_in(cx, |this, window, cx| {
+                for path in paths {
+                    this.show_structogram(path, window, cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Opens a structogram in a window of its own (the project stays as it is) and puts it
+    /// among the recent files.
+    fn show_structogram(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        let path = std::path::absolute(&path).unwrap_or(path);
+        match crate::nsd::open(&path, cx) {
+            Ok(()) => self.remember(&path, cx),
+            Err(detail) => {
+                // A recent file that no longer opens leaves the list.
+                if self.settings.remove_recent(&path) {
+                    self.settings.save();
+                    self.reload_menus(cx);
+                }
+                self.show_error(&crate::nsd::open_failed(), &detail, window, cx)
+            }
+        }
+    }
+
     /// Opens `path` once unsaved changes are saved or discarded, e.g. for a file the system
-    /// hands over.
+    /// hands over. Structograms open in a window of their own and need no such question.
     pub fn ask_to_open(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        if crate::nsd::is_structogram(&path) {
+            self.show_structogram(path, window, cx);
+            return;
+        }
         self.confirm_discard(
             window,
             cx,
@@ -339,6 +384,10 @@ impl MainView {
 
     fn open_recent(&mut self, action: &OpenRecent, window: &mut Window, cx: &mut Context<Self>) {
         let Some(path) = self.settings.recent.get(action.index).cloned() else { return };
+        if crate::nsd::is_structogram(&path) {
+            self.show_structogram(path, window, cx);
+            return;
+        }
         self.confirm_discard(
             window,
             cx,
@@ -346,10 +395,14 @@ impl MainView {
         );
     }
 
-    /// Opens a project, or imports an `.asta` file.
+    /// Opens a project, imports an `.asta` file or shows a structogram.
     pub fn open(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         // Relative paths (from the command line) would not open from elsewhere later.
         let path = std::path::absolute(&path).unwrap_or(path);
+        if crate::nsd::is_structogram(&path) {
+            self.show_structogram(path, window, cx);
+            return;
+        }
         if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("asta")) {
             self.import(&path, window, cx);
             return;
@@ -1421,6 +1474,7 @@ fn menus(settings: &Settings) -> Vec<Menu> {
     let mut file = vec![
         menu_item("menu.new", NewProject),
         menu_item("menu.open", OpenProject),
+        menu_item("menu.open_structogram", OpenStructogram),
         MenuItem::submenu(Menu::new(t!("menu.recent").to_string()).items(recent)),
         menu_item("menu.import_astah", ImportAstah),
     ];
@@ -1633,6 +1687,7 @@ impl Render for MainView {
             .text_color(theme.foreground)
             .on_action(cx.listener(Self::new_project))
             .on_action(cx.listener(Self::open_project))
+            .on_action(cx.listener(Self::open_structogram))
             .on_action(cx.listener(Self::import_astah))
             .on_action(cx.listener(Self::export_astah))
             .on_action(cx.listener(Self::import_source))

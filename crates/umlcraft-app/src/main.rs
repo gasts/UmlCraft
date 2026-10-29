@@ -4,6 +4,7 @@ mod canvas;
 mod errors;
 mod labels;
 mod main_view;
+mod nsd;
 mod png;
 mod properties;
 mod settings;
@@ -28,6 +29,7 @@ actions!(
     [
         NewProject,
         OpenProject,
+        OpenStructogram,
         ImportAstah,
         ExportAstah,
         ExportSvg,
