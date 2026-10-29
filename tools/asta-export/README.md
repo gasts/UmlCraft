@@ -13,12 +13,12 @@ creating projects from outside.
 Astah's bundled runtime includes the Java compiler, so the tool runs in source-file mode:
 
 ```bash
-"C:\Program Files\astah-professional\jre\bin\java" -Xshare:off -Djava.awt.headless=true -cp "C:\Program Files\astah-professional\astah-api.jar;C:\Program Files\astah-professional\astah-pro.jar" AstaExport.java project.ucraft layout.json out.asta report.txt
+"C:\Program Files\astah-professional\jre\bin\java" -Xshare:off -Xmx1024m -Djava.awt.headless=true -cp "C:\Program Files\astah-professional\astah-api.jar;C:\Program Files\astah-professional\astah-pro.jar" AstaExport.java project.ucraft layout.json out.asta report.txt
 ```
 
 `layout.json` is written by `umlcraft-asta-export` (see `layout.rs`): node bounds as UmlCraft
-draws them, and the message rows and fragment frames of sequence diagrams, which UmlCraft
-derives instead of storing. Without an entry for a diagram, the tool falls back to the stored
+draws them and where it puts labels, which UmlCraft derives instead of storing. Sequence
+diagrams store all of their geometry and need no entry. Without an entry for a diagram, the tool falls back to the stored
 bounds. `report.txt` gets one line per finding, tab-separated:
 
 - `dropped <key> <count>`: something the API cannot express, e.g. `query`, `extendCondition`,

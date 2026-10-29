@@ -111,6 +111,18 @@ public final class AstaExport {
         return new Json(new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8)).document();
     }
 
+    /// Reports a failure that is not one element's, for the first 20.
+    private void problem(String what, Exception e) {
+        if (problems.size() < 20) {
+            problems.add(oneLine(what + ": " + describe(e)));
+        }
+    }
+
+    /// A report line holds one finding: names with line breaks or tabs must not split it.
+    private static String oneLine(String text) {
+        return text.replaceAll("\\s+", " ");
+    }
+
     private static String describe(Throwable t) {
         String message = t.getMessage() == null ? "" : t.getMessage();
         String where = t.getStackTrace().length > 0 ? " (" + t.getStackTrace()[0] + ")" : "";
@@ -192,16 +204,22 @@ public final class AstaExport {
             }
             // Ending the transaction, Astah moves the lines between regions next to what the
             // regions hold and shifts the regions behind them; a second one puts things back.
+            // A failure here costs only the positions; the project of the first is saved.
             if (!replaced.isEmpty()) {
                 TransactionManager.beginTransaction();
                 try {
                     for (Map.Entry<INodePresentation, Map<String, Object>> e : replaced.entrySet()) {
-                        e.getKey().setLocation(new Point2D.Double(num(e.getValue(), "x"), num(e.getValue(), "y")));
+                        try {
+                            e.getKey().setLocation(new Point2D.Double(num(e.getValue(), "x"), num(e.getValue(), "y")));
+                        } catch (Exception x) {
+                            drop("presentation");
+                        }
                     }
                     TransactionManager.endTransaction();
-                } catch (Throwable t) {
+                } catch (Exception t) {
                     TransactionManager.abortTransaction();
-                    throw t;
+                    drop("presentation");
+                    problem("positions of moved shapes", t);
                 }
             }
             accessor.save();
@@ -249,10 +267,15 @@ public final class AstaExport {
         // Astah's interaction uses refer to sequence diagrams.
         for (Map.Entry<IInteractionUse, String> r : references.entrySet()) {
             ISequenceDiagram target = sequenceDiagrams.get(r.getValue());
-            if (target != null) {
-                r.getKey().setSequenceDiagram(target);
-            } else {
+            if (target == null) {
                 drop("interactionUseReference");
+                continue;
+            }
+            try {
+                r.getKey().setSequenceDiagram(target);
+            } catch (Exception x) {
+                drop("interactionUseReference");
+                problem("interaction use \"" + r.getKey().getName() + "\"", x);
             }
         }
         for (Map<String, Object> e : elements.values()) {
@@ -885,7 +908,7 @@ public final class AstaExport {
             String type = type(elements.get(element));
             INodePresentation node;
             if ("comment".equals(type)) {
-                node = note(editor, element, at);
+                node = (INodePresentation) attempt(element, () -> note(editor, element, at));
             } else if ("systemBoundary".equals(type)) {
                 attempt(element, () -> systemBoundary(editor, element, r, (Map<String, Object>) p.get("style")));
                 continue;
@@ -900,18 +923,23 @@ public final class AstaExport {
             if (node == null) {
                 continue;
             }
-            // Switching the notation resets the size, so the style goes first.
-            style(node, p, type);
-            // Instances get their place when they are created and cannot be moved afterwards.
-            if (!"instance".equals(type)) {
-                node.setLocation(at);
-            }
-            resize(node, num(r, "width"), num(r, "height"));
-            // Boxes sized by their content stay so in Astah, which sizes them by the same rule.
-            if (p.get("style") instanceof Map<?, ?> s && Boolean.TRUE.equals(s.get("autoSize"))
-                    && node.getProperties().containsKey("auto_resize")) {
-                node.setProperty("auto_resize", "true");
-            }
+            // The shape stands; a failure in its looks costs only them, not the diagram.
+            INodePresentation shape = node;
+            attempt(element, () -> {
+                // Switching the notation resets the size, so the style goes first.
+                style(shape, p, type);
+                // Instances get their place when they are created and cannot be moved afterwards.
+                if (!"instance".equals(type)) {
+                    shape.setLocation(at);
+                }
+                resize(shape, num(r, "width"), num(r, "height"));
+                // Boxes sized by their content stay so in Astah, which sizes them by the same rule.
+                if (p.get("style") instanceof Map<?, ?> s && Boolean.TRUE.equals(s.get("autoSize"))
+                        && shape.getProperties().containsKey("auto_resize")) {
+                    shape.setProperty("auto_resize", "true");
+                }
+                return null;
+            });
             shown.put((String) p.get("id"), node);
         }
         edges(editor, diagram, presentations, shown);
@@ -990,10 +1018,13 @@ public final class AstaExport {
             partitions(diagram, element, lane, editor, presentations, shown);
         }
         if (superLane == null && previous != null) {
-            attempt(owner, () -> {
+            try {
                 placeLanes(diagram, lanes, shown);
-                return null;
-            });
+            } catch (Exception x) {
+                // The partitions stand, only not where they were.
+                drop("partition");
+                problem("partitions of \"" + name(elements.get(owner)) + "\"", x);
+            }
         }
     }
 
@@ -1418,8 +1449,8 @@ public final class AstaExport {
     }
 
     private INodePresentation note(BasicDiagramEditor editor, String comment, Point2D at) throws Exception {
-        shownComments.add(comment);
         INodePresentation note = editor.createNote(text(elements.get(comment), "body"), at);
+        shownComments.add(comment);
         common(comment, note.getModel(), Set.of());
         return note;
     }
@@ -1465,6 +1496,8 @@ public final class AstaExport {
         IPresentation source = shown.get(p.get("source"));
         IPresentation target = shown.get(p.get("target"));
         if (source == null || target == null) {
+            // An end that was not drawn: the line is lost with it.
+            drop("presentation");
             return;
         }
         Object element = p.get("element");
@@ -1477,6 +1510,7 @@ public final class AstaExport {
                 } else if (isNote(target)) {
                     link = editor.createNoteAnchor((INodePresentation) target, source);
                 } else {
+                    drop("presentation");
                     return null;
                 }
             } else if (editor instanceof ActivityDiagramEditor ad
@@ -1498,6 +1532,7 @@ public final class AstaExport {
                     && source instanceof INodePresentation s && target instanceof INodePresentation t) {
                 link = sd.createLinkPresentation(model, s, t);
             } else {
+                drop("presentation");
                 return null;
             }
             // The line style goes first: Astah drops the waypoints of a line set to "line" and
@@ -2208,7 +2243,7 @@ public final class AstaExport {
             drop(what);
             if (problems.size() < 20) {
                 String name = element == null ? "" : " \"" + name(element) + "\"";
-                problems.add(what + name + ": " + describe(e));
+                problems.add(oneLine(what + name + ": " + describe(e)));
             }
             return null;
         }
@@ -2296,7 +2331,7 @@ public final class AstaExport {
         } catch (InvalidEditingException x) {
             drop("details");
             if (problems.size() < 20) {
-                problems.add(type(e) + " \"" + name(e) + "\": " + describe(x));
+                problems.add(oneLine(type(e) + " \"" + name(e) + "\": " + describe(x)));
             }
         }
     }
@@ -2455,6 +2490,9 @@ public final class AstaExport {
                     out.append(c);
                     continue;
                 }
+                if (i >= s.length()) {
+                    throw error("unterminated string");
+                }
                 char escape = s.charAt(i++);
                 switch (escape) {
                     case 'n' -> out.append('\n');
@@ -2463,6 +2501,9 @@ public final class AstaExport {
                     case 'b' -> out.append('\b');
                     case 'f' -> out.append('\f');
                     case 'u' -> {
+                        if (i + 4 > s.length()) {
+                            throw error("unterminated string");
+                        }
                         out.append((char) Integer.parseInt(s.substring(i, i + 4), 16));
                         i += 4;
                     }

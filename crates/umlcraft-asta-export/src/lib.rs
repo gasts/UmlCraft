@@ -9,12 +9,12 @@
 mod layout;
 
 use std::collections::BTreeMap;
-use std::ffi::OsString;
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use thiserror::Error;
 use umlcraft_model::Model;
@@ -28,6 +28,9 @@ const TOOL_FILE: &str = "AstaExport.java";
 const EDITION_JARS: &[&str] = &["astah-pro.jar", "astah-uml.jar", "astah-sysml.jar"];
 /// Install folder names under "Program Files".
 const INSTALL_DIRS: &[&str] = &["astah-professional", "astah-uml", "astah-sysml"];
+/// How long the export tool may run. Astah can hang on a modal dialog it cannot show, and the
+/// export then has to end rather than block every further export.
+const TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Debug, Error)]
 pub enum ExportError {
@@ -42,6 +45,8 @@ pub enum ExportError {
     /// Astah's license check refused saving; Astah then tries to open its license page.
     #[error("Astah refused to save the project: its license check failed")]
     License,
+    #[error("the export tool did not finish within {minutes} minutes")]
+    TimedOut { minutes: u64 },
 }
 
 /// What could not be carried over. `dropped` counts by kind, with the keys the tool reports
@@ -67,10 +72,11 @@ pub struct Astah {
 }
 
 impl Astah {
-    /// The installation named by `ASTAH_HOME`, else the first one found in the usual places.
+    /// The installation named by `ASTAH_HOME`, else the first one found in the usual places
+    /// (Windows' program folders).
     pub fn find() -> Option<Self> {
-        if let Some(home) = std::env::var_os("ASTAH_HOME") {
-            return Self::at(Path::new(&home));
+        if let Some(found) = std::env::var_os("ASTAH_HOME").and_then(|h| Self::at(Path::new(&h))) {
+            return Some(found);
         }
         let mut roots = Vec::new();
         for var in ["ProgramFiles", "ProgramW6432"] {
@@ -93,7 +99,8 @@ impl Astah {
         }
         let bundled =
             home.join("jre").join("bin").join(if cfg!(windows) { "java.exe" } else { "java" });
-        // Without a bundled runtime, a Java 21 or newer on the PATH will do.
+        // Without a bundled runtime, a Java 21 or newer on the PATH will do; if there is none,
+        // `ExportError::Launch` names `java` as what could not be started.
         let java = if bundled.is_file() { bundled } else { PathBuf::from("java") };
         Some(Self { home: home.to_path_buf(), java, jars: vec![api, edition] })
     }
@@ -141,28 +148,21 @@ impl Export {
             .arg("-Djava.awt.headless=true")
             .arg("-cp")
             .arg(classpath)
-            .arg(file(TOOL_FILE))
-            .args([file("project.ucraft"), file("layout.json"), file("out.asta")])
-            .arg(file("report.txt"));
+            // Bare names: the tool runs in the folder, and Windows' `java` decodes arguments
+            // in the ANSI code page, which a user's temp path may not fit.
+            .args([TOOL_FILE, "project.ucraft", "layout.json", "out.asta", "report.txt"]);
         hide_console(&mut command);
-        let output = command
-            .output()
+        command.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        let child = command
+            .spawn()
             .map_err(|source| ExportError::Launch { java: astah.java.clone(), source })?;
+        let output = wait_with_deadline(child, TIMEOUT)?;
 
         let report = fs::read_to_string(file("report.txt")).ok();
-        let mut result = Report::default();
-        for line in report.iter().flat_map(|r| r.lines()) {
-            let Some((kind, rest)) = line.split_once('\t') else { continue };
-            match kind {
-                "error" => return Err(ExportError::Astah(rest.to_owned())),
-                "dropped" => {
-                    let (key, count) = rest.split_once('\t').unwrap_or((rest, "1"));
-                    result.dropped.insert(key.to_owned(), count.parse().unwrap_or(1));
-                }
-                "problem" => result.problems.push(rest.to_owned()),
-                _ => {}
-            }
-        }
+        let result = match &report {
+            Some(text) => parse_report(text)?,
+            None => Report::default(),
+        };
         if report.is_none() || !output.status.success() {
             let mut text = String::from_utf8_lossy(&output.stderr).into_owned();
             text.push_str(&String::from_utf8_lossy(&output.stdout));
@@ -177,7 +177,16 @@ impl Export {
                 output: tail(&text),
             });
         }
-        fs::copy(file("out.asta"), target)?;
+        // Next to the target first, then over it: a failed copy leaves the old file whole.
+        let mut partial = target.as_os_str().to_owned();
+        partial.push(".tmp");
+        let partial = PathBuf::from(partial);
+        let copied =
+            fs::copy(file("out.asta"), &partial).and_then(|_| fs::rename(&partial, target));
+        if let Err(e) = copied {
+            fs::remove_file(&partial).ok();
+            return Err(e.into());
+        }
         Ok(result)
     }
 }
@@ -185,6 +194,61 @@ impl Export {
 /// Exports `model` to `target` in one go.
 pub fn export(astah: &Astah, model: &Model, target: &Path) -> Result<Report, ExportError> {
     Export::new(model).run(astah, target)
+}
+
+/// The tool's report: one line per finding, `kind<TAB>details`.
+fn parse_report(text: &str) -> Result<Report, ExportError> {
+    let mut result = Report::default();
+    for line in text.lines() {
+        let Some((kind, rest)) = line.split_once('\t') else { continue };
+        match kind {
+            "error" => return Err(ExportError::Astah(rest.to_owned())),
+            "dropped" => {
+                let (key, count) = rest.split_once('\t').unwrap_or((rest, "1"));
+                *result.dropped.entry(key.to_owned()).or_default() += count.parse().unwrap_or(1);
+            }
+            "problem" => result.problems.push(rest.to_owned()),
+            _ => {}
+        }
+    }
+    Ok(result)
+}
+
+struct Output {
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+/// Waits for `child`, reading its output on threads so that a full pipe cannot stall it, and
+/// kills it once `timeout` has passed.
+fn wait_with_deadline(mut child: Child, timeout: Duration) -> Result<Output, ExportError> {
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        thread::spawn(move || {
+            let mut bytes = Vec::new();
+            if let Some(mut pipe) = pipe {
+                pipe.read_to_end(&mut bytes).ok();
+            }
+            bytes
+        })
+    };
+    let stdout = drain(child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let stderr = drain(child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let start = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if start.elapsed() >= timeout {
+            child.kill().ok();
+            child.wait().ok();
+            return Err(ExportError::TimedOut { minutes: timeout.as_secs() / 60 });
+        }
+        thread::sleep(Duration::from_millis(100));
+    };
+    let stdout = stdout.join().unwrap_or_default();
+    let stderr = stderr.join().unwrap_or_default();
+    Ok(Output { status, stdout, stderr })
 }
 
 /// The last lines of the tool's output, enough to see what went wrong.
@@ -203,17 +267,33 @@ fn hide_console(command: &mut Command) {
 #[cfg(not(windows))]
 fn hide_console(_: &mut Command) {}
 
-/// A folder of its own for one run, removed afterwards.
+/// A folder of its own for one run, removed afterwards. Its name is random and it must not
+/// exist yet, so that nobody else can prepare it with a tool of their own for Astah's Java to
+/// run; on Unix only the user may enter it.
 struct TempDir(PathBuf);
 
 impl TempDir {
     fn new() -> io::Result<Self> {
-        static COUNTER: AtomicU32 = AtomicU32::new(0);
-        let mut name = OsString::from("umlcraft-asta-export-");
-        name.push(format!("{}-{}", std::process::id(), COUNTER.fetch_add(1, Ordering::Relaxed)));
-        let path = std::env::temp_dir().join(name);
-        fs::create_dir_all(&path)?;
-        Ok(Self(path))
+        let mut last = None;
+        for _ in 0..8 {
+            let path = std::env::temp_dir()
+                .join(format!("umlcraft-asta-export-{}", umlcraft_model::Id::generate()));
+            #[cfg(unix)]
+            let builder = {
+                use std::os::unix::fs::DirBuilderExt;
+                let mut builder = fs::DirBuilder::new();
+                builder.mode(0o700);
+                builder
+            };
+            #[cfg(not(unix))]
+            let builder = fs::DirBuilder::new();
+            match builder.create(&path) {
+                Ok(()) => return Ok(Self(path)),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => last = Some(e),
+                Err(e) => return Err(e),
+            }
+        }
+        Err(last.expect("tried at least once"))
     }
 }
 
@@ -252,6 +332,47 @@ mod tests {
         assert!(export.project.contains("\"shape\": \"lifeline\""), "{}", export.project);
         assert!(export.project.contains("\"shape\": \"activation\""));
         assert!(export.project.contains("\"shape\": \"message\""));
+    }
+
+    #[test]
+    fn reports_are_read_line_by_line() {
+        let report =
+            parse_report("dropped\tquery\t2\nproblem\tno owner\ndropped\tquery\nnoise\n").unwrap();
+        assert_eq!(report.dropped.get("query"), Some(&3));
+        assert_eq!(report.problems, ["no owner"]);
+        assert!(parse_report("").unwrap().is_complete());
+        let error = parse_report("dropped\tx\nerror\tcannot save\n").unwrap_err();
+        assert!(matches!(error, ExportError::Astah(text) if text == "cannot save"));
+    }
+
+    #[test]
+    fn temp_folders_are_new_and_random() {
+        let a = TempDir::new().unwrap();
+        let b = TempDir::new().unwrap();
+        assert_ne!(a.0, b.0);
+        assert!(a.0.is_dir());
+        let path = a.0.clone();
+        drop(a);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_hanging_tool_is_ended() {
+        let mut command = if cfg!(windows) {
+            let mut c = Command::new("powershell");
+            c.args(["-NoProfile", "-Command", "Start-Sleep 30"]);
+            c
+        } else {
+            let mut c = Command::new("sleep");
+            c.arg("30");
+            c
+        };
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let Ok(child) = command.spawn() else { return };
+        let start = Instant::now();
+        let result = wait_with_deadline(child, Duration::from_millis(300));
+        assert!(matches!(result, Err(ExportError::TimedOut { .. })));
+        assert!(start.elapsed() < Duration::from_secs(10));
     }
 
     #[test]

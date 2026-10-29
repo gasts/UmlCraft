@@ -607,10 +607,17 @@ fn interactions(model: &Model) -> Vec<String> {
     blocks.concat()
 }
 
+/// Reports a test that cannot run here. With `UMLCRAFT_REQUIRE_ASTAH` set, as on a machine that
+/// has Astah, a skip fails instead, so a missing installation cannot pass for a green run.
+fn skip(reason: &str) {
+    assert!(std::env::var_os("UMLCRAFT_REQUIRE_ASTAH").is_none(), "not skipped: {reason}");
+    eprintln!("skipped: {reason}");
+}
+
 /// Exports `model` and imports the result again.
 fn through_astah(model: &Model, name: &str) -> Option<Model> {
     let Some(astah) = Astah::find() else {
-        eprintln!("skipped: no Astah installation with the API found");
+        skip("no Astah installation with the API found");
         return None;
     };
     let dir = std::env::temp_dir().join(format!("umlcraft-{name}-{}", std::process::id()));
@@ -618,7 +625,7 @@ fn through_astah(model: &Model, name: &str) -> Option<Model> {
     let file = dir.join(format!("{name}.asta"));
     let report = match umlcraft_asta_export::export(&astah, model, &file) {
         Err(umlcraft_asta_export::ExportError::License) => {
-            eprintln!("skipped: Astah's license check refused saving");
+            skip("Astah's license check refused saving");
             std::fs::remove_dir_all(&dir).ok();
             return None;
         }

@@ -65,7 +65,7 @@ pub(crate) fn layout(model: &Model, measure: &dyn TextMeasure) -> Layout {
                     } else {
                         (edge.points[n - 2].x + edge.points[n - 1].x) / 2.0
                     };
-                    let width = measure.rounded_width(text, 12.0, false).min(200.0);
+                    let width = measure.rounded_width(text, scene::FONT_SIZE, false).min(200.0);
                     label_defaults.insert(p.id, middle - width / 2.0);
                 }
                 _ => {}
