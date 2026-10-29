@@ -8,9 +8,11 @@
 pub mod model;
 pub mod read;
 pub mod text;
+pub mod write;
 
 pub use model::{
     Attr, Attrs, Branches, Color, Diagram, Element, ElementKind, Lines, RootKind, RootStyle,
     Sequence,
 };
 pub use read::{ReadError, read};
+pub use write::write;
