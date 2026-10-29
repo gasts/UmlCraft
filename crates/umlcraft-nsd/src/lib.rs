@@ -6,12 +6,14 @@
 //! the files it writes; Structorizer is GPL-licensed and none of its code is used here.
 
 pub mod create;
+pub mod metrics;
 pub mod model;
 pub mod read;
 pub mod text;
 pub mod write;
 
 pub use create::{ForLoop, Provenance, STRUCTORIZER_VERSION, lines};
+pub use metrics::Metrics;
 pub use model::{
     Attr, Attrs, Branches, Color, Diagram, Element, ElementKind, Lines, RootKind, RootStyle,
     Sequence,
