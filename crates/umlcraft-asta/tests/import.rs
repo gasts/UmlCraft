@@ -8,14 +8,25 @@ use umlcraft_model::{
     PseudostateKind, Shape, TransitionProps, TypeRef,
 };
 
-const ASTAH: &str = r"C:\Program Files\astah-professional";
+/// Astah's install folder: `ASTAH_HOME`, else where Astah Professional installs on Windows.
+fn astah_home() -> PathBuf {
+    std::env::var_os("ASTAH_HOME")
+        .map_or_else(|| PathBuf::from(r"C:\Program Files\astah-professional"), PathBuf::from)
+}
+
+/// Reports a test that cannot run here. With `UMLCRAFT_REQUIRE_ASTAH` set, as on a machine that
+/// has Astah, a skip fails instead, so a missing installation cannot pass for a green run.
+fn skip(reason: &str) {
+    assert!(std::env::var_os("UMLCRAFT_REQUIRE_ASTAH").is_none(), "not skipped: {reason}");
+    eprintln!("skipped: {reason}");
+}
 
 fn astah_file(relative: &str) -> Option<PathBuf> {
-    let path = Path::new(ASTAH).join(relative);
+    let path = astah_home().join(relative);
     if path.exists() {
         Some(path)
     } else {
-        eprintln!("skipped: {} not found", path.display());
+        skip(&format!("{} not found", path.display()));
         None
     }
 }
@@ -557,4 +568,32 @@ fn sample_instances_hide_names_types_and_slots() {
         .map(|(d, n)| model.view(d).unwrap().get(n).unwrap().style.hide_attributes)
         .collect();
     assert!(!objects.is_empty() && objects.iter().all(|&hidden| hidden), "{objects:?}");
+}
+
+/// Every sample that ships with Astah: what UmlCraft knows is placed in full, with all shapes.
+#[test]
+fn known_elements_and_their_shapes_are_never_lost() {
+    fn asta_files(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                asta_files(&path, out);
+            } else if path.extension().is_some_and(|e| e == "asta") {
+                out.push(path);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    asta_files(&astah_home(), &mut files);
+    if files.is_empty() {
+        skip(&format!("no samples in {}", astah_home().display()));
+        return;
+    }
+    for path in files {
+        let imported = umlcraft_asta::import(&path).unwrap();
+        let name = path.display();
+        assert!(imported.failed.is_empty(), "{name}: {:?}", imported.failed);
+        assert_eq!(imported.lost_presentations, 0, "{name}");
+    }
 }

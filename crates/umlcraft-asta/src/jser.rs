@@ -37,6 +37,10 @@ pub enum StreamError {
     Externalizable(String),
     #[error("object graph nested too deeply")]
     TooDeep,
+    #[error("class {0} is its own superclass")]
+    ClassCycle(String),
+    #[error("class {0} has too many superclasses")]
+    ClassChainTooLong(String),
     #[error("cannot write {0}")]
     Unwritable(&'static str),
 }
@@ -550,6 +554,10 @@ const VERSION: u16 = 5;
 /// Deeper object graphs are rejected instead of overflowing the stack.
 const MAX_DEPTH: usize = 20_000;
 
+/// Longest superclass chain accepted. Astah's model classes have about a dozen ancestors; the
+/// limit keeps every instance from carrying thousands of class records.
+const MAX_CLASS_CHAIN: usize = 64;
+
 /// What a wire handle stands for.
 #[derive(Clone, Copy)]
 enum Handle {
@@ -624,10 +632,12 @@ impl<'a> Reader<'a> {
         Ok(decode_modified_utf8(self.take(len)?))
     }
 
-    fn handle(&mut self) -> Result<Handle> {
+    /// A wire handle, and what it stands for.
+    fn handle(&mut self) -> Result<(u32, Handle)> {
         let raw = self.i32()? as u32;
         let index = raw.checked_sub(BASE_HANDLE).ok_or(StreamError::BadHandle(raw))?;
-        self.handles.get(index as usize).copied().ok_or(StreamError::BadHandle(raw))
+        let handle = self.handles.get(index as usize).copied();
+        Ok((raw, handle.ok_or(StreamError::BadHandle(raw))?))
     }
 
     fn new_class(&mut self, desc: ClassDesc) -> ClassId {
@@ -693,8 +703,8 @@ impl<'a> Reader<'a> {
         let id = match code {
             TC_NULL => return Ok(Value::Null),
             TC_REFERENCE => match self.handle()? {
-                Handle::Object(id) => id,
-                Handle::Class(_) => return Err(StreamError::WrongHandle(0, "object")),
+                (_, Handle::Object(id)) => id,
+                (raw, Handle::Class(_)) => return Err(StreamError::WrongHandle(raw, "object")),
             },
             TC_STRING => {
                 let s = self.utf()?;
@@ -788,14 +798,45 @@ impl<'a> Reader<'a> {
         Ok(id)
     }
 
-    /// A class description, a reference to one, or `null`.
+    /// A class description, a reference to one, or `null`. Nested descriptions (superclasses)
+    /// count toward [`MAX_DEPTH`] like nested values.
     fn class_desc(&mut self) -> Result<Option<ClassId>> {
+        self.depth += 1;
+        if self.depth > MAX_DEPTH {
+            return Err(StreamError::TooDeep);
+        }
+        let result = self.class_desc_inner();
+        self.depth -= 1;
+        result
+    }
+
+    /// Sets the superclass of `id`, rejecting a chain that leads back to `id` or is longer than
+    /// [`MAX_CLASS_CHAIN`]. Every chain is checked when it is built, so walking it later ends.
+    fn set_super_class(&mut self, id: ClassId, super_class: Option<ClassId>) -> Result<()> {
+        let mut current = super_class;
+        let mut length = 1;
+        while let Some(c) = current {
+            let name = || self.graph.class(id).name.clone();
+            if c == id {
+                return Err(StreamError::ClassCycle(name()));
+            }
+            length += 1;
+            if length > MAX_CLASS_CHAIN {
+                return Err(StreamError::ClassChainTooLong(name()));
+            }
+            current = self.graph.class(c).super_class;
+        }
+        self.graph.classes[id.0].super_class = super_class;
+        Ok(())
+    }
+
+    fn class_desc_inner(&mut self) -> Result<Option<ClassId>> {
         let at = self.pos;
         match self.u8()? {
             TC_NULL => Ok(None),
             TC_REFERENCE => match self.handle()? {
-                Handle::Class(id) => Ok(Some(id)),
-                Handle::Object(_) => Err(StreamError::WrongHandle(0, "class description")),
+                (_, Handle::Class(id)) => Ok(Some(id)),
+                (raw, Handle::Object(_)) => Err(StreamError::WrongHandle(raw, "class description")),
             },
             TC_CLASSDESC => {
                 let name = self.utf()?;
@@ -819,7 +860,7 @@ impl<'a> Reader<'a> {
                 class.flags = flags;
                 class.fields = fields;
                 class.annotation = annotation;
-                class.super_class = super_class;
+                self.set_super_class(id, super_class)?;
                 Ok(Some(id))
             }
             TC_PROXYCLASSDESC => {
@@ -834,7 +875,7 @@ impl<'a> Reader<'a> {
                 let class = &mut self.graph.classes[id.0];
                 class.interfaces = Some(interfaces);
                 class.annotation = annotation;
-                class.super_class = super_class;
+                self.set_super_class(id, super_class)?;
                 Ok(Some(id))
             }
             code => Err(StreamError::BadTypeCode { code, at }),
@@ -907,5 +948,130 @@ mod tests {
         let item = a.value().and_then(Value::as_object).unwrap();
         assert_eq!(graph.string(item), Some("a"));
         assert_eq!(write(&graph, &[]).unwrap(), bytes);
+    }
+
+    /// The start of a serializable class description named `name` without fields.
+    fn class_desc_head(bytes: &mut Vec<u8>, name: &[u8]) {
+        bytes.push(TC_CLASSDESC);
+        bytes.extend((name.len() as u16).to_be_bytes());
+        bytes.extend(name);
+        bytes.extend(1u64.to_be_bytes());
+        bytes.push(SC_SERIALIZABLE);
+        bytes.extend(0u16.to_be_bytes());
+        bytes.push(TC_ENDBLOCKDATA);
+    }
+
+    #[test]
+    fn a_class_that_is_its_own_superclass_is_rejected() {
+        let mut bytes = vec![0xAC, 0xED, 0x00, 0x05, TC_OBJECT];
+        class_desc_head(&mut bytes, b"A");
+        bytes.push(TC_REFERENCE);
+        bytes.extend(BASE_HANDLE.to_be_bytes());
+        assert!(matches!(parse(&bytes, 0), Err(StreamError::ClassCycle(name)) if name == "A"));
+    }
+
+    #[test]
+    fn long_superclass_chains_are_rejected() {
+        let mut bytes = vec![0xAC, 0xED, 0x00, 0x05, TC_OBJECT];
+        for _ in 0..MAX_CLASS_CHAIN + 1 {
+            class_desc_head(&mut bytes, b"C");
+        }
+        bytes.push(TC_NULL);
+        assert!(matches!(parse(&bytes, 0), Err(StreamError::ClassChainTooLong(_))));
+    }
+
+    #[test]
+    fn deeply_nested_class_descriptions_are_rejected() {
+        // Superclasses are read before their chain is checked, so the nesting itself is limited.
+        let mut bytes = vec![0xAC, 0xED, 0x00, 0x05, TC_OBJECT];
+        for _ in 0..MAX_DEPTH {
+            class_desc_head(&mut bytes, b"D");
+        }
+        let result = std::thread::Builder::new()
+            .stack_size(512 << 20)
+            .spawn(move || parse(&bytes, 0))
+            .unwrap()
+            .join()
+            .unwrap();
+        assert!(matches!(result, Err(StreamError::TooDeep)));
+    }
+
+    #[test]
+    fn a_wrong_handle_names_the_handle() {
+        let mut bytes = vec![0xAC, 0xED, 0x00, 0x05, TC_STRING, 0, 1, b'a', TC_OBJECT];
+        bytes.push(TC_REFERENCE);
+        bytes.extend(BASE_HANDLE.to_be_bytes());
+        let error = parse(&bytes, 0).unwrap_err();
+        assert!(matches!(error, StreamError::WrongHandle(BASE_HANDLE, _)), "{error}");
+    }
+
+    const MAGIC: [u8; 4] = [0xAC, 0xED, 0x00, 0x05];
+
+    fn root(graph: &Graph, i: usize) -> &Object {
+        let Some(Content::Value(Value::Object(id))) = graph.roots.get(i) else {
+            panic!("root {i} is no object: {:?}", graph.roots.get(i))
+        };
+        &graph.objects[id.0]
+    }
+
+    #[test]
+    fn long_strings_reset_classes_enums_and_primitive_arrays() {
+        let mut bytes = MAGIC.to_vec();
+        // A long string, then a reset: the next handle starts again at the base.
+        bytes.push(TC_LONGSTRING);
+        bytes.extend(3u64.to_be_bytes());
+        bytes.extend(b"xyz");
+        bytes.push(TC_RESET);
+        // `int[].class`, then an `int[] { 7, -1 }` that reuses its description by handle.
+        bytes.push(TC_CLASS);
+        class_desc_head(&mut bytes, b"[I");
+        bytes.push(TC_NULL);
+        bytes.push(TC_ARRAY);
+        bytes.push(TC_REFERENCE);
+        bytes.extend(BASE_HANDLE.to_be_bytes());
+        bytes.extend(2i32.to_be_bytes());
+        bytes.extend(7i32.to_be_bytes());
+        bytes.extend((-1i32).to_be_bytes());
+        // An enum constant `Kind.B`.
+        bytes.extend([TC_ENUM, TC_CLASSDESC]);
+        bytes.extend(4u16.to_be_bytes());
+        bytes.extend(b"Kind");
+        bytes.extend(0u64.to_be_bytes());
+        bytes.push(SC_SERIALIZABLE | SC_ENUM);
+        bytes.extend(0u16.to_be_bytes());
+        bytes.extend([TC_ENDBLOCKDATA, TC_NULL]);
+        bytes.extend([TC_STRING, 0, 1, b'B']);
+
+        let graph = parse(&bytes, 0).unwrap();
+        assert!(matches!(root(&graph, 0), Object::String(s) if s == "xyz"));
+        assert!(matches!(graph.roots[1], Content::Reset));
+        let Object::Class(class) = root(&graph, 2) else { panic!() };
+        assert_eq!(graph.classes[class.0].name, "[I");
+        let Object::Array { items, .. } = root(&graph, 3) else { panic!() };
+        assert_eq!(items, &[Value::Int(7), Value::Int(-1)]);
+        let Object::Enum { constant, .. } = root(&graph, 4) else { panic!() };
+        assert_eq!(constant, "B");
+        // Written back as Java writes it: a string this short as `TC_STRING`.
+        let mut short = MAGIC.to_vec();
+        short.extend([TC_STRING, 0, 3]);
+        short.extend(&bytes[MAGIC.len() + 9..]);
+        assert_eq!(write(&graph, &[]).unwrap(), short);
+    }
+
+    #[test]
+    fn broken_streams_say_what_is_wrong() {
+        assert!(matches!(parse(b"\xAC\xED\x00\x06", 0), Err(StreamError::BadMagic)));
+        let mut cut = MAGIC.to_vec();
+        cut.extend([TC_STRING, 0, 5, b'a']);
+        assert!(matches!(parse(&cut, 0), Err(StreamError::Eof(_))));
+        let mut unknown = MAGIC.to_vec();
+        unknown.push(TC_REFERENCE);
+        unknown.extend((BASE_HANDLE + 9).to_be_bytes());
+        assert!(
+            matches!(parse(&unknown, 0), Err(StreamError::BadHandle(h)) if h == BASE_HANDLE + 9)
+        );
+        let mut code = MAGIC.to_vec();
+        code.push(0x42);
+        assert!(matches!(parse(&code, 0), Err(StreamError::BadTypeCode { code: 0x42, at: 4 })));
     }
 }

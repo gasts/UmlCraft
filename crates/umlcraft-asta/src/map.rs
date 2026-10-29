@@ -2,10 +2,12 @@
 //!
 //! Astah follows the UML 1.4 metamodel (`JP.co.esm.caddies.uml.*`) plus its own presentation
 //! classes (`JP.co.esm.caddies.jomt.jmodel.*`). Only what UmlCraft can represent is imported:
-//! packages, classifiers with their features, use cases, the relationships between them,
-//! activities, and class, use case, sequence and activity diagrams. Everything else is counted
-//! in [`Imported::skipped`].
+//! packages, classifiers with their features, use cases, components, nodes, artifacts,
+//! instances and links, the relationships between them, activities, interactions with their
+//! interaction uses, and state machines; class, use case, sequence, activity, state machine,
+//! component and deployment diagrams. Everything else is counted in [`Imported::skipped`].
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use umlcraft_model::{
@@ -32,6 +34,12 @@ pub struct Imported {
     /// Astah classes of model elements and diagrams that were not imported, with how often
     /// they occurred. Presentations of skipped elements are left out silently.
     pub skipped: BTreeMap<String, usize>,
+    /// Astah classes of elements UmlCraft knows but could not place in the model (no fitting
+    /// owner, or the model refused them), with how often.
+    pub failed: BTreeMap<String, usize>,
+    /// Shapes on diagrams that were left out although their element was imported: the model
+    /// refused them, or their ends did not resolve.
+    pub lost_presentations: usize,
 }
 
 /// Astah's default fill color, not worth carrying over as an explicit style.
@@ -69,10 +77,12 @@ impl<'g> Reader<'g> {
     }
 
     /// Text of a field: a plain string, or the body or label of the value object (names,
-    /// expressions and enumeration kinds are such objects).
+    /// expressions and enumeration kinds are such objects). Astah nests these one or two levels
+    /// deep; a longer chain is a damaged file, possibly a cycle, and gives no text.
     fn text(&self, id: ObjId, field: &str) -> String {
         let mut current = self.obj(id, field);
-        while let Some(value) = current {
+        for _ in 0..16 {
+            let Some(value) = current else { break };
             if let Some(s) = self.g.string(value) {
                 return s.to_owned();
             }
@@ -85,8 +95,9 @@ impl<'g> Reader<'g> {
         self.text(id, "name")
     }
 
+    /// A finite number; NaN and infinity would make the model unsavable.
     fn num(&self, id: ObjId, field: &str) -> Option<f64> {
-        self.g.field(id, field).and_then(Value::as_f64)
+        self.g.field(id, field).and_then(Value::as_f64).filter(|n| n.is_finite())
     }
 
     fn flag(&self, id: ObjId, field: &str) -> bool {
@@ -96,7 +107,10 @@ impl<'g> Reader<'g> {
     /// The numbers of an array or collection field.
     fn numbers(&self, id: ObjId, field: &str) -> Vec<f64> {
         self.obj(id, field)
-            .map(|a| self.g.collection(a).into_iter().filter_map(Value::as_f64).collect())
+            .map(|a| {
+                let numbers = self.g.collection(a).into_iter().filter_map(Value::as_f64);
+                numbers.filter(|n| n.is_finite()).collect()
+            })
             .unwrap_or_default()
     }
 
@@ -254,14 +268,14 @@ fn foreign_notation(tags: &[(String, String)]) -> Option<&'static str> {
     })
 }
 
-/// Names Astah gives control nodes, final states and pseudostates by itself, such as
-/// `ActivityNode0`, `ForkNode1` or `InitialPseudostate0`, and the ones UmlCraft's export hands
-/// out.
 /// Astah's names for regions it creates, `Region0`, `Region1` …, or none.
 fn is_default_region_name(name: &str) -> bool {
     name.is_empty() || name.trim_end_matches(|c: char| c.is_ascii_digit()) == "Region"
 }
 
+/// Names Astah gives control nodes, final states and pseudostates by itself, such as
+/// `ActivityNode0`, `ForkNode1` or `InitialPseudostate0`, and the ones UmlCraft's export hands
+/// out.
 fn is_default_node_name(name: &str) -> bool {
     let stem = name.trim_end_matches(|c: char| c.is_ascii_digit()).trim_end();
     matches!(
@@ -298,6 +312,8 @@ struct Importer<'g> {
     model: Model,
     ids: HashMap<ObjId, Id>,
     skipped: BTreeMap<String, usize>,
+    failed: BTreeMap<String, usize>,
+    lost_presentations: usize,
     features: Vec<(Id, ObjId)>,
     /// Features already in `features`.
     queued: HashSet<ObjId>,
@@ -315,7 +331,15 @@ struct Importer<'g> {
     templates: Vec<(Id, ObjId)>,
     /// Bound classes, whose bindings are set once every template parameter exists.
     bound: Vec<(Id, ObjId)>,
+    /// Partitions visited, including the dimensions that are left out.
+    dimensions: HashSet<ObjId>,
+    /// Bound types `type_of` may still expand for the type it was asked for.
+    type_budget: Cell<usize>,
 }
+
+/// Most bound types expanded for one type; real ones such as `Map<String, List<Order>>` need
+/// a handful.
+const MAX_TYPE_NODES: usize = 1000;
 
 pub fn import(graph: &Graph) -> Option<Imported> {
     let r = Reader { g: graph };
@@ -326,6 +350,8 @@ pub fn import(graph: &Graph) -> Option<Imported> {
         ids: HashMap::from([(root, model.root())]),
         model,
         skipped: BTreeMap::new(),
+        failed: BTreeMap::new(),
+        lost_presentations: 0,
         features: Vec::new(),
         queued: HashSet::new(),
         replied: HashSet::new(),
@@ -336,6 +362,8 @@ pub fn import(graph: &Graph) -> Option<Imported> {
         diagrams: Vec::new(),
         templates: Vec::new(),
         bound: Vec::new(),
+        dimensions: HashSet::new(),
+        type_budget: Cell::new(MAX_TYPE_NODES),
     };
     let root_id = im.model.root();
     im.walk(root, root_id);
@@ -364,7 +392,12 @@ pub fn import(graph: &Graph) -> Option<Imported> {
         im.diagram(owner, diagram);
     }
     im.resolve_references();
-    Some(Imported { model: im.model, skipped: im.skipped })
+    Some(Imported {
+        model: im.model,
+        skipped: im.skipped,
+        failed: im.failed,
+        lost_presentations: im.lost_presentations,
+    })
 }
 
 /// The project's model: `EntityRoot.entry["ProjectModel"]`, or else the first model object.
@@ -410,7 +443,14 @@ impl Importer<'_> {
     }
 
     /// Inserts an element under `owner`, or under the nearest ancestor that may own it.
+    ///
+    /// Each Astah object becomes at most one element. An object reached a second time means a
+    /// damaged file in which, say, a package owns itself; refusing it ends the walks that
+    /// recurse into what they create.
     fn create(&mut self, owner: Id, data: ElementData, object: Option<ObjId>) -> Option<Id> {
+        if object.is_some_and(|o| self.ids.contains_key(&o)) {
+            return None;
+        }
         let owner = std::iter::once(owner)
             .chain(self.model.ancestors(owner))
             .find(|&o| self.model.get(o).is_some_and(|e| e.kind().can_own(&data.kind)));
@@ -428,7 +468,7 @@ impl Importer<'_> {
             }
             _ => {
                 if let Some(object) = object {
-                    self.skip(object);
+                    *self.failed.entry(self.r.class(object).to_owned()).or_default() += 1;
                 }
                 None
             }
@@ -734,6 +774,9 @@ impl Importer<'_> {
     /// as `List<Projekt>` (an anonymous classifier whose template binding names the template
     /// and the arguments), or else the type's name as text.
     fn type_of(&self, ty: ObjId, depth: usize) -> Option<TypeRef> {
+        if depth == 0 {
+            self.type_budget.set(MAX_TYPE_NODES);
+        }
         let r = self.r;
         let name = r.name(ty);
         let anonymous = name.is_empty() && !r.list(ty, "templateBinding").is_empty();
@@ -753,6 +796,13 @@ impl Importer<'_> {
 
     /// The template and arguments a classifier binds, as `Pair<int,Holder>`.
     fn bound_type(&self, ty: ObjId, depth: usize) -> Option<TypeRef> {
+        if depth == 0 {
+            self.type_budget.set(MAX_TYPE_NODES);
+        }
+        // The depth limit alone does not bound the work: arguments naming bound classes again
+        // multiply at every level.
+        let budget = self.type_budget.get().checked_sub(1)?;
+        self.type_budget.set(budget);
         let r = self.r;
         let binding = r.list(ty, "templateBinding").first().copied();
         if let Some(binding) = binding.filter(|_| depth < 8)
@@ -992,18 +1042,20 @@ impl Importer<'_> {
                     .tagged_values(object)
                     .iter()
                     .any(|(k, v)| k == "hiddenDependency" && v == "true");
+                // Astah's own bookkeeping, not a dependency the user drew: nothing is lost.
+                if hidden {
+                    return;
+                }
                 let realize = class == "URealizationImp"
                     || stereotypes.iter().any(|s| s == "realize" || s == "realization");
-                first("client").zip(first("supplier")).filter(|_| !hidden).map(
-                    |(client, supplier)| {
-                        let props = DirectedProps { client, supplier };
-                        if realize {
-                            ElementKind::Realization(props)
-                        } else {
-                            ElementKind::Dependency(props)
-                        }
-                    },
-                )
+                first("client").zip(first("supplier")).map(|(client, supplier)| {
+                    let props = DirectedProps { client, supplier };
+                    if realize {
+                        ElementKind::Realization(props)
+                    } else {
+                        ElementKind::Dependency(props)
+                    }
+                })
             }
         };
         let Some(kind) = kind else {
@@ -1231,6 +1283,10 @@ impl Importer<'_> {
     }
 
     fn partition(&mut self, owner: Id, partition: ObjId) {
+        // A damaged file may list a partition among its own lanes.
+        if !self.dimensions.insert(partition) {
+            return;
+        }
         // Astah puts every set of lanes into a "dimension" of its own, drawn as a header above
         // them. Unless the user named it, it is left out and its lanes take its place.
         let is_dimension =
@@ -1338,8 +1394,13 @@ impl Importer<'_> {
         // The interaction lists every message and fragment; those inside an operand belong to
         // the operand.
         let mut nested = HashSet::new();
+        let mut visited = HashSet::new();
         let mut stack = self.r.list(source, "fragments");
         while let Some(fragment) = stack.pop() {
+            // A damaged file may nest a fragment in itself.
+            if !visited.insert(fragment) {
+                continue;
+            }
             for operand in self.r.list(fragment, "operands") {
                 nested.extend(self.r.list(operand, "messages"));
                 nested.extend(self.r.list(operand, "fragments"));
@@ -1530,7 +1591,10 @@ impl Importer<'_> {
     fn insert(&mut self, diagram: Id, presentation: Presentation, back: bool) -> Option<Id> {
         let index = if back { 0 } else { self.model.view(diagram)?.presentations().len() };
         let id = presentation.id;
-        self.model.apply(Op::InsertPresentation { diagram, index, presentation }).ok()?;
+        if self.model.apply(Op::InsertPresentation { diagram, index, presentation }).is_err() {
+            self.lost_presentations += 1;
+            return None;
+        }
         Some(id)
     }
 
@@ -1547,7 +1611,7 @@ impl Importer<'_> {
             .style(p, "font.size")
             .filter(|_| self.r.style(p, "font.size.auto").as_deref() == Some("false"))
             .and_then(|s| s.parse::<f32>().ok())
-            .filter(|&size| size > 0.0 && size != scene::FONT_SIZE);
+            .filter(|&size| size.is_finite() && size > 0.0 && size != scene::FONT_SIZE);
         style
     }
 
@@ -1755,7 +1819,7 @@ impl Importer<'_> {
                 *end_y = Some(last.y);
             }
             *g = gate_x;
-            // A loop to self dragged wider or narrower than Astah's 40 beyond its start.
+            // A loop to self dragged wider or narrower than Astah's `SELF_LOOP` beyond its start.
             if source == target && gate_x.is_none() && points.len() == 4 {
                 let width = points[1].x - points[0].x;
                 if (width - SELF_LOOP).abs() > 0.5 {
@@ -1776,13 +1840,9 @@ impl Importer<'_> {
                 // is as wide as the exact width (newer files) or the whole-pixel one (older).
                 // Labels broken into several lines are left as they are.
                 let text = r.text(label, "label");
-                let one_line = r.g.field(label, "height").and_then(Value::as_f64) < Some(20.0);
-                let stored =
-                    r.g.field(label, "width")
-                        .and_then(Value::as_f64)
-                        .filter(|_| one_line)
-                        .map(|w| w as f32);
-                let java = umlcraft_notation::metrics::java_width(&text, 12.0, false);
+                let one_line = r.num(label, "height") < Some(20.0);
+                let stored = r.num(label, "width").filter(|_| one_line).map(|w| w as f32);
+                let java = umlcraft_notation::metrics::java_width(&text, scene::FONT_SIZE, false);
                 let inset = stored.zip(java).map_or(0.0, |(w, j)| (w - j) / 2.0);
                 Some(Point::new(
                     at.x + moved.x + inset + shift.x - center,
@@ -2166,7 +2226,11 @@ impl Importer<'_> {
         // An edge that does not fit its ends is left out, like a presentation of a skipped
         // element.
         let id = presentation.id;
-        self.model.apply(Op::InsertPresentation { diagram, index, presentation }).ok().map(|_| id)
+        if self.model.apply(Op::InsertPresentation { diagram, index, presentation }).is_err() {
+            self.lost_presentations += 1;
+            return None;
+        }
+        Some(id)
     }
 
     /// Where Astah's line aims inside its nodes, and where its labels sit. Labels are stored
@@ -2337,5 +2401,91 @@ mod tests {
         for stereotype in ["abstract", "Java", "Java class", "Java Class Thing", "entity"] {
             assert!(!is_language_marker(stereotype), "{stereotype}");
         }
+    }
+
+    use crate::jser::{ClassData, ClassDesc, Object};
+
+    /// Builds small Astah object graphs by hand.
+    #[derive(Default)]
+    struct Builder(Graph);
+
+    impl Builder {
+        fn class(&mut self, name: &str) -> crate::jser::ClassId {
+            if let Some(i) = self.0.classes.iter().position(|c| c.name == name) {
+                return crate::jser::ClassId(i);
+            }
+            self.0.classes.push(ClassDesc::new(name.to_owned(), 0, 0));
+            crate::jser::ClassId(self.0.classes.len() - 1)
+        }
+
+        fn push(&mut self, object: Object) -> ObjId {
+            self.0.objects.push(object);
+            ObjId(self.0.objects.len() - 1)
+        }
+
+        fn string(&mut self, s: &str) -> Value {
+            Value::Object(self.push(Object::String(s.to_owned())))
+        }
+
+        fn list(&mut self, items: &[ObjId]) -> Value {
+            let class = self.class("[Ljava.lang.Object;");
+            let items = items.iter().map(|&i| Value::Object(i)).collect();
+            Value::Object(self.push(Object::Array { class, items }))
+        }
+
+        /// An instance of `class` without fields, to be filled by `set`.
+        fn instance(&mut self, class: &str) -> ObjId {
+            let class_id = self.class(class);
+            let data = vec![ClassData { class: class.to_owned(), ..Default::default() }];
+            self.push(Object::Instance { class: class_id, data })
+        }
+
+        fn set(&mut self, id: ObjId, field: &str, value: Value) {
+            let Object::Instance { data, .. } = &mut self.0.objects[id.0] else { panic!() };
+            data[0].fields.push((field.to_owned(), value));
+        }
+
+        /// Makes `owner` own `child` through an ownership object, as Astah does.
+        fn own(&mut self, owner: ObjId, children: &[ObjId]) {
+            let ownerships: Vec<ObjId> = children
+                .iter()
+                .map(|&child| {
+                    let ownership = self.instance("JomtOwnership");
+                    self.set(ownership, "ownedElement", Value::Object(child));
+                    ownership
+                })
+                .collect();
+            let list = self.list(&ownerships);
+            self.set(owner, "ownedElementOwnership", list);
+        }
+    }
+
+    #[test]
+    fn a_package_that_owns_itself_is_imported_once() {
+        let mut b = Builder::default();
+        let model = b.instance("UModelImp");
+        let name = b.string("Model");
+        b.set(model, "name", name);
+        let package = b.instance("UPackageImp");
+        let name = b.string("P");
+        b.set(package, "name", name);
+        b.own(model, &[package]);
+        b.own(package, &[package]);
+        let imported = import(&b.0).unwrap();
+        let m = &imported.model;
+        let packages: Vec<_> = m.children(m.root()).to_vec();
+        assert_eq!(packages.len(), 1);
+        assert!(m.children(packages[0]).is_empty());
+    }
+
+    #[test]
+    fn a_name_that_is_its_own_body_gives_no_text() {
+        let mut b = Builder::default();
+        let model = b.instance("UModelImp");
+        let name = b.instance("UNameImp");
+        b.set(name, "body", Value::Object(name));
+        b.set(model, "name", Value::Object(name));
+        let imported = import(&b.0).unwrap();
+        assert_eq!(imported.model.element(imported.model.root()).unwrap().name(), "");
     }
 }

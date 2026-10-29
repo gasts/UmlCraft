@@ -28,23 +28,36 @@ pub enum AstaError {
     BadHeader,
     #[error("the Astah project contains no model")]
     NoModel,
+    #[error("the Astah project is too large")]
+    TooLarge,
+    #[error("not an Astah project: the file is damaged")]
+    Damaged,
 }
 
 /// Reads an `.asta` file into a new model.
 pub fn import(path: &Path) -> Result<Imported, AstaError> {
     let graph = parse_entity_store(&read_entity_store(path)?)?;
-    map::import(&graph).ok_or(AstaError::NoModel)
+    // The mapper follows the object graph recursively too.
+    deep(|| map::import(&graph).ok_or(AstaError::NoModel))
 }
 
 /// Astah writes `0x00EE` and a store version of 1 after the standard stream header.
 const STORE_MAGIC: [u8; 4] = [0x00, 0xEE, 0x00, 0x01];
 
+/// The largest entity store read, decompressed. Astah's own sample projects need a few MB;
+/// the limit only keeps a damaged or hostile size field from exhausting memory.
+const MAX_ENTITY_STORE: u64 = 1 << 30;
+
 /// The raw `EntityStore` entry of an `.asta` file.
 pub fn read_entity_store(path: &Path) -> Result<Vec<u8>, AstaError> {
     let mut archive = zip::ZipArchive::new(File::open(path)?)?;
-    let mut entry = archive.by_name("EntityStore")?;
-    let mut bytes = Vec::with_capacity(entry.size() as usize);
-    entry.read_to_end(&mut bytes)?;
+    let entry = archive.by_name("EntityStore")?;
+    // The declared size is only a hint: trust it neither for the allocation nor as a bound.
+    let mut bytes = Vec::with_capacity(entry.size().min(64 << 20) as usize);
+    entry.take(MAX_ENTITY_STORE + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_ENTITY_STORE {
+        return Err(AstaError::TooLarge);
+    }
     Ok(bytes)
 }
 
@@ -53,15 +66,17 @@ pub fn parse_entity_store(bytes: &[u8]) -> Result<jser::Graph, AstaError> {
     if bytes.get(4..8) != Some(&STORE_MAGIC[..]) {
         return Err(AstaError::BadHeader);
     }
-    deep(|| jser::parse(bytes, STORE_MAGIC.len()))
+    deep(|| Ok(jser::parse(bytes, STORE_MAGIC.len())?))
 }
 
-/// Writes an object graph as an entity store.
+/// Writes an object graph as an entity store. Tooling, not part of the import: the
+/// `asta-rewrite` example and `tests/rewrite.rs` check with it that reading loses nothing, and
+/// tests can build `.asta` files from a [`jser::Graph`] with it.
 pub fn write_entity_store(graph: &jser::Graph) -> Result<Vec<u8>, AstaError> {
-    deep(|| jser::write(graph, &STORE_MAGIC))
+    deep(|| Ok(jser::write(graph, &STORE_MAGIC)?))
 }
 
-/// Writes an `.asta` file with the given entity store.
+/// Writes an `.asta` file with the given entity store. Tooling, as [`write_entity_store`].
 pub fn write_asta(path: &Path, entity_store: &[u8]) -> Result<(), AstaError> {
     let mut archive = zip::ZipWriter::new(File::create(path)?);
     let options = zip::write::SimpleFileOptions::default()
@@ -78,15 +93,15 @@ pub fn diff_graphs(a: &jser::Graph, b: &jser::Graph) -> Result<Vec<String>, Asta
 }
 
 /// Astah's object graph is deeply nested, so reading and writing it runs on a thread with a
-/// large stack.
-fn deep<T: Send>(f: impl FnOnce() -> Result<T, jser::StreamError> + Send) -> Result<T, AstaError> {
+/// large stack. A panic on that thread means the file broke an assumption of the reader, so it
+/// is reported as a damaged file rather than taking the application down.
+fn deep<T: Send>(f: impl FnOnce() -> Result<T, AstaError> + Send) -> Result<T, AstaError> {
     std::thread::scope(|scope| {
         std::thread::Builder::new()
             .stack_size(512 << 20)
             .spawn_scoped(scope, f)
             .map_err(AstaError::Io)?
             .join()
-            .expect("stream thread panicked")
-            .map_err(AstaError::from)
+            .unwrap_or(Err(AstaError::Damaged))
     })
 }

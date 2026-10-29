@@ -65,15 +65,14 @@ fn items(graph: &Graph, id: ObjId) -> Vec<Value> {
     if let Some(array) = graph.array(id) {
         return array.to_vec();
     }
-    let Some(annotation) = graph.annotation(id, class) else {
+    if graph.annotation(id, class).is_none() {
         // Subclasses such as LinkedHashMap keep the data in the superclass annotation.
         return match class {
             "java.util.LinkedHashMap" => collection(graph, id, "java.util.HashMap"),
             "java.util.LinkedHashSet" => collection(graph, id, "java.util.HashSet"),
             _ => Vec::new(),
         };
-    };
-    let _ = annotation;
+    }
     collection(graph, id, class)
 }
 

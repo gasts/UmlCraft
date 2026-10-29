@@ -4,7 +4,18 @@
 
 use std::path::{Path, PathBuf};
 
-const ASTAH: &str = r"C:\Program Files\astah-professional";
+/// Astah's install folder: `ASTAH_HOME`, else where Astah Professional installs on Windows.
+fn astah_home() -> PathBuf {
+    std::env::var_os("ASTAH_HOME")
+        .map_or_else(|| PathBuf::from(r"C:\Program Files\astah-professional"), PathBuf::from)
+}
+
+/// Reports a test that cannot run here. With `UMLCRAFT_REQUIRE_ASTAH` set, as on a machine that
+/// has Astah, a skip fails instead, so a missing installation cannot pass for a green run.
+fn skip(reason: &str) {
+    assert!(std::env::var_os("UMLCRAFT_REQUIRE_ASTAH").is_none(), "not skipped: {reason}");
+    eprintln!("skipped: {reason}");
+}
 
 fn asta_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
@@ -21,9 +32,9 @@ fn asta_files(dir: &Path, out: &mut Vec<PathBuf>) {
 #[test]
 fn entity_stores_are_written_back_unchanged() {
     let mut files = Vec::new();
-    asta_files(Path::new(ASTAH), &mut files);
+    asta_files(&astah_home(), &mut files);
     if files.is_empty() {
-        eprintln!("skipped: no Astah installation at {ASTAH}");
+        skip(&format!("no Astah installation at {}", astah_home().display()));
         return;
     }
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");

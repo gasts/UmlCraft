@@ -1,4 +1,5 @@
 //! Writes a [`Graph`] as a serialization stream, the way `ObjectOutputStream` writes it.
+//! Tooling for checking the reader and building test files; the import does not use it.
 //!
 //! Objects are written where the traversal of the roots first meets them and referenced by handle
 //! afterwards, so the handles of a graph that was read come out as they were.
