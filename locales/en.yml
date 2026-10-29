@@ -13,6 +13,7 @@ menu:
   file: File
   new: New project
   open: Open …
+  new_structogram: New structogram
   open_structogram: Open structogram …
   import_astah: Import Astah project …
   export: Export
@@ -521,3 +522,52 @@ error:
   image_too_large: The image is too large.
   too_new: "The file was saved by a newer UmlCraft (format version %{found}; this version reads up to %{supported})."
   migration: "The file could not be upgraded from format version %{from}: %{reason}"
+nsd:
+  untitled: Untitled.nsd
+  untitled_stem: Untitled
+  unsaved: "%{name} has unsaved changes."
+  save_failed: The structogram could not be saved.
+  edit: Edit …
+  edit_diagram: Diagram
+  signature: Name or signature
+  text: Text
+  comment: Comment
+  disabled: Disabled
+  branches: Number of branches
+  exception: Name of the caught exception
+  case_hint: "First line: what is examined; then one line per case; last line: the default (% for none)."
+  for_hint: "for i <- 1 to 10 by 2 counts, foreach x in list goes through a list; anything else stays free text."
+  root_program: Program
+  root_sub: Subroutine
+  root_includable: Includable
+  insert_after: Insert after
+  insert_before: Insert before
+  insert_tooltip: "Inserts after the selection; with Shift before it"
+  paste: Paste
+  delete: Delete
+  move_up: Move up
+  move_down: Move down
+  color: Colour
+  add_branch: Add branch
+  remove_branch: Remove branch
+  kind_instruction: Instruction
+  kind_call: Call
+  kind_jump: Exit
+  kind_alternative: If
+  kind_case: Case
+  kind_for: For loop
+  kind_while: While loop
+  kind_repeat: Repeat loop
+  kind_forever: Endless loop
+  kind_try: Try
+  kind_parallel: Parallel
+  color_0: White (none)
+  color_1: Red
+  color_2: Yellow
+  color_3: Green
+  color_4: Cyan
+  color_5: Blue
+  color_6: Pink
+  color_7: Grey
+  color_8: Orange
+  color_9: Violet

@@ -30,6 +30,7 @@ actions!(
         NewProject,
         OpenProject,
         OpenStructogram,
+        NewStructogram,
         ImportAstah,
         ExportAstah,
         ExportSvg,
@@ -173,6 +174,7 @@ fn main() {
             KeyBinding::new("secondary-shift-0", ZoomToFit, None),
             KeyBinding::new("secondary-,", OpenSettings, None),
         ]);
+        nsd::bind_keys(cx);
 
         let bounds = Bounds::centered(None, size(px(1280.0), px(820.0)), cx);
         gpui_kit::open_window(
