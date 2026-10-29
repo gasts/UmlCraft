@@ -3,7 +3,7 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
-## Unreleased
+## 0.9.0 – 2026-10-29
 
 - **Settings dialog** (Tools › Settings …, Ctrl+,): language, theme and the visibility column
   in one place. Changes apply at once. The language can also follow the system again, and the
@@ -11,6 +11,25 @@ today.
   takes the place of the Light/Dark and language buttons; View keeps both toggles.
 - Right-angled lines whose ends nearly line up run straight instead of making a tiny step, and
   the step of a right-angled line between two boxes lies halfway between them.
+- Projects and `.asta` files open in the background, and an export to Astah can be cancelled;
+  it stops on its own after ten minutes and no longer leaves a half-written file behind.
+- Messages from the model, the file format and the Astah import and export are shown in the
+  chosen language. The Astah import says which elements and shapes it could not carry over.
+- Undo and Redo name their step in the tooltip. On macOS, shortcuts use Cmd.
+- The tool palette of a diagram wraps onto a second line instead of drawing over the
+  properties panel.
+- Diagram texts fall back to Liberation Sans or Arimo where Arial is missing; without any of
+  them, the status bar says so.
+- Sequence diagrams: moving a message or lifeline keeps activation bars in place, and frames
+  span the lifelines they cover.
+- Faster editing of large models: names, generalizations and shapes are indexed, and deletes
+  no longer scan the whole model.
+- Source import: C++ and C# preprocessing, C++ operators and templates, imports per
+  definition and Java names are handled more faithfully.
+- On macOS and Linux, `.ucraft` and `.asta` files open in UmlCraft from the file manager.
+- Recent files that no longer open drop out of the list.
+- The file format is version 3: projects saved by 0.9.0 cannot be opened by UmlCraft 0.8.0
+  and older.
 
 ## 0.8.0 – 2026-10-28
 
