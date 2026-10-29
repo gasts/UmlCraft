@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32-35" preRepeat="until" postFor="to" preReturn="return" postForIn="in" preWhile="while" output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="tester" created="2026-10-29" changedby="tester" changed="2026-10-29" origin="Structorizer 3.32-35" text="&#34;for headers&#34;" comment="" color="ffffff" type="program" style="nice">
+	<children>
+		<for text="&#34;for i &#60;- 1 to 10&#34;" comment="" counterVar="i" startValue="1" endValue="10" stepConst="1" style="COUNTER" color="ffffff" disabled="0">
+			<qFor color="ffffff">
+			</qFor>
+		</for>
+		<for text="&#34;for k &#60;- a to b by 3&#34;" comment="" counterVar="k" startValue="a" endValue="b" stepConst="3" style="COUNTER" color="ffffff" disabled="0">
+			<qFor color="ffffff">
+			</qFor>
+		</for>
+		<for text="&#34;foreach x in list&#34;" comment="" counterVar="x" startValue="" stepConst="" style="TRAVERSAL" insep="in" color="ffffff" disabled="0">
+			<qFor color="ffffff">
+			</qFor>
+		</for>
+		<for text="&#34;for each line of the file&#34;" comment="" counterVar="dummy_counter" startValue="each line of the file" stepConst="1" style="FREETEXT" color="ffffff" disabled="0">
+			<qFor color="ffffff">
+			</qFor>
+		</for>
+		<for text="&#34;for (int i = 0; i &#60; n; i++)&#34;" comment="" counterVar="dummy_counter" startValue="(int i = 0; i &#60; n; i++)" stepConst="1" style="FREETEXT" color="ffffff" disabled="0">
+			<qFor color="ffffff">
+			</qFor>
+		</for>
+		<for text="&#34;while x&#34;" comment="" counterVar="dummy_counter" startValue="while x" stepConst="1" style="FREETEXT" color="ffffff" disabled="0">
+			<qFor color="ffffff">
+			</qFor>
+		</for>
+		<for text="&#34;for i := 1 to 5&#34;" comment="" counterVar="i" startValue="1" endValue="5" stepConst="1" style="COUNTER" color="ffffff" disabled="0">
+			<qFor color="ffffff">
+			</qFor>
+		</for>
+		<for text="&#34;for ? &#60;- ? to ?&#34;" comment="" counterVar="?" startValue="?" endValue="?" stepConst="1" style="COUNTER" color="ffffff" disabled="0">
+			<qFor color="ffffff">
+			</qFor>
+		</for>
+		<for text="&#34;for j &#60;- 1 to 3&#34;" comment="" counterVar="j" startValue="1" endValue="3" stepConst="1" style="COUNTER" color="ffffff" disabled="0">
+			<qFor color="ffffff">
+			</qFor>
+		</for>
+		<for text="&#34;foreach ? in ?&#34;" comment="" counterVar="?" startValue="" stepConst="" style="TRAVERSAL" insep="in" color="ffffff" disabled="0">
+			<qFor color="ffffff">
+			</qFor>
+		</for>
+		<for text="&#34;for i &#60;- n to 1 by -1&#34;" comment="" counterVar="i" startValue="n" endValue="1" stepConst="-1" style="COUNTER" color="ffffff" disabled="0">
+			<qFor color="ffffff">
+			</qFor>
+		</for>
+	</children>
+</root>

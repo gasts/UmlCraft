@@ -35,7 +35,7 @@ fn fixtures_round_trip() {
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/structorizer"),
         &mut files,
     );
-    assert_eq!(files.len(), 44);
+    assert_eq!(files.len(), 45);
     for path in &files {
         round_trip(path);
     }

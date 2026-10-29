@@ -9,6 +9,7 @@
 
 use crate::metrics::Metrics;
 use crate::model::{Diagram, Element, ElementKind, RootKind, RootStyle, Sequence};
+use crate::path::{Selection, Slot};
 
 /// Space around texts and in the diagram's frame (Structorizer's `E_PADDING` at 12 px).
 pub const PADDING: i32 = 20;
@@ -145,6 +146,82 @@ impl Layout {
         }
         find(&self.body, x, y)
     }
+
+    /// What a click at a point selects: the innermost element, an empty branch, or the
+    /// diagram itself in its frame and title.
+    pub fn hit(&self, x: i32, y: i32) -> Option<Selection> {
+        fn find(seq: &SeqBox, path: Path, x: i32, y: i32) -> Option<Selection> {
+            if seq.elements.is_empty() {
+                return seq.rect.contains(x, y).then_some(Selection::Empty(path));
+            }
+            let e = seq.elements.iter().find(|e| e.rect.contains(x, y))?;
+            e.branches
+                .iter()
+                .enumerate()
+                .find_map(|(i, b)| find(b, branch_path(&e.path, i), x, y))
+                .or_else(|| Some(Selection::element(&e.path)))
+        }
+        find(&self.body, Vec::new(), x, y).or_else(|| {
+            (0..=self.size.0).contains(&x).then_some(())?;
+            (0..=self.size.1).contains(&y).then_some(Selection::Root)
+        })
+    }
+
+    /// Where something dropped at a point goes: before an element when the point is in its
+    /// upper half (outside its branches), after it in the lower half, into an empty branch.
+    pub fn slot_at(&self, x: i32, y: i32) -> Option<Slot> {
+        fn find(seq: &SeqBox, path: Path, x: i32, y: i32) -> Option<Slot> {
+            if seq.elements.is_empty() {
+                return seq.rect.contains(x, y).then_some(Slot { seq: path, index: 0 });
+            }
+            let (i, e) = seq.elements.iter().enumerate().find(|(_, e)| e.rect.contains(x, y))?;
+            e.branches
+                .iter()
+                .enumerate()
+                .find_map(|(b, s)| find(s, branch_path(&e.path, b), x, y))
+                .or_else(|| {
+                    let after = y >= e.rect.y + e.rect.h / 2;
+                    Some(Slot { seq: path, index: i + usize::from(after) })
+                })
+        }
+        find(&self.body, Vec::new(), x, y).or_else(|| {
+            let inside = (0..=self.size.0).contains(&x) && (0..=self.size.1).contains(&y);
+            inside.then(|| {
+                let end = if y < self.body.rect.y { 0 } else { self.body.elements.len() };
+                Slot { seq: Vec::new(), index: end }
+            })
+        })
+    }
+
+    /// The box of the element at `path`.
+    pub fn element(&self, path: &[usize]) -> Option<&ElementBox> {
+        let mut seq = &self.body;
+        let mut found = None;
+        for (i, &index) in path.iter().enumerate() {
+            if i % 2 == 0 {
+                let e = seq.elements.get(index)?;
+                found = Some(e);
+            } else {
+                seq = found?.branches.get(index)?;
+                found = None;
+            }
+        }
+        found
+    }
+
+    /// The box of the sequence at `seq` (the body for `[]`).
+    pub fn sequence(&self, seq: &[usize]) -> Option<&SeqBox> {
+        match seq.split_last() {
+            None => Some(&self.body),
+            Some((b, e)) => self.element(e)?.branches.get(*b),
+        }
+    }
+}
+
+fn branch_path(element: &[usize], branch: usize) -> Path {
+    let mut p = element.to_vec();
+    p.push(branch);
+    p
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -523,12 +600,34 @@ mod tests {
     }
 
     #[test]
+    fn clicks_and_drops_find_their_place() {
+        let mut alt = Element::alternative(&lines(&["c"]));
+        alt.branches[0] = Sequence::new(vec![Element::instruction(&lines(&["x"]))]);
+        let d = diagram(vec![Element::instruction(&lines(&["a"])), alt]);
+        let l = Layout::of(&d, Metrics::linux());
+        let a = l.element(&[0]).unwrap().rect;
+        let x = l.element(&[1, 0, 0]).unwrap().rect;
+        let f = l.sequence(&[1, 1]).unwrap().rect;
+        assert_eq!(l.hit(a.x + 2, a.y + 2), Some(Selection::element(&[0])));
+        assert_eq!(l.hit(x.x + 2, x.y + 2), Some(Selection::element(&[1, 0, 0])));
+        assert_eq!(l.hit(f.x + 2, f.y + 2), Some(Selection::Empty(vec![1, 1])));
+        assert_eq!(l.hit(2, 2), Some(Selection::Root));
+        assert_eq!(l.hit(-5, 2), None);
+        assert_eq!(l.slot_at(a.x + 2, a.y + 2), Some(Slot { seq: vec![], index: 0 }));
+        assert_eq!(l.slot_at(a.x + 2, a.bottom() - 2), Some(Slot { seq: vec![], index: 1 }));
+        assert_eq!(l.slot_at(x.x + 2, x.bottom() - 2), Some(Slot { seq: vec![1, 0], index: 1 }));
+        assert_eq!(l.slot_at(f.x + 2, f.y + 2), Some(Slot { seq: vec![1, 1], index: 0 }));
+        assert_eq!(l.slot_at(2, l.size.1 - 2), Some(Slot { seq: vec![], index: 2 }));
+    }
+
+    #[test]
     fn turned_calls_are_placed_as_measured() {
         // Two short lines: a call is 56 wide and 46 high, so with many branches it is turned.
         let mut case =
             Element::case(&lines(&["c", "1", "2", "3", "4", "5", "6", "7", "8", "9", "%"]));
         case.branches[0] = Sequence::new(vec![Element::call(&lines(&["ab", "cd"]))]);
-        let call = first(&diagram(vec![case])).branches[0].elements[0].clone();
+        let l = Layout::of(&diagram(vec![case]), Metrics::linux());
+        let call = l.element(&[0, 0, 0]).unwrap();
         assert_eq!(call.shape, Shape::Plain { rotated: true });
         assert!(call.rect.h > call.rect.w);
     }
