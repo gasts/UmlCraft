@@ -3,6 +3,7 @@ name = "umlcraft-model"
 description = "UML metamodel, diagram presentations and undoable edit transactions"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 

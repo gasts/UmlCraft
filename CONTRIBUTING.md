@@ -1,0 +1,39 @@
+# Contributing to UmlCraft
+
+UmlCraft is a UML modeling tool in Rust with GPUI that reads and writes Astah's `.asta` files.
+How it is built: [`docs/architecture.md`](docs/architecture.md).
+
+## Commands
+
+- Build and start: `cargo run -p umlcraft-app`
+- Tests: `cargo test --workspace`
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check`
+
+CI runs all three on Windows, Ubuntu 22.04 and macOS. On Debian and Ubuntu,
+`packaging/linux/install-build-deps.sh` installs GPUI's system libraries.
+
+## Rules
+
+- Identifiers, code comments, commit messages and all project docs are in English.
+- UI texts go only through `locales/de.yml` and `locales/en.yml` (`t!("…")`), never hard-coded.
+  Every new key goes into both files. rust-i18n reads the locales at compile time: after
+  changing them, touch `crates/umlcraft-app/src/main.rs`.
+- The model changes only through `Document::edit` / `Tx`, never around it. Edits of sequence
+  diagrams end with `sequence_edit::tidy` (or `tidy_all`), so that bars, lifelines, fragments,
+  frames and the order of the interaction match the drawing.
+- GPUI comes in through `gpui_kit::*`. Use `gpui_kit`'s `actions!` macro, not gpui's.
+- Astah's `.asta` files and anything else from Astah's installation never go into the
+  repository.
+- LF line endings, no BOM. Code that touches paths, file names or line endings must not assume
+  one platform.
+
+## Tests
+
+- Snapshot tests of the source import: `UPDATE_SNAPSHOTS=1 cargo test …` accepts changed
+  output; review the diff before committing it.
+- The golden project file (`crates/umlcraft-format/tests/order-system.ucraft`):
+  `UPDATE_GOLDEN=1` rewrites it. A change there means older files read differently, so it
+  usually needs a new format version and a migration.
+- Tests that read Astah's sample projects or export through Astah's API find Astah through
+  `ASTAH_HOME`, else in `C:\Program Files\astah-professional`, and skip themselves without it.
+  Set `UMLCRAFT_REQUIRE_ASTAH=1` on a machine with Astah to turn a skip into a failure.
