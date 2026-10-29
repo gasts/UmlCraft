@@ -7,4 +7,9 @@
     <icon name="com.umlcraft.app"/>
     <glob pattern="*.ucraft"/>
   </mime-type>
+  <mime-type type="application/x-astah">
+    <comment>Astah project</comment>
+    <comment xml:lang="de">Astah-Projekt</comment>
+    <glob pattern="*.asta"/>
+  </mime-type>
 </mime-info>

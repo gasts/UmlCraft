@@ -10,5 +10,5 @@ Icon=com.umlcraft.app
 Terminal=false
 Categories=Development;
 Keywords=UML;diagram;class;sequence;Astah;
-MimeType=application/x-umlcraft;
+MimeType=application/x-umlcraft;application/x-astah;
 StartupWMClass=com.umlcraft.app

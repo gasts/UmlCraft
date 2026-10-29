@@ -36,5 +36,8 @@
     <release version="0.8.0" date="2026-10-28">
       <url type="details">https://github.com/udvlp/UmlCraft/releases/tag/v0.8.0</url>
     </release>
+    <release version="0.7.0" date="2026-10-26">
+      <url type="details">https://github.com/udvlp/UmlCraft/releases/tag/v0.7.0</url>
+    </release>
   </releases>
 </component>
