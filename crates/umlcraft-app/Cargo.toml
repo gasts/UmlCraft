@@ -19,6 +19,7 @@ umlcraft-asta.workspace = true
 umlcraft-asta-export.workspace = true
 umlcraft-reverse.workspace = true
 umlcraft-nsd.workspace = true
+umlcraft-nsd-java.workspace = true
 gpui-kit.workspace = true
 anyhow.workspace = true
 image.workspace = true
