@@ -619,6 +619,9 @@ impl<'p> Importer<'p> {
         // two apart (C++'s `f()` and `f() const`); one that only became or stopped being a query
         // keeps its element.
         let model = tx.model();
+        // The model's signatures once per class, not once per comparison.
+        let mut existing: Vec<(Id, Signature)> =
+            existing_ops.drain(..).map(|o| (o, signature_of_model(model, o))).collect();
         let mut matched: Vec<Option<Id>> = vec![None; operations.len()];
         for exact in [true, false] {
             for (i, &(operation, e)) in operations.iter().enumerate() {
@@ -626,13 +629,12 @@ impl<'p> Importer<'p> {
                     continue;
                 }
                 let (key, query) = self.signature(model, e, operation);
-                let found = existing_ops.iter().position(|&o| {
-                    let (k, q) = signature_of_model(model, o);
-                    k == key && (!exact || q == query)
-                });
-                matched[i] = found.map(|f| existing_ops.remove(f));
+                let found =
+                    existing.iter().position(|(_, (k, q))| *k == key && (!exact || *q == query));
+                matched[i] = found.map(|f| existing.remove(f).0);
             }
         }
+        existing_ops.extend(existing.into_iter().map(|(o, _)| o));
         for (((operation, e), found), definition) in
             operations.into_iter().zip(matched).zip(definitions)
         {

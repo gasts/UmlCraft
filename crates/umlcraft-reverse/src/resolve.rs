@@ -400,10 +400,13 @@ impl<'p> Importer<'p> {
             self.importing.pop();
             return result;
         }
-        // 4. The own package, and where the language says so the ones around it.
+        // 4. The own package, and where the language says so the ones around it up to the
+        // global one, whose types are found here instead of by scanning for a placeholder.
         let model = tx.model();
         let namespaces = if self.rules.enclosing_namespaces {
-            enclosing(model, namespace)
+            let mut around = enclosing(model, namespace);
+            around.push(model.root());
+            around
         } else {
             vec![namespace]
         };
