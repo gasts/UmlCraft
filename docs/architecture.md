@@ -457,6 +457,21 @@ writes, and none of its code is used.
   header of a fresh installation's GUI (its keywords `"until "` and `"while "` end in a space),
   `branch_colors` with one slot per branch, a parallel element's branch count as its text,
   the attributes of counting, traversing and free-text for loops.
+- **Editing.** `path` addresses elements (odd paths) and sequences (even paths; `[]` is the
+  body), places between elements (`Slot`), runs of elements in one sequence (`Span`) and what
+  is selected (`Selection`). `edit` holds the changes as functions on a `Diagram` that return
+  the selection afterwards: insert, remove, move (never into itself), shift up or down, text,
+  comment, colour, disabling, case and parallel branches, the root's signature and kind. Each
+  keeps the shape Structorizer writes: empty sequences carry `color="ffffff"`, a case has a
+  line per branch plus its selector, a parallel element's text is its branch count, an empty
+  element text is written as `text=""`, and a for loop's attributes are derived from its text
+  as Structorizer derives them when it loads a file (checked against a file it saved,
+  `fixtures/structorizer/for-headers.nsd`). `history::Editor` makes each change one undo step
+  over snapshots of the whole diagram (structograms are small) and tells whether the diagram
+  differs from the file. `save` stamps a changed diagram with version, user and date as
+  Structorizer does on saving; an unchanged one is written as read, byte for byte. `clip` puts
+  elements on the clipboard as a whole `.nsd` file, the form in which Structorizer puts a
+  diagram there; other text pastes as one instruction.
 
 - **Text metrics** (`metrics`). Structorizer measures with Java's logical font Dialog 12,
   antialiased with integer metrics: a line is as wide as its characters' advances summed and
@@ -478,21 +493,27 @@ writes, and none of its code is used.
   where that is narrower. Loops have a bar of 19 and a head or footer; try elements rows of
   33 with bodies indented 20 (catch 40); parallel elements bands of 20. A sequence's last
   element takes spare height, a structured one hands it to its branches. Every element box
-  has its path (element and branch indices), and `Layout::element_at` finds the innermost
-  one at a point.
+  has its path (element and branch indices); `Layout::hit` tells what a click selects and
+  `Layout::slot_at` where a drop goes.
 - **Drawing** (`draw`) turns a layout into areas, 1 px lines and texts, fills first. Colours
   are roles (`Ink`) so that a painter can use its theme, except the elements' and branch heads'
   own colours. The hatching of disabled elements repeats Structorizer's 5×10 pixel tile from
   the image's origin. `svg::render` writes it as an SVG image as large as Structorizer's PNG
   export; the app rasterizes it with `png::from_svg` like UML diagrams.
 - **In the app** (`umlcraft-app/src/nsd`), a structogram opens in a window of its own
-  (`nsd::open`); the main window only gets the menu item and a switch by extension where files
-  open (menu, command line, system, recent files). `NsdView` holds the diagram apart from the
-  window, so that an editor or a tab can build on it. It shows the SVG export rasterized with
-  resvg, made again when the zoom or the screen's scale changes, so the window holds exactly
-  what an export does; GPUI cannot turn text, which turned case branches need. The diagram stays
-  a white sheet in the dark theme; the area around it follows the theme. The window has a
-  toolbar instead of menus, because on macOS the menu bar belongs to the whole app.
+  (`nsd::open`, `nsd::new`); the main window only gets the menu items, a switch by extension
+  where files open (menu, command line, system, recent files) and two hooks (`nsd::connect`):
+  saved structograms join the recent files, and quitting from a structogram window quits
+  through the main window, which asks about the project and then about each structogram with
+  unsaved changes (`nsd::confirm_all`). `NsdView` holds the `Editor` apart from the window, so
+  that a tab can build on it later. It shows the SVG export rasterized with resvg, made again
+  when the diagram, the zoom or the screen's scale changes, so the window holds exactly what
+  an export does; GPUI cannot turn text, which turned case branches need. Selection and the
+  place a drag would drop to are painted over the image and never reach an export. Text,
+  comment and the root's signature are edited in a dialog (`nsd/dialog.rs`), as in
+  Structorizer; a new element is only inserted when its dialog is confirmed. The diagram stays
+  a white sheet in the dark theme; the area around it follows the theme. The window has
+  toolbars instead of menus, because on macOS the menu bar belongs to the whole app.
 - Where the texts in triangular heads sit (an alternative's condition, a case's
   discriminator) follows no rule we found; a fit to Structorizer's positions puts them within
   a few pixels. Lines are exact.
