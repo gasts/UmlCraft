@@ -887,14 +887,25 @@ impl PropertiesPanel {
             _ => String::new(),
         };
         let reference_labels = reference_items(model, &references);
+        // The same element, changed elsewhere (undo, a background import) while something
+        // typed is not written back yet: the field being typed in keeps its text and stays
+        // pending, the others take the new values. After Enter nothing is pending, so the field
+        // shows the text as written back.
+        let same = self.shown_id() == Some(id);
+        let typing = same && !self.editing.is_empty();
         self.shown = Some(key);
-        // The fields are overwritten below, so nothing typed into them is pending any more.
-        self.editing.clear();
+        if !same {
+            // The fields are overwritten below, so nothing typed into them is pending any more.
+            self.editing.clear();
+        }
 
         let set = |state: &Entity<InputState>,
                    value: String,
                    window: &mut Window,
                    cx: &mut Context<Self>| {
+            if typing && state.focus_handle(cx).is_focused(window) {
+                return;
+            }
             state.update(cx, |s, cx| s.set_value(value, window, cx));
         };
         set(&self.name, data.name.clone(), window, cx);
