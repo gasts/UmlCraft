@@ -2,8 +2,8 @@
 
 Merge of two independent full reviews of `main` at 6c397f2 (version 0.8.0), both from 2026-10-29:
 
-- **F** — `docs/review-fable51.md` (Fable 5.1), IDs H1–H6, M1–M20.
-- **O** — `docs/review-opus55.md` (Opus 5.5), IDs by area (A-, M-, N-, E-, R-, U-, X-, D-).
+- **F** — (Fable 5.1), IDs H1–H6, M1–M20.
+- **O** — (Opus 5.5), IDs by area (A-, M-, N-, E-, R-, U-, X-, D-).
 
 Every finding below names its sources, so details and exact reproduction steps can be looked up in
 the originals. Where both reviews found the same defect, it appears once; where they rated it
@@ -170,9 +170,15 @@ reproduces Astah files byte for byte. What is missing is protection at the struc
 important findings.
 
 <a id="a-1"></a>
-#### A-1 · High · Cycles in the Astah object graph crash or hang the import, on the UI thread
+#### A-1 · High · Cycles in the Astah object graph crash or hang the import, on the UI thread · **Done**
 
 Sources: F M10 (Medium), O A-1 (High), O U-15. Confirmed.
+
+**Done (2026-10-29):** `Importer::create` turns each Astah object into at most one element,
+which ends the recursion of `walk`, `vertices` and `partition`; left-out dimensions and the
+fragment stack keep visited sets; `Reader::text` follows at most 16 levels; `map::import` runs in
+`deep()`; the app imports on the background executor (`Busy::ImportingAstah`). Tests: a package
+owning itself, a name that is its own body.
 
 `map.rs:73-82` (`Reader::text`), `:457-568` (`walk`), `:1176`/`:1229` (`vertices`),
 `:1241`/`:1248` (`partition`), `:1342-1347` (fragment stack in `interaction`);
@@ -190,9 +196,14 @@ Sources: F M10 (Medium), O A-1 (High), O U-15. Confirmed.
   import on the background executor, as the source import does.
 
 <a id="a-2"></a>
-#### A-2 · High · The class-description chain is trusted
+#### A-2 · High · The class-description chain is trusted · **Done**
 
 Sources: F H1, O A-2. Confirmed.
+
+**Done (2026-10-29):** `set_super_class` rejects a chain that leads back to the class
+(`ClassCycle`) or is longer than 64 (`ClassChainTooLong`); description nesting counts toward
+`MAX_DEPTH`. Graphs from `parse` are now acyclic, so the walks in `write.rs` and `copy_class`
+end. Byte-level tests for all three.
 
 `jser.rs:757-769`, `:779`, `:792-824`; same loop in `jser/write.rs:155-158`, same recursion in
 `Graph::copy_class` (`jser.rs:371`).
@@ -211,9 +222,12 @@ Sources: F H1, O A-2. Confirmed.
   budget for objects and field slots.
 
 <a id="a-3"></a>
-#### A-3 · High · The declared ZIP entry size is trusted
+#### A-3 · High · The declared ZIP entry size is trusted · **Done**
 
 Sources: F H2, O A-3. Confirmed.
+
+**Done (2026-10-29):** preallocation capped at 64 MB, the entry is read through
+`take(1 GiB + 1)`, larger entries give `AstaError::TooLarge`.
 
 `lib.rs:46`
 
@@ -226,9 +240,12 @@ Sources: F H2, O A-3. Confirmed.
   through `.take(cap + 1)`.
 
 <a id="a-4"></a>
-#### A-4 · Medium · Exponential expansion of bound types
+#### A-4 · Medium · Exponential expansion of bound types · **Done**
 
 Source: O A-4. Confirmed.
+
+**Done (2026-10-29):** a budget of 1,000 bound-type expansions per requested type
+(`MAX_TYPE_NODES`), on top of the depth limit.
 
 `map.rs:755-779`
 
@@ -238,9 +255,13 @@ Source: O A-4. Confirmed.
   the total number of nodes.
 
 <a id="a-5"></a>
-#### A-5 · Medium · NaN and infinity reach the model from `.asta` files
+#### A-5 · Medium · NaN and infinity reach the model from `.asta` files · **Done**
 
 Source: O A-5. Confirmed. See [M-1](#m-1).
+
+**Done (2026-10-29):** `Reader::num` and `Reader::numbers` drop non-finite values, label
+sizes go through `num`, font sizes must be finite. The model-side check remains with
+[M-1](#m-1).
 
 `map.rs:88-90` (`num`), `:103-105`, `:1523-1527`, `:2183`; font sizes in `fill()` via
 `parse::<f32>()`, which accepts "inf".
@@ -251,9 +272,14 @@ Source: O A-5. Confirmed. See [M-1](#m-1).
   [M-1](#m-1).
 
 <a id="a-6"></a>
-#### A-6 · Medium · The export's Java process has no timeout or cancel
+#### A-6 · Medium · The export's Java process has no timeout or cancel · **Partly done**
 
 Sources: F M12, O A-7. Traced.
+
+**Partly done (2026-10-29):** the Java tool is spawned with both pipes drained on threads and
+killed after 10 minutes (`ExportError::TimedOut`), so a hanging Astah no longer blocks further
+exports and imports, and the temp folder is removed. Test with a process that sleeps. Open:
+progress and a cancel button in the app.
 
 `umlcraft-asta-export/src/lib.rs:148-150`
 
@@ -264,9 +290,13 @@ Sources: F M12, O A-7. Traced.
   progress with a cancel button.
 
 <a id="a-7"></a>
-#### A-7 · Medium · Predictable, reusable export temp folder
+#### A-7 · Medium · Predictable, reusable export temp folder · **Done**
 
 Source: O A-6. Traced.
+
+**Done (2026-10-29):** the temp folder gets a random name (a fresh UUID), is created with
+`DirBuilder::create`, which fails if it exists (retried with a new name), and with mode 0700 on
+Unix. Test.
 
 `umlcraft-asta-export/src/lib.rs:206-218`
 
@@ -277,9 +307,16 @@ Source: O A-6. Traced.
 - **Fix:** random name, `fs::create_dir` (fail if present), mode 0700; or the `tempfile` crate.
 
 <a id="a-8"></a>
-#### A-8 · Medium · Losses are miscounted or not counted at all
+#### A-8 · Medium · Losses are miscounted or not counted at all · **Done**
 
 Source: F M11. Traced.
+
+**Done (2026-10-29):** `Imported` has separate counters: `skipped` (kinds UmlCraft does
+not know), `failed` (known elements without a fitting owner or refused by the model) and
+`lost_presentations` (shapes the model refused or whose ends did not resolve). The app lists all
+three after the import (new locale keys). `hiddenDependency=true` is no longer counted. The Java
+tool counts lines with an undrawn end or no matching branch as `presentation`. Test: every
+sample that ships with Astah imports with nothing failed and no shape lost.
 
 `map.rs:413-436`, `:1531-1535`, `:1869-1871`, `:2078`, `:2169`; `AstaExport.java:1462-1469`,
 `:1500-1502`
@@ -293,9 +330,13 @@ Source: F M11. Traced.
 - **Fix:** separate counters for unsupported, failed and dropped presentations, and report them.
 
 <a id="a-9"></a>
-#### A-9 · Low · Reader details
+#### A-9 · Low · Reader details · **Partly done**
 
 Sources: F (crate section), O A-10.
+
+**Partly done (2026-10-29):** a panic on the reader thread becomes `AstaError::Damaged`;
+`WrongHandle` names the actual handle. Open: the array element type default, the per-instance
+clones and the linear `View::get`.
 
 - `join().expect("stream thread panicked")` (`lib.rs:89`) turns any parser panic into an abort;
   map `Err` to an `AstaError`. (F)
@@ -308,9 +349,17 @@ Sources: F (crate section), O A-10.
 - `View::get` is linear inside `edge()`, `lane_of` and `boundary_text`: O(P²) per diagram. (O)
 
 <a id="a-10"></a>
-#### A-10 · Low · Steps outside `attempt` abort the whole Java export
+#### A-10 · Low · Steps outside `attempt` abort the whole Java export · **Done**
 
 Sources: O A-8, F (Java bullets). Traced.
+
+**Done (2026-10-29):** the interaction-use references are set one by one, a failure
+drops only that reference; the second transaction (positions of moved shapes) catches per shape
+and as a whole, so a failure there no longer loses the saved project; notes go through `attempt`,
+and style, position, size and auto-size of a structure diagram's node run in one `attempt` after
+it stands, so one bad node no longer takes the diagram along; lane placement failures are
+counted as `partition`, not as a dropped activity; `note()` marks the comment shown only after
+the note exists. A new `problem()` reports failures that are not one element's.
 
 `tools/asta-export/AstaExport.java:196-201`, `:249-256`, around `:886-913`
 
@@ -323,9 +372,17 @@ Sources: O A-8, F (Java bullets). Traced.
 - **Fix:** wrap each item, as the tool's README says.
 
 <a id="a-11"></a>
-#### A-11 · Low · Export robustness details
+#### A-11 · Low · Export robustness details · **Partly done**
 
 Sources: O A-9, F (export bullets).
+
+**Partly done (2026-10-29):** problem lines are put on one line (`oneLine`), so a name with a
+line break or tab cannot split them; `Json.string()` checks the bounds after a backslash and in
+`\u`; `dropped` lines add up and the report parsing is a tested function (see A-6/X-1); the tool
+gets bare file names; the result is copied next to the target and renamed over it, so a failed
+copy leaves the old file whole; an `ASTAH_HOME` without Astah falls back to the usual places, and
+the `java` fallback is documented. Open: `Astah::find` still knows only Windows' program
+folders.
 
 - Problem lines embed raw element names (`AstaExport.java:2210-2211`, `:2299`); a name with `\n`
   or `\t` splits the line, and `lib.rs:157` can then report a successful export as
@@ -343,9 +400,16 @@ Sources: O A-9, F (export bullets).
 - `Json.string()` has no bounds check after a backslash (`AstaExport.java:2458`, `:2466`). (F)
 
 <a id="a-12"></a>
-#### A-12 · Low · Small inconsistencies and duplication
+#### A-12 · Low · Small inconsistencies and duplication · **Partly done**
 
 Sources: F, O A-10.
+
+**Partly done (2026-10-29):** the self-loop comment names `SELF_LOOP`; the font size in
+`map.rs` and `layout.rs` is `scene::FONT_SIZE`; the `is_default_node_name` doc sits on its
+function; `asta-dump` no longer computes an annotation to discard it; `write_entity_store`,
+`write_asta` and `jser/write.rs` are documented as tooling. Open: the duplicated flag reads,
+label position formula and Java fill normalisation, the unnamed measured numbers in the Java
+tool, and splitting `map.rs`.
 
 - Comment says 40, constant `SELF_LOOP` is 49.9 (`map.rs:1759` vs `:40`). Font size 12.0 is a
   literal in `map.rs:1786` and `layout.rs:330` although `scene::FONT_SIZE` exists. The
@@ -368,9 +432,17 @@ returning the inverse, `Model::check` as an independent load-time oracle. All in
 `for_each_reference_mut` quartet stays in sync. The presentation side is weaker.
 
 <a id="m-1"></a>
-#### M-1 · Medium · Saved projects that cannot be opened again
+#### M-1 · Medium · Saved projects that cannot be opened again · **Done**
 
 Sources: F M2, O M-1, O N-8. Confirmed.
+
+**Done (2026-10-29):** `Presentation::is_finite` covers every coordinate, size and the
+font size; `check_presentation` (used by `apply` and `check`) rejects others with
+`ModelError::NotFinite`. Type references deeper than `MAX_TYPE_DEPTH` (32) give
+`ModelError::TypeTooDeep` in `apply` and `check`. Golden file
+`umlcraft-format/tests/order-system.ucraft` (regenerate with `UPDATE_GOLDEN=1`). Not done: a v1
+file with a sequence diagram, `svg::bounds` filtering (the model no longer holds such values) and
+verifying the output in `save`.
 
 `umlcraft-format/src/lib.rs:73`, `umlcraft-model/src/model.rs:356`, `:407`, `geometry.rs:5-43`
 
@@ -390,9 +462,13 @@ Sources: F M2, O M-1, O N-8. Confirmed.
   to add. (F)
 
 <a id="m-2"></a>
-#### M-2 · Medium · Edge-attachment cycles block removal
+#### M-2 · Medium · Edge-attachment cycles block removal · **Done**
 
 Sources: F M1 (Medium), O M-7 (Low). Confirmed.
+
+**Done (2026-10-29):** `check_presentation` (used by `apply` and `check`) follows the
+endpoints of edges ending on edges and refuses a chain that leads back with
+`ModelError::EdgeCycle`. Test in `umlcraft-model/tests/edit.rs`.
 
 `model.rs:356-376`, `:407-416`; `document.rs:431-457`
 
@@ -402,9 +478,13 @@ Sources: F M1 (Medium), O M-7 (Low). Confirmed.
 - **Fix:** check the `endpoints()` chain transitively in `check_presentation` and `check`.
 
 <a id="m-3"></a>
-#### M-3 · Medium · Every generalization insert or update scans the whole model
+#### M-3 · Medium · Every generalization insert or update scans the whole model · **Done**
 
 Sources: O M-2, F M17. Confirmed.
+
+**Done (2026-10-29):** `Model` keeps an index specific → generalizations, updated on
+insert, remove and update; the cycle check walks it instead of scanning all elements. `check`
+compares the index with one built from scratch. Test for rewiring, deleting, undo and redo.
 
 `model.rs:438-466`
 
@@ -415,9 +495,15 @@ Sources: O M-2, F M17. Confirmed.
   generalizations.
 
 <a id="m-4"></a>
-#### M-4 · Medium · `delete_many` unlinking is quadratic
+#### M-4 · Medium · `delete_many` unlinking is quadratic · **Done**
 
 Sources: O M-3, F M17 and model lows. Confirmed.
+
+**Done (2026-10-29):** `unlink_all` unlinks only the targets the survivor refers to and
+names only those; survivors are found with `visit_references` instead of allocating `references()`;
+`deletion_closure` gathers the strong referrers once and grows the set with a queue instead of
+rescanning the model per round. Test: a package of 2,000 classes referenced from outside is
+deleted in a few hundredths of a second, and the attributes keep the type as text.
 
 `document.rs:235-244`, `:252`, `:306`, `:318-328`
 
@@ -429,9 +515,15 @@ Sources: O M-3, F M17 and model lows. Confirmed.
 - **Fix:** build the `id → name` map once; per survivor unlink only the targets it references.
 
 <a id="m-5"></a>
-#### M-5 · Medium · Removing many presentations is roughly cubic
+#### M-5 · Medium · Removing many presentations is roughly cubic · **Done**
 
 Sources: O M-4, F (model section). Confirmed.
+
+**Done (2026-10-29):** `remove_presentations` builds "what hangs on what" once, adds what
+hangs on a removed presentation with a queue, and removes from the outside in by counting
+attachments. Test `removing_many_presentations_takes_their_edges_along` (3,000 presentations, edges
+on edges, undo): 0.2 s in a debug build. Open: `View` is still a `Vec`, so each single removal
+looks up its index linearly.
 
 `document.rs:446-455`; `diagram.rs:477-483`
 
@@ -442,9 +534,13 @@ Sources: O M-4, F (model section). Confirmed.
   index `View` by id.
 
 <a id="m-6"></a>
-#### M-6 · Medium · `save` is atomic against a process crash only
+#### M-6 · Medium · `save` is atomic against a process crash only · **Done**
 
 Source: O M-5. Traced.
+
+**Done (2026-10-29):** the temp file is written with `sync_all`, renamed with up to ten
+retries on Windows sharing violations, removed on error; the directory is synced on Unix,
+permissions are kept on Unix, and a symbolic link is followed.
 
 `umlcraft-format/src/lib.rs:129-138`
 
@@ -457,9 +553,13 @@ Source: O M-5. Traced.
   file on error.
 
 <a id="m-7"></a>
-#### M-7 · Low · Strong-reference cycles make elements undeletable
+#### M-7 · Low · Strong-reference cycles make elements undeletable · **Done**
 
 Source: O M-6. Confirmed.
+
+**Done (2026-10-29):** `check_strong_cycle` in `check_references` and `check` refuses
+strong references that lead back to the element (`ModelError::ReferenceCycle`). Test with a
+dependency naming itself.
 
 `element.rs:977`, `document.rs:262-275`
 
@@ -469,9 +569,14 @@ Source: O M-6. Confirmed.
   to non-relationship kinds.
 
 <a id="m-8"></a>
-#### M-8 · Low · Gaps in `check` and `Tx`
+#### M-8 · Low · Gaps in `check` and `Tx` · **Partly done**
 
 Sources: F M20 (Medium), O M-8. Confirmed for the binding.
+
+**Partly done (2026-10-29):** the binding is visited, remapped and unlinked for every kind with
+`ClassifierProps`; `check_presentation` requires both ends of a `Shape::Message` to be lifelines;
+`Tx::update_presentation` keeps the presentation's id whatever the closure does. Open: a closure
+that panics in `Document::edit`.
 
 - `ClassifierProps::binding` is visited, remapped and unlinked only for `Class`
   (`element.rs:262`, `:1232`, `:1299`, `:1396`): a binding on an interface naming a missing id
@@ -484,9 +589,14 @@ Sources: F M20 (Medium), O M-8. Confirmed for the binding.
   (`document.rs:70-97`).
 
 <a id="m-9"></a>
-#### M-9 · Low · Versioning is bypassed
+#### M-9 · Low · Versioning is bypassed · **Done**
 
 Sources: O M-9, F (format lows). Confirmed.
+
+**Done (2026-10-29):** a compile-time assertion ties `MIGRATIONS` to `FORMAT_VERSION`. Format
+version 3: the tag rename is the v2 → v3 migration, so current files keep their own tags.
+`from_str_versioned`/`load_versioned` return the file's version, and the app runs
+`upgrade_document` only for version 1 files. Files saved now no longer open in 0.8.
 
 `umlcraft-format/src/lib.rs:26`, `:33-34`, `:47`, `:97`, `:110-127`
 
@@ -500,9 +610,19 @@ Sources: O M-9, F (format lows). Confirmed.
   `const _: () = assert!(MIGRATIONS.len() == …)`.
 
 <a id="m-10"></a>
-#### M-10 · Low · Robustness and small details
+#### M-10 · Low · Robustness and small details · **Done**
 
 Sources: O M-10, F (model lows).
+
+**Done (2026-10-29):** `from_str` skips a leading byte order mark; `from_records` gives a
+diagram without a `views` entry an empty view, and `check` names the diagram without a view or the
+view without a diagram. The order of `elements()` stays unspecified (as documented; `swap_remove`
+keeps deletes fast); slots now take the generals through the new `Model::generals_of`, ordered
+by the generalizations' ids, so their order no longer changes with an unrelated undo (and no
+longer scans the model per object). `is_empty` documents why it is always false; the comments in
+`diagram.rs`, `op.rs` and `sample.rs` say what is true; `Tx` returns `NotFound` for an id that
+does not exist and `NotADiagram` only for an element of another kind. Test for the byte order
+mark and the missing view. `content_bounds` and `refers_strongly_to` are left as public API.
 
 - A file starting with a UTF-8 BOM fails with "expected value at line 1 column 1"
   (`format/lib.rs:141`). Strip a leading `\u{feff}`. Confirmed. (O)
@@ -523,9 +643,21 @@ guarded (no reachable panic in 11,000 lines), route fitting keeps right angles, 
 idempotent.
 
 <a id="n-1"></a>
-#### N-1 · Medium · Scene rebuilt and every text re-measured on every frame
+#### N-1 · Medium · Scene rebuilt and every text re-measured on every frame · **Done**
 
 Sources: F M16, O U-7. Traced; cost on large imported diagrams not measured.
+
+**Done (2026-10-29):** `FontMeasure` keeps measured widths by size and boldness, then text, in a
+cache (cleared at 50,000 entries; a lookup copies nothing), so a text is shaped once, not on every
+frame. The canvas keeps its scene and builds it again only when the revision, the diagram, the
+column setting or the locale changes, or while a drag shows a preview; panning, zooming and the
+caret blink reuse it. `wrapped` sums word widths and measures a candidate line exactly only when
+the sum is within 10 % of the limit. The refit after an edit indexes the boxes before the edit by
+id and takes the bounds from the same pass, so it is linear instead of O(n²). Kept on purpose:
+the refit still compares all auto-sized boxes, since renaming a type changes the content of
+every box that shows it, not only of what the edit touched; the drag builds the scene per mouse
+move (linear, with every text from the cache); the model tree is rebuilt once per revision, not
+per frame. Not checked in the running app.
 
 `scene.rs:657-676`, `:699-836`, `:1885-1912`; `umlcraft-app/src/canvas.rs:1580-1587`,
 `workspace.rs:39-49`, `:176-199`; `main_view.rs:141-153`
@@ -541,9 +673,12 @@ Sources: F M16, O U-7. Traced; cost on large imported diagrams not measured.
   the transaction touched, with `before` indexed by id.
 
 <a id="n-2"></a>
-#### N-2 · Medium · `with_contents` is cubic and runs every frame of a drag
+#### N-2 · Medium · `with_contents` is cubic and runs every frame of a drag · **Done**
 
 Source: O N-2. Confirmed.
+
+**Done (2026-10-29):** `with_contents` looks nodes up in an id map and keeps what it took
+in a `HashSet`, so each container scans the nodes once.
 
 `scene.rs:1728-1755`
 
@@ -554,9 +689,12 @@ Source: O N-2. Confirmed.
   runs only once per drag.
 
 <a id="n-3"></a>
-#### N-3 · Medium · Lollipop and actor names are painted and editable but not hit-testable
+#### N-3 · Medium · Lollipop and actor names are painted and editable but not hit-testable · **Done**
 
 Source: F M15. Traced.
+
+**Done (2026-10-29):** `NodeShape::hit` accepts clicks on any of the node's rows, and
+`extent` includes them, so names below lollipops and actors select and fit.
 
 `scene.rs:86-107`, `:1008-1018`, `:1036-1053`
 
@@ -565,9 +703,13 @@ Source: F M15. Traced.
   so zoom-to-fit clips actor names.
 
 <a id="n-4"></a>
-#### N-4 · Medium · Rows and labels can contain newlines and control characters
+#### N-4 · Medium · Rows and labels can contain newlines and control characters · **Done**
 
 Source: O N-3. Confirmed for the data, traced for the GPUI assert.
+
+**Done (2026-10-29):** `scene::single_line` turns line breaks and tabs into spaces and drops
+other control characters, in `Line::new` and for all edge labels at the end of `scene::build`.
+Imported default values are not collapsed in the model. Test in `svg.rs`.
 
 `scene.rs:611` (`Line::new`), `:1840-1868`
 
@@ -579,9 +721,12 @@ Source: O N-3. Confirmed for the data, traced for the GPUI assert.
   controls); collapse whitespace in imported default values.
 
 <a id="n-5"></a>
-#### N-5 · Medium · SVG export writes characters XML forbids
+#### N-5 · Medium · SVG export writes characters XML forbids · **Done**
 
 Sources: O N-4 (Medium), F (Low). Confirmed.
+
+**Done (2026-10-29):** `escape` replaces control characters other than tab and line breaks,
+U+FFFE and U+FFFF by U+FFFD.
 
 `svg.rs:367-379` (`escape`)
 
@@ -591,9 +736,12 @@ Sources: O N-4 (Medium), F (Low). Confirmed.
 - **Fix:** drop or replace with U+FFFD in `escape`.
 
 <a id="n-6"></a>
-#### N-6 · Medium · Align uses stored bounds, the user sees drawn bounds
+#### N-6 · Medium · Align uses stored bounds, the user sees drawn bounds · **Done**
 
 Source: O N-5. Confirmed.
+
+**Done (2026-10-29):** `align_selection` aligns the rects as drawn and moves the stored
+bounds by the same offset. Test with a box drawn wider than stored.
 
 `umlcraft-app/src/workspace.rs:751-761` → `scene.rs:2596`
 
@@ -602,9 +750,13 @@ Source: O N-5. Confirmed.
 - **Fix:** align the drawn rects and apply the offset to the stored bounds.
 
 <a id="n-7"></a>
-#### N-7 · Low · Bounds and SVG clipping
+#### N-7 · Low · Bounds and SVG clipping · **Done**
 
 Sources: F (notation lows), O N-9.
+
+**Done (2026-10-29):** `Scene::bounds` takes the lines' drawn paths along with the
+nodes, so free lines and loops to self fit; `svg::bounds` takes the end markers and the name's
+arrow (`Primitive::bounds`); a fill with alpha gets `fill-opacity` in the SVG. No new test.
 
 - `Scene::bounds` covers nodes only: a diagram of free lines has no bounds and zoom-to-fit does
   nothing; self-loops are clipped (`scene.rs:65-68`). `svg::bounds` does it right for these. (F)
@@ -614,9 +766,14 @@ Sources: F (notation lows), O N-9.
   (`svg.rs:208`). (O)
 
 <a id="n-8"></a>
-#### N-8 · Low · Hit testing and containers
+#### N-8 · Low · Hit testing and containers · **Done**
 
 Sources: F (notation lows).
+
+**Done (2026-10-29):** `palette::is_container` names the same kinds as `with_contents`
+(states and components added), so a component drawn after its artifacts goes to the back and no
+longer covers them for clicks. `hit_test` preferring lines is kept and documented: the canvas
+draws all lines above the nodes.
 
 - `hit_test` always prefers edges over nodes regardless of z-order (`scene.rs:2440-2443`).
 - Two definitions of "container": `with_contents` (Boundary, Package, Partition, State, Cube,
@@ -625,9 +782,15 @@ Sources: F (notation lows).
   drags them.
 
 <a id="n-9"></a>
-#### N-9 · Low · Region lines drawn outside small states
+#### N-9 · Low · Region lines drawn outside small states · **Partly done**
 
 Source: O N-6, F (state lows). Confirmed.
+
+**Partly done (2026-10-29):** `layout_state` draws a state with regions at least header plus
+`n × MIN_REGION` high (wide, side by side), so every region keeps its 20 inside the state;
+`move_region_line` stores the offset clamped between its neighbors, as the drawing clamps it.
+Test with five regions in a state 40 high and a line dragged past its neighbor. Open: with the
+state on several diagrams, `add_region` still lets the last diagram decide.
 
 `scene.rs:1502-1507`, `:1535-1552`; `state_edit.rs:81`, `:123-130`, `:161-178`
 
@@ -638,9 +801,13 @@ Source: O N-6, F (state lows). Confirmed.
   state on several diagrams lets the last diagram decide. (F)
 
 <a id="n-10"></a>
-#### N-10 · Low · Slightly slanted right-angled lines cannot be dragged
+#### N-10 · Low · Slightly slanted right-angled lines cannot be dragged · **Done**
 
 Source: O N-7. Confirmed.
+
+**Done (2026-10-29):** `drag_segment` decides the orientation of the dragged segment by its longer
+extent (`|dx| >= |dy|`), so lines between nodes whose centers differ a little in y drag like
+straight ones. Test with centers 1.5 apart.
 
 `route.rs:196`
 
@@ -649,9 +816,14 @@ Source: O N-7. Confirmed.
   with `|dx| >= |dy|`.
 
 <a id="n-11"></a>
-#### N-11 · Low · Smaller performance costs
+#### N-11 · Low · Smaller performance costs · **Done**
 
 Sources: F, O N-10.
+
+**Done (2026-10-29):** `keywords_away_from_notes` looks edges up in an id index instead of
+searching the list per note; `EdgeShape::path` returns a `Cow` and borrows the points of
+straight and right-angled lines, so `edge_at` no longer clones per edge; `unique_name` asks the
+name index (`children_named`).
 
 - `keywords_away_from_notes` is O(E²) on every build (`scene.rs:869-908`): test `lines.contains`
   before `edges.iter().find`, or index edges. Scene build goes from 1.7 ms at 1,000 edges to
@@ -660,9 +832,16 @@ Sources: F, O N-10.
   (`palette.rs:773-778`).
 
 <a id="n-12"></a>
-#### N-12 · Low · Small inconsistencies
+#### N-12 · Low · Small inconsistencies · **Partly done**
 
 Sources: F, O N-11.
+
+**Partly done (2026-10-29):** The state doc comment sits on `layout_state`, `Paint::Translucent` is
+documented as the partition fill; `TextMeasure::astah_width` replaces the written-out
+"max(exact, rounded)" (labels, line breaks, tabs, SVG, test); the second `Fixed` test measure is
+gone; the layout functions take `&Element`, so no `expect("caller checked")` is left;
+`SELF_DROP` lives in `sequence.rs` and is used there too. Open: the shared
+stereotype-name-block layout and the remaining unnamed numbers.
 
 - The doc comment "States: the name, centered…" sits on `CUBE_DEPTH` (`scene.rs:1250-1253`).
 - `Paint::Translucent` is documented as the boundary fill (`draw.rs:36`); boundaries use
@@ -680,9 +859,15 @@ Sequence, state, clipboard, member, object, palette. Every mutation goes through
 converges at a fixed point; `fit_bars` and `fit_fragments` are bounded.
 
 <a id="e-1"></a>
-#### E-1 · High · `tidy` rewrites the bundled sample and moves a message into a fragment
+#### E-1 · High · `tidy` rewrites the bundled sample and moves a message into a fragment · **Done**
 
 Source: F H5. Confirmed.
+
+**Done (2026-10-29):** the sample was wrong. The customer now has a bar per call (150..175 inside
+the loop, 220..265 after it), and the sequence diagram is created before the messages, since
+`sync_order` keeps what a diagram does not show before what it shows. Test
+`tidying_leaves_the_sample_as_it_is`. `fit_fragments` now counts a message as inside only when
+both ends are, as `sync_order` does.
 
 `sequence_edit.rs:635-681` (`fit_fragments`), `:746-862` (`sync_order`)
 
@@ -699,9 +884,14 @@ Source: F H5. Confirmed.
   no-op on the sample" either way.
 
 <a id="e-2"></a>
-#### E-2 · High · Paste fails at random
+#### E-2 · High · Paste fails at random · **Done**
 
 Source: O E-1. Confirmed.
+
+**Done (2026-10-29):** the copied roots keep the selection order; elements whose strong
+references point to copies not inserted yet are postponed with their owner and index and inserted
+once those exist (`Pending`, `insert_postponed`). Test with a generalization owned by its
+specific class, in both selection orders.
 
 `clipboard.rs:120-126`, `:196-215`, `:255-260`
 
@@ -714,9 +904,14 @@ Source: O E-1. Confirmed.
   copies not yet inserted and insert them in a second pass at their remembered owner and index.
 
 <a id="e-3"></a>
-#### E-3 · Medium · Paste and "show" make wrong presentations on sequence diagrams
+#### E-3 · Medium · Paste and "show" make wrong presentations on sequence diagrams · **Done**
 
 Sources: F M7, O E-2, F M6 (paste without tidy). Confirmed.
+
+**Done (2026-10-29):** `paste` takes only elements `can_show` allows on the target
+diagram and none on sequence diagrams (free texts and lines still paste there); `copy` skips the
+diagram frame; `show_element` gives a combined fragment a `Fragment` shape. Pasting lifelines,
+bars, messages and fragments as such remains to be built.
 
 `clipboard.rs:98-170`, `:286-301`; `palette.rs:741-757`; `umlcraft-app/src/workspace.rs:698-706`
 
@@ -735,9 +930,12 @@ Sources: F M7, O E-2, F M6 (paste without tidy). Confirmed.
   copy the diagram frame or bars. Or refuse the paste on sequence diagrams until then.
 
 <a id="e-4"></a>
-#### E-4 · Medium · A create message's receiver bar is added and dropped in the same edit
+#### E-4 · Medium · A create message's receiver bar is added and dropped in the same edit · **Done**
 
 Sources: F M8, O E-6. Confirmed.
+
+**Done (2026-10-29):** the create message no longer adds a receiver bar, as in Astah's
+API (`docs/asta-format.md`); the test checks that only the sender gets one.
 
 `sequence_edit.rs:241`, `:357-370`, `:490`, `:568-584`
 
@@ -749,9 +947,12 @@ Sources: F M8, O E-6. Confirmed.
   at the message, or drop the code.
 
 <a id="e-5"></a>
-#### E-5 · Medium · Sequence edits without `tidy`, and `covered` without effect
+#### E-5 · Medium · Sequence edits without `tidy`, and `covered` without effect · **Partly done**
 
 Source: F M6. Traced.
+
+**Partly done (2026-10-29):** `Workspace::update_element` tidies the sequence diagrams
+that show the element. Open: `tidy` still ignores `covered`.
 
 `umlcraft-app/src/workspace.rs:957-961`; `properties.rs:415-428`, `:1752-1764`
 
@@ -760,9 +961,12 @@ Source: F M6. Traced.
 - `tidy`/`fit_fragments` never read `covered`, so the checkboxes have no visible effect.
 
 <a id="e-6"></a>
-#### E-6 · Medium · `parse_type` has no nesting limit
+#### E-6 · Medium · `parse_type` has no nesting limit · **Done**
 
 Source: O E-5. Confirmed.
+
+**Done (2026-10-29):** `parse_type` stops at `MAX_TYPE_DEPTH`; deeper text stays text.
+Test with 1,000 levels.
 
 `member.rs:478-527` (recursion at 510)
 
@@ -772,9 +976,19 @@ Source: O E-5. Confirmed.
 - **Fix:** cap the depth (for example 32; the rest stays text).
 
 <a id="e-7"></a>
-#### E-7 · Medium · Member text does not round-trip
+#### E-7 · Medium · Member text does not round-trip · **Done**
 
 Sources: O E-3, F M9, F (member lows), O E-9. Confirmed.
+
+**Done (2026-10-29):** `Ts...` sets `is_variadic` and keeps the name `Ts`; parameters
+named by type alone (`f(: int)`) are accepted; a type whose text is unchanged keeps its link
+(`retype_text`, for attributes, return types and parameters); `type_label`/`type_text` use
+`display_name`; `find_top` and `matching_paren` skip quoted strings; `Return` parameters stay.
+Tests `quoted_defaults_hide_their_commas_and_parens`, `edits_keep_what_the_text_does_not_show`.
+C++ operator names (`operator<`, `operator()`, `operator bool`) are read up to their parameters;
+`<` opens a bracket only right after a name and `>` closes only an open one, so `x < y` in a
+default no longer swallows the next parameter; `arr[]` without a type is a name, not a
+multiplicity. Tests `parses_operator_names_and_c_arrays` and the extended quoted-defaults test.
 
 `member.rs`
 
@@ -799,9 +1013,13 @@ Sources: O E-3, F M9, F (member lows), O E-9. Confirmed.
   skip quoted strings and only count `<` as a bracket where a type can start.
 
 <a id="e-8"></a>
-#### E-8 · Medium · Editing an operation recreates all its parameters
+#### E-8 · Medium · Editing an operation recreates all its parameters · **Done**
 
 Source: O E-4. Confirmed.
+
+**Done (2026-10-29):** parameters are matched by position and updated; only the difference
+is created or deleted, and a type written as before keeps its link. Test with a parameter's
+multiplicity, stereotype and id.
 
 `member.rs:578-599`
 
@@ -810,9 +1028,15 @@ Source: O E-4. Confirmed.
 - **Fix:** update parameters by position; create or delete only the difference.
 
 <a id="e-9"></a>
-#### E-9 · Low · Batch moves can close ownership cycles
+#### E-9 · Low · Batch moves can close ownership cycles · **Done**
 
 Source: O E-8. Confirmed.
+
+**Done (2026-10-29):** `reparent_vertices` and `sync_order` recheck before every single move that
+the new owner is not the element or inside it, so a batch can no longer close a cycle;
+`tidy_all` tidies each diagram in a `Tx::attempt`, a new part of a transaction that is taken
+back on its own when it fails, so a broken sequence diagram no longer fails edits elsewhere.
+Tests: two states each centered in the other, and a failed attempt.
 
 `state_edit.rs:64`, `:71-74`; `sequence_edit.rs:556-564`, `:802`, `:851-860`
 
@@ -823,9 +1047,15 @@ Source: O E-8. Confirmed.
 - **Fix:** recheck `is_ancestor` before each move; let `tidy_all` skip diagrams it cannot tidy.
 
 <a id="e-10"></a>
-#### E-10 · Low · Destroy and operand edge cases
+#### E-10 · Low · Destroy and operand edge cases · **Done**
 
 Source: O E-7. Confirmed.
+
+**Done (2026-10-29):** A destroy message above the target's head leaves the lifeline at least a bar
+long; `fit_lifelines` clears `destroyed` once no destroy message reaches the lifeline, so it runs
+on again. New `delete_operand` (used by the app's delete) removes the operand's line and guard
+place on every diagram showing the fragment; the last operand takes the fragment along, so no
+fragment is left without operands. Tests for all three.
 
 - `sequence_edit.rs:374`: a destroy message above the target's head gives a negative lifeline
   length; `fit_lifelines` skips destroyed lifelines. Deleting the destroy message never resets
@@ -835,9 +1065,15 @@ Source: O E-7. Confirmed.
   edit should remove the matching separator and guard offset.
 
 <a id="e-11"></a>
-#### E-11 · Low · Smaller editing defects
+#### E-11 · Low · Smaller editing defects · **Partly done**
 
 Sources: O E-9, F (notation and object lows).
+
+**Partly done (2026-10-29):** `set_slot` strips a `name =` prefix only when it is the attribute's
+name (test with `"k=v"`); new vertices find their owner by their center, as moved ones do;
+`create_fragment` takes `Option<Point>`, so (0,0) is a place; `show_element` refuses lifelines
+and fragments of another interaction on a sequence diagram. Open: `move_item` with nested bars
+and messages above the sender's bar, and the `numbers` edge cases.
 
 - `object.rs:67-71`: `set_slot` applies `split_once('=')` unconditionally, after the properties
   panel already split once (`properties.rs:756-759`): `name = "k=v"` stores `v"`. Strip the prefix
@@ -861,9 +1097,13 @@ branches; results are deterministic; re-import is idempotent per language; re-ex
 cycles terminate; symlinked folders are not followed.
 
 <a id="r-1"></a>
-#### R-1 · High · One name declared with two kinds aborts the whole import
+#### R-1 · High · One name declared with two kinds aborts the whole import · **Done**
 
 Sources: F H3, O R-1. Confirmed.
+
+**Done (2026-10-29):** a name declared twice in one import keeps the kind of its first
+declaration, so a new import gives the same element; `Importer::retype` updates entries,
+supertypes, aliases and placeholders after a retype. Fixture `java/two_kinds`.
 
 `merge.rs:144-179`, `:246-253`
 
@@ -877,9 +1117,15 @@ Sources: F H3, O R-1. Confirmed.
   (owner, name) kind before creating, or keep conflicting kinds apart and report them.
 
 <a id="r-2"></a>
-#### R-2 · High · Re-import deletes associations drawn by hand between imported classes
+#### R-2 · High · Re-import deletes associations drawn by hand between imported classes · **Done**
 
 Sources: F H4 (High, confirmed), O R-8 (Low, traced).
+
+**Done (2026-10-29):** associations the import makes or reuses carry the tagged value
+`umlcraft.imported`; only marked ones are made non-navigable or deleted when their field is gone.
+Associations from imports before this change carry no mark and stay. `architecture.md` and
+`merge.rs` now say that hand-drawn generalizations and realizations between imported types are
+deleted. Snapshots updated (only the tag lines); test with a hand-drawn association.
 
 `associations.rs:120-158`; `merge.rs:438-443`
 
@@ -892,9 +1138,13 @@ Sources: F H4 (High, confirmed), O R-8 (Low, traced).
 - **Fix:** mark associations the import creates (tagged value) or remember created ids.
 
 <a id="r-3"></a>
-#### R-3 · Medium · Imports used only as qualifiers create bogus placeholder classes
+#### R-3 · Medium · Imports used only as qualifiers create bogus placeholder classes · **Done**
 
 Sources: F M13, O R-2. Confirmed.
+
+**Done (2026-10-29):** single imports are pre-resolved only when their name is used as a
+simple name; a qualifier use goes through the qualified resolution. Fixture
+`python/qualifier_import`. `library.is_package` is not consulted.
 
 `merge.rs:212-240`
 
@@ -906,9 +1156,13 @@ Sources: F M13, O R-2. Confirmed.
   qualified resolution already creates the right placeholders); consult `library.is_package`.
 
 <a id="r-4"></a>
-#### R-4 · Medium · Single-segment alias cycles overflow the stack; `retype` leaves stale supertypes
+#### R-4 · Medium · Single-segment alias cycles overflow the stack; `retype` leaves stale supertypes · **Done**
 
 Source: F M14. Confirmed.
+
+**Done (2026-10-29):** single imports being followed are kept on a stack
+(`Importer::importing`), so `using A = B; using B = A;` ends in a placeholder; `retype` updates
+`supertypes` (see [R-1](#r-1)). Fixture `csharp/alias_cycle`.
 
 `resolve.rs:285-291`, `:378-394`; `merge.rs:396-407`
 
@@ -918,9 +1172,12 @@ Source: F M14. Confirmed.
   retyped supertype silently finds nothing for the rest of the import.
 
 <a id="r-5"></a>
-#### R-5 · Medium · Alias-typed parameters break re-import idempotence
+#### R-5 · Medium · Alias-typed parameters break re-import idempotence · **Done**
 
 Source: O R-3. Confirmed.
+
+**Done (2026-10-29):** the source signature replaces names imported under another name
+by the imported path (`Importer::through_imports`). Fixture `python/alias_param`.
 
 `merge.rs:626-634` vs `:823-839`
 
@@ -932,9 +1189,12 @@ Source: O R-3. Confirmed.
   target's last segment in `simple_text`.
 
 <a id="r-6"></a>
-#### R-6 · Medium · Recursion over Java method bodies can overflow the stack
+#### R-6 · Medium · Recursion over Java method bodies can overflow the stack · **Done**
 
 Source: O R-4. Confirmed.
+
+**Done (2026-10-29):** `count_nested_classes` walks with an explicit stack; test with
+10,000 terms on a 2 MB stack.
 
 `java/mod.rs:431-447` (`count_nested_classes`)
 
@@ -944,9 +1204,14 @@ Source: O R-4. Confirmed.
 - **Fix:** walk with a `TreeCursor` or an explicit stack.
 
 <a id="r-7"></a>
-#### R-7 · Medium · Folder collection has no exclusions and fails on one unreadable folder
+#### R-7 · Medium · Folder collection has no exclusions and fails on one unreadable folder · **Done**
 
 Sources: O R-5, F (reverse lows). Traced.
+
+**Done (2026-10-29):** hidden folders, folders with `pyvenv.cfg` and `SKIPPED_FOLDERS`
+(`node_modules`, `venv`, `site-packages`, `__pycache__`, `bin`, `obj`, `build`, `_deps`) are not
+searched; an unreadable subfolder is listed and then reported as a file that could not be read,
+with its path; files over 16 MB are reported instead of read. No parser timeout.
 
 `source.rs:29-40`; `umlcraft-app/src/main_view.rs:428-441`
 
@@ -961,9 +1226,11 @@ Sources: O R-5, F (reverse lows). Traced.
   size.
 
 <a id="r-8"></a>
-#### R-8 · Medium · `.py` and `.pyi` of one module are merged as parts
+#### R-8 · Medium · `.py` and `.pyi` of one module are merged as parts · **Done**
 
 Source: O R-6. Confirmed.
+
+**Done (2026-10-29):** where `x.pyi` is collected, `x.py` is left out.
 
 `lib.rs:70-85`, `source.rs:46`
 
@@ -971,9 +1238,17 @@ Source: O R-6. Confirmed.
   `__init__`, two `total` (attrs ships such pairs). Where both exist, import only the `.pyi`.
 
 <a id="r-9"></a>
-#### R-9 · Medium · Name lookup is linear, so large flat namespaces are quadratic
+#### R-9 · Medium · Name lookup is linear, so large flat namespaces are quadratic · **Partly done**
 
 Sources: O R-7, F M17. Confirmed.
+
+**Partly done (2026-10-29):** `Model` keeps an index owner → name → children
+(`Model::children_named`), updated on insert, remove, rename and move and compared in `check`;
+`child_type` and `child_package` use it, so lookups in large flat namespaces no longer scan all
+children. `merge` finds a type's entries through a `HashMap` instead of `by_type.iter().find` and
+`.any`. Test for renames, moves and undo. Not measured again. Open: `enclosing()` leaving out the
+root, `signature_of_model` inside `position`, imports cloned per simple name, and the model scans
+in `retype`.
 
 `resolve.rs:58-70`, `:85-90`, `:385`, `:403-413`, `:527`; `merge.rs:204`, `:274`, `:487-503`,
 `:586-597`
@@ -989,9 +1264,18 @@ Sources: O R-7, F M17. Confirmed.
   `HashMap` for `by_type`; model signatures once per class.
 
 <a id="r-10"></a>
-#### R-10 · Low · Smaller import defects
+#### R-10 · Low · Smaller import defects · **Partly done**
 
 Sources: O R-8, F (reverse lows).
+
+**Partly done (2026-10-29):** The preprocessor knows its dialect: only C++ continues a blanked line ending
+in `\`, and a line in a block comment, a C# verbatim or raw string or a C++ raw string is no
+directive (a byte scanner per line; tests in `preprocessor.rs`). C++ operators are spelled one
+way (`operator ==` and `operator==` are one, `operator new[]`); unnamed template parameters
+are named by position (`_1`); `typedef struct {…} Point, *PointPtr;` keeps `PointPtr` as an
+alias of `Point*`. C++ files include `.c`, `.inl`, `.ipp` and `.tpp`. Open: comments inside
+Java scoped names, a definition's own `using`s for its parameter types, and how a new C#
+partial class in two files is counted.
 
 - `preprocessor.rs:197`: C's line continuation is applied to C# too, so `// C:\temp\` swallows
   the next `#endif` and everything after it is blanked silently. Make splicing C++-only.
@@ -1018,9 +1302,12 @@ undo; drags are previews that become one undo step; exports work on snapshots; a
 `settings.json` falls back to defaults.
 
 <a id="u-1"></a>
-#### U-1 · High · An imported Astah project counts as saved; closing discards it silently
+#### U-1 · High · An imported Astah project counts as saved; closing discards it silently · **Done**
 
 Sources: F H6 (High), O M-10 (Low). Traced.
+
+**Done (2026-10-29):** `Document::mark_unsaved` keeps a document dirty until it is saved; the Astah import
+uses it.
 
 `main_view.rs:223`, `:331-336`; `umlcraft-model/src/document.rs:33-41`
 
@@ -1031,9 +1318,12 @@ Sources: F H6 (High), O M-10 (Low). Traced.
 - **Fix:** a "never saved" state in `Document`, or mark the document dirty after import.
 
 <a id="u-2"></a>
-#### U-2 · High · The properties panel loses an edit when focus moves to an earlier field
+#### U-2 · High · The properties panel loses an edit when focus moves to an earlier field · **Done**
 
 Source: O U-1. Traced through the app and GPUI sources; not reproduced in a running app.
+
+**Done (2026-10-29):** the panel keeps a target element per field, recorded at the first keystroke
+(`InputEvent::Change`), so focus order no longer matters.
 
 `properties.rs:577-586`, `:595`
 
@@ -1046,9 +1336,12 @@ Source: O U-1. Traced through the app and GPUI sources; not reproduced in a runn
 - **Fix:** keep the target per field (`HashMap<Field, Id>`, set on Focus, taken on Blur).
 
 <a id="u-3"></a>
-#### U-3 · Medium · Leaving an element writes back every field and re-parses types
+#### U-3 · Medium · Leaving an element writes back every field and re-parses types · **Done**
 
 Sources: F M3, O U-3. Traced; the parse behavior is confirmed.
+
+**Done (2026-10-29):** only fields the user typed into are committed; loading values emits no events, so
+untouched fields are never written back or re-parsed.
 
 `properties.rs:691-716`, `:782-796`, `:826-835`
 
@@ -1061,9 +1354,12 @@ Sources: F M3, O U-3. Traced; the parse behavior is confirmed.
   the loaded text.
 
 <a id="u-4"></a>
-#### U-4 · Medium · Uncommitted text is neither saved nor asked about
+#### U-4 · Medium · Uncommitted text is neither saved nor asked about · **Done**
 
 Source: O U-4. Traced (close button plausible).
+
+**Done (2026-10-29):** `MainView::flush_edits` commits the canvas editor and the properties panel at the
+start of `confirm_discard`, `should_close`, `save` and both exports.
 
 `main_view.rs:222-226`, `:651-707`, `:740-753`
 
@@ -1075,9 +1371,11 @@ Source: O U-4. Traced (close button plausible).
   of `confirm_discard`, `should_close`, `save` and the exports.
 
 <a id="u-5"></a>
-#### U-5 · Medium · An inline edit is applied even when nothing changed
+#### U-5 · Medium · An inline edit is applied even when nothing changed · **Done**
 
 Source: O U-5. Confirmed.
+
+**Done (2026-10-29):** `InlineEdit` keeps the original text; an unchanged commit only closes the editor.
 
 `canvas.rs:1155-1167` → `workspace.rs:287-303`, `:600-636`
 
@@ -1089,9 +1387,11 @@ Source: O U-5. Confirmed.
   field already does (`properties.rs:603`).
 
 <a id="u-6"></a>
-#### U-6 · Medium · Reachable panic after clearing a binding
+#### U-6 · Medium · Reachable panic after clearing a binding · **Done**
 
 Source: F M4. Traced.
+
+**Done (2026-10-29):** `sync` re-reads the selection after committing pending fields.
 
 `properties.rs:823`, `:849`
 
@@ -1100,9 +1400,12 @@ Source: F M4. Traced.
   `expect("checked above")` panics. Re-fetch after the commits.
 
 <a id="u-7"></a>
-#### U-7 · High · Moving a container drags along nodes it passes over
+#### U-7 · High · Moving a container drags along nodes it passes over · **Done**
 
 Source: O U-2. Confirmed by simulating the canvas loop.
+
+**Done (2026-10-29):** the moved set is computed once on mouse-down from the undragged scene and stored in
+`Drag::Move`.
 
 `canvas.rs:467-468` (preview), `:893-895` (commit), `:1580-1589`
 
@@ -1114,9 +1417,12 @@ Source: O U-2. Confirmed by simulating the canvas loop.
   `Drag::Move`.
 
 <a id="u-8"></a>
-#### U-8 · Medium · A background source import merges into whatever project is open when it ends
+#### U-8 · Medium · A background source import merges into whatever project is open when it ends · **Done**
 
 Sources: O U-6 (Medium), F (app lows). Traced.
+
+**Done (2026-10-29):** a document generation is recorded when the import starts; if another document was
+opened meanwhile, the result is discarded with a message.
 
 `main_view.rs:258-311`, `:400-448`
 
@@ -1126,9 +1432,16 @@ Sources: O U-6 (Medium), F (app lows). Traced.
   disable file operations while busy.
 
 <a id="u-9"></a>
-#### U-9 · Medium · Error texts and English strings outside the locale files
+#### U-9 · Medium · Error texts and English strings outside the locale files · **Partly done**
 
 Sources: F M5 (Medium), O U-9 (Low), F (app lows).
+
+**Partly done (2026-10-29):** new module `errors.rs` turns every `ModelError` variant, the
+`FormatError` variants and a mistyped multiplicity into a localized text (`error.*` in both locale
+files) that names elements instead of showing their ids. Used for refused edits in the status bar,
+the multiplicity field, and opening and saving projects. The dialog button and the placeholders
+"entity, control", "ordered, unique", "filled, paid" come from the locale files. Open: the
+messages of the Astah import and export, the source import and the PNG export.
 
 - `ModelError`/`FormatError` `Display` texts with raw UUIDs ("no element or presentation 0192…")
   reach the status bar and dialogs, also in the German UI, whenever a connection is refused or a
@@ -1139,9 +1452,13 @@ Sources: F M5 (Medium), O U-9 (Low), F (app lows).
 - **Fix:** keys for the button and placeholders; a locale key with arguments per error variant.
 
 <a id="u-10"></a>
-#### U-10 · Low · Some edits skip the automatic refit
+#### U-10 · Low · Some edits skip the automatic refit · **Done**
 
 Sources: F, O U-8. Traced.
+
+**Done (2026-10-29):** `connect_message`, `create_fragment` and `update_style` go through
+`Workspace::edit`, so boxes sized to their content refit after them too (e.g. "Hide
+attributes").
 
 `workspace.rs:333-342`, `:346-362`, `:496-503`
 
@@ -1150,9 +1467,14 @@ Sources: F, O U-8. Traced.
   auto-sized class leaves an empty band that never refits.
 
 <a id="u-11"></a>
-#### U-11 · Low · Shortcuts and quitting per platform
+#### U-11 · Low · Shortcuts and quitting per platform · **Partly done**
 
 Sources: F, O U-10.
+
+**Partly done (2026-10-29):** The app's shortcuts use `secondary-` (Cmd on macOS, Ctrl elsewhere); fields
+get Ctrl+Shift+Z as their own redo on Windows and Linux, so it no longer redoes a model change
+and reloads the field. Open: a background import finishing while the user types, quit and
+reopen handlers on macOS, and the silent `Arial` fallback on Linux.
 
 `main.rs:123-155`
 
@@ -1165,10 +1487,16 @@ Sources: F, O U-10.
 - `DIAGRAM_FONT = "Arial"` falls back silently on Linux without the font. (F)
 
 <a id="u-12"></a>
-#### U-12 · Low · Settings location and corrupt files
+#### U-12 · Low · Settings location and corrupt files · **Done**
 
 Sources: F, O U-12. `settings.rs` changed since 6c397f2 (settings dialog); the location code is
 unchanged.
+
+**Done (2026-10-29):** Settings live in the platform's folder (`%APPDATA%`, `~/Library/Application
+Support`, `$XDG_CONFIG_HOME` or `~/.config`), described in the module doc and architecture.md.
+Each setting is read on its own (a wrong one falls back alone, bad recent entries are dropped
+one by one); the file is written beside and renamed; adding a recent file starts from the
+list as saved, so two windows keep each other's. Test for the lenient reading.
 
 `settings.rs:1`, `:22-46`
 
@@ -1179,9 +1507,12 @@ unchanged.
 - **Fix:** per-field lenient reading, temp file and rename, platform config folder, docs.
 
 <a id="u-13"></a>
-#### U-13 · Low · Relative command-line paths and stale recent files
+#### U-13 · Low · Relative command-line paths and stale recent files · **Done**
 
 Sources: O U-13, F (app lows).
+
+**Done (2026-10-29):** `MainView::open` makes the path absolute before opening and remembering it;
+a file that fails to open leaves the recent files (`Settings::remove_recent`).
 
 `main.rs:176-177`; `main_view.rs:304-311`, `:319-327`
 
@@ -1190,9 +1521,11 @@ Sources: O U-13, F (app lows).
   shows the error but stays in the list. Make paths absolute; drop entries that fail to open.
 
 <a id="u-14"></a>
-#### U-14 · Low · State that survives opening another document
+#### U-14 · Low · State that survives opening another document · **Done**
 
 Source: O U-11. Traced.
+
+**Done (2026-10-29):** `replace_document` clears the notice and the clipboard.
 
 `main_view.rs:248-256`
 
@@ -1202,9 +1535,12 @@ Source: O U-11. Traced.
   both.
 
 <a id="u-15"></a>
-#### U-15 · Low · Rename from the model tree can focus the wrong field
+#### U-15 · Low · Rename from the model tree can focus the wrong field · **Done**
 
 Source: O U-14. Plausible.
+
+**Done (2026-10-29):** `focus_name` takes the element being renamed and decides between Name and
+Declaration from it.
 
 `main_view.rs:205-211`, `properties.rs:564-571`
 
@@ -1213,18 +1549,24 @@ Source: O U-14. Plausible.
   from `ws.selected_element`.
 
 <a id="u-16"></a>
-#### U-16 · Low · Changing the language leaves Select items in the old language
+#### U-16 · Low · Changing the language leaves Select items in the old language · **Done**
 
 Source: F. Reported against `toggle_language` (`main_view.rs:817-826`); since 0b69871 the
 language changes through `set_language`, which notifies the properties panel but does not call
 `PropertiesPanel::sync`. Not re-checked.
 
+**Done (2026-10-29):** `set_language` calls `PropertiesPanel::sync` (now public), which reloads
+the Select items when the language changed.
+
 - Select items in the properties panel keep the old language until the next workspace change.
 
 <a id="u-17"></a>
-#### U-17 · Low · Loading and `.asta` import block the UI
+#### U-17 · Low · Loading and `.asta` import block the UI · **Partly done**
 
 Source: O U-15. See [A-1](#a-1).
+
+**Partly done (2026-10-29):** the `.asta` import runs on the background executor (see
+[A-1](#a-1)). Loading `.ucraft` files is still synchronous.
 
 `main_view.rs:319`, `:333`
 
@@ -1233,9 +1575,15 @@ Source: O U-15. See [A-1](#a-1).
   executor.
 
 <a id="u-18"></a>
-#### U-18 · Low · Small details
+#### U-18 · Low · Small details · **Done**
 
 Source: F.
+
+**Done (2026-10-29):** The toolbar's Undo and Redo name the step in their tooltip ("Undo: Delete",
+`toolbar.undo_named`/`redo_named`); the menus are built once per language and stay plain.
+`install_menus` says why it builds the tree twice (`Menu` cannot be cloned).
+`DiagramCanvas::to_logical` goes through `Transform::to_logical`; the six `4.0 / zoom` are
+`hit_tolerance()` with the named `HIT_TOLERANCE`.
 
 - `Document::undo_label` exists but the Edit menu shows plain "Undo".
 - `install_menus` builds the menu tree twice (`main_view.rs:1294`).
@@ -1245,9 +1593,18 @@ Source: F.
 ### CI, release, packaging and repository
 
 <a id="x-1"></a>
-#### X-1 · Medium · About 21 tests pass on CI without testing anything
+#### X-1 · Medium · About 21 tests pass on CI without testing anything · **Partly done**
 
 Sources: F M18, O X-1. Confirmed.
+
+**Partly done (2026-10-29):** the import and rewrite tests find Astah through `ASTAH_HOME`
+(else the Windows install folder); with `UMLCRAFT_REQUIRE_ASTAH` set, a skip in the import,
+rewrite and export round-trip tests fails instead of passing. Byte-level jser tests for
+`TC_LONGSTRING`, `TC_RESET`, `TC_CLASS`, `TC_ENUM`, a primitive array, and `BadMagic`, `Eof`,
+`BadHandle`, `BadTypeCode` (besides the earlier `WrongHandle`, `TooDeep` and class-chain tests).
+Open: proxies and externalizables, synthetic `.asta` fixtures with one mapping test per element
+kind, and fuzz targets. The export's report parsing is a pure function now
+(`parse_report`) with a unit test.
 
 `umlcraft-asta/tests/import.rs:11-21`, `tests/rewrite.rs:7`;
 `umlcraft-asta-export/tests/roundtrip.rs:611-623`; `umlcraft-reverse/tests/astah_compare.rs:283`
@@ -1269,9 +1626,14 @@ Sources: F M18, O X-1. Confirmed.
   - Move the export's report parsing into a pure function and unit-test it.
 
 <a id="x-2"></a>
-#### X-2 · Low · Toolchain and dependency hygiene
+#### X-2 · Low · Toolchain and dependency hygiene · **Partly done**
 
 Sources: F, O X-2.
+
+**Partly done (2026-10-29):** The workspace declares `rust-version = "1.92"`, the highest of the
+dependencies (`oo7`), inherited by every crate; not checked with a 1.92 toolchain. Open: a
+pinned toolchain, actions pinned to SHAs with Dependabot, `cargo deny`, tests before the release
+build, the duplicated resvg, and a release profile.
 
 - Toolchain is floating `stable`, edition 2024, no `rust-version`, no `rust-toolchain.toml`
   (`ci.yml:25`, `Cargo.toml:7`): a new clippy lint can turn CI red without a change; the code needs
@@ -1298,9 +1660,15 @@ Sources: F, O X-3.
   crate embeds the icons.
 
 <a id="x-4"></a>
-#### X-4 · Low · Repository files and platform tests
+#### X-4 · Low · Repository files and platform tests · **Partly done**
 
 Sources: F, O X-4.
+
+**Partly done (2026-10-29):** New root `.gitattributes` (`* text=auto eol=lf`, images and `.asta` binary;
+every tracked file is LF already) and `.editorconfig`; `CONTRIBUTING.md` came with D-1. The
+`recent_label` test has a variant for Linux and macOS (not run here). `asta_compare_all.py` and
+`svg_compare.py` take `ASTAH_HOME` and `INKSCAPE`. `JdkTypes.java` imports `IOException` once
+already. Open: `deny.toml`, SECURITY.md, Dependabot.
 
 - No root `.gitattributes` (`* text=auto eol=lf`), `.editorconfig`, `deny.toml`, SECURITY.md,
   CONTRIBUTING.md or dependabot. The two nested `.gitattributes` for encoding fixtures are right.
@@ -1311,9 +1679,15 @@ Sources: F, O X-4.
 ### Documentation
 
 <a id="d-1"></a>
-#### D-1 · Medium · `docs/handoff-source-import.md` is tracked, public and stale
+#### D-1 · Medium · `docs/handoff-source-import.md` is tracked, public and stale · **Partly done**
 
 Sources: F M19 (Medium), O D-2 (Low).
+
+**Partly done (2026-10-29):** the project rules (commands, language, i18n, `Document::edit`
+and `tidy`, no Astah files, line endings, snapshot and golden updates, `ASTAH_HOME` and
+`UMLCRAFT_REQUIRE_ASTAH`) are in a new `CONTRIBUTING.md`, linked from the README. `.gitignore` no
+longer lists the handoff as an exception. Open: the file is still tracked; it leaves the
+repository with `git rm --cached docs/handoff-source-import.md` in the next commit.
 
 - `.gitignore:27` keeps it public, while CLAUDE.md and TASKS.md say only `architecture.md` is. It
   is addressed to one person, calls C#, C++ and Python the goal (shipped in 0.5.0) and names
@@ -1324,9 +1698,19 @@ Sources: F M19 (Medium), O D-2 (Low).
 - `.gitignore` excludes `docs/*` except two files, so new docs need `git add -f` or an entry.
 
 <a id="d-2"></a>
-#### D-2 · Low · Drift between docs and code
+#### D-2 · Low · Drift between docs and code · **Done**
 
 Sources: F, O D-1.
+
+**Done (2026-10-29):** architecture.md: slots list the generals first; members keep source order
+within literals, attributes and operations; containers include states and components; `draw`
+also makes curves; texts center by `astah_width`; a create message gets no receiver bar;
+`source-import` takes `python`. The vertex owner, settings folder and region minimum now match
+the code (E-11, U-12, N-9). The tool README describes the sidecar without sequence rows and
+has `-Xmx1024m`; `map.rs` lists what it imports; README names composite structure once;
+CHANGELOG 0.8.0 no longer repeats hidden slots, the found-message signature and «create»; the
+stale paragraph in TASKS.md is gone; `assets/icons/README.md` says `subsystem` has a tool and
+how the line tool's icon is named.
 
 - architecture.md: slots are "own first, then the generals"; code, test and `object.rs:12-13` put
   the generals first. (F, O)

@@ -46,7 +46,9 @@ elements end up at the end. Ownership is stored only through the ordered `childr
 are omitted. `formatVersion` and the `MIGRATIONS` list in `umlcraft-format` handle future format
 changes. On load, `Model::check` verifies all invariants. Version 2 added the geometry of
 sequence diagrams; version 1 files load unchanged and their sequence diagrams are laid out once
-when the app opens them (`sequence_edit::upgrade_document`, not an undoable edit).
+when the app opens them (`sequence_edit::upgrade_document`, not an undoable edit; `load_versioned`
+tells the app the file's version). Version 3 keeps the tagged values of languages under
+UmlCraft's keys (`java.`, `csharp.`, `cpp.`); the migration renames Astah's `jude.` keys.
 
 ## User interface
 
@@ -72,7 +74,8 @@ when the app opens them (`sequence_edit::upgrade_document`, not an undoable edit
 - `png.rs` rasterizes the SVG export (`umlcraft_notation::svg`) with `resvg` for PNG export, at
   twice the canvas size and with the system's fonts, on a background thread.
 - `settings.rs` stores recent files, language, theme and the visibility column
-  (`visibilityColumn`) in `%APPDATA%\UmlCraft\settings.json`. The column reaches layout and
+  (`visibilityColumn`) in `UmlCraft/settings.json` in the platform's settings folder (`%APPDATA%` on Windows,
+  `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` elsewhere). The column reaches layout and
   drawing through `TextMeasure::visibility_column` of the measures the canvas and the
   workspace use. `settings_dialog.rs` shows language, theme and the column in a dialog
   (`gpui-component`'s `Dialog`), which applies each change at once through `MainView`; for the
@@ -88,7 +91,7 @@ when the app opens them (`sequence_edit::upgrade_document`, not an undoable edit
   the same layout. Nodes grow with their content; text width is measured by a `TextMeasure` (the
   real font in the app, an estimate in tests). `scene` also places edge labels and provides
   resize handles, edge handles (waypoints), rubber-band selection and alignment. Containers (system
-  boundaries, packages) graphically contain whatever lies fully inside them (`with_contents`);
+  boundaries, packages, states, components) graphically contain whatever lies fully inside them (`with_contents`);
   system boundaries are "hollow" and clickable only on their border and title.
 - `route` runs edges in the line styles of `.asta` files (`Style::line_shape`): straight through the
   waypoints, at right angles with the waypoints as corners, or as one cubic Bézier curve whose
@@ -102,7 +105,7 @@ when the app opens them (`sequence_edit::upgrade_document`, not an undoable edit
 - `member` produces and parses the text form of attributes and operations and writes it back to
   the model; known classifiers become real type references.
 - `object` derives an object's slots from its classifier: one per attribute, inherited ones
-  included (own first, then the generals depth first). Only slots with a
+  included (the generals' first, depth first, then its own). Only slots with a
   value are stored, as `Slot` children of the object that refer to their attribute; deleting the
   attribute deletes them. So slots follow the class when attributes are added, renamed or
   removed. An object's box shows `name : Class` underlined, and below it
@@ -115,14 +118,14 @@ when the app opens them (`sequence_edit::upgrade_document`, not an undoable edit
   realization only from class to interface) and where new elements land in the ownership tree.
 - `sequence` draws sequence diagrams, `sequence_edit` edits them (see below).
 - `draw` turns a scene's figures and end markers into a few primitives (polyline, polygon,
-  ellipse, frame) with color roles (`Paint`) and says where text baselines go. The canvas paints
+  ellipse, frame, curve) with color roles (`Paint`) and says where text baselines go. The canvas paints
   them with its theme colors (and a node's own fill color on a light background); `svg` writes
   them as the canvas shows them in the light theme: black lines, white where a node has no color
   of its own, a margin of 10 and 4/3 pixels per unit. The app's image export writes coordinates
   and sizes ten times larger (`render_scaled`, same image size): Word's PDF export puts the
   letters of SVG text on whole units, which at 12 units per letter height spaces them unevenly. So the figure geometry exists once,
-  for both. Texts in nodes are centered by Java's whole-pixel width (`TextMeasure::rounded_width`,
-  from the tables for 12 and 14 px in `metrics`), so imported diagrams keep their text
+  for both. Texts in nodes are centered by Java's whole-pixel width or the exact one, whichever
+  is larger (`TextMeasure::astah_width`, with the tables for 12 and 14 px in `metrics`), so imported diagrams keep their text
   positions, and written at a fixed x. Message labels are centered by that width too; those
   moved by hand get the offset Astah's stored box implies on import.
 
@@ -152,7 +155,7 @@ The interaction's order follows the drawing: `sequence_edit::tidy`, run after ev
 sequence diagram, grows bars to end 20 below what lies in them and lifelines to reach 30 below
 what is on them, grows the frame around everything, and puts every message and fragment into the
 operand of the innermost fragment drawn around it, ordered by height (`sync_order`). Edits follow
-the rules measured through the `.asta` export API: a call gets a bar of 25 on the receiver and, where the
+the rules measured through the `.asta` export API: a call gets a bar of 25 on the receiver (a create message none) and, where the
 sender has none, a bar of 45 on the sender (60 for create, 30 for lost messages); a reply leaves
 at the end of the bar it returns from; a message to self comes back 20 lower into a bar of its
 own; a create message brings the new lifeline's head down to it; a destroy message ends the
@@ -256,10 +259,13 @@ mapping for all languages puts the IR into the model.
 - **Merging** (`merge`) finds packages and types by name or creates them. Members are matched
   with what the model has (attributes and literals by name, operations by name and parameter
   types, template parameters and parameters by position): matched ones are updated, new ones
-  created, the rest deleted, and the members put in source order. A type whose kind changed is
+  created, the rest deleted, and the members put in source order within literals, attributes
+  and operations, which come in that order. A type whose kind changed is
   replaced by a new element that takes over its children, references and presentations
-  (`merge::retype`). Generalizations and
-  realizations follow the sources; dependencies drawn by hand stay. A type declared in parts
+  (`merge::retype`). A name declared with two kinds in one import (`class Foo` in one file,
+  `interface Foo` in another) keeps the kind of its first declaration. Generalizations and
+  realizations follow the sources, so one drawn by hand between types of the sources is
+  deleted; dependencies drawn by hand stay. A type declared in parts
   (C# `partial`) is one element with the members of all parts, documented by the first part
   that has documentation. A member defined outside its class joins the class's members: it fills
   in parameter names, documentation and a field's default the declaration leaves out, or adds
@@ -267,8 +273,9 @@ mapping for all languages puts the IR into the model.
   `f() const`), so `f()` and `f() const` are two operations.
 - **Associations** (`associations`): attributes typed by a type of the model become
   associations, collections and maps included (`*`, `{ordered}`, `{unique}`, a qualifier for
-  the key, `0..1` for optionals). On a new import an association with the same role is reused,
-  and associations whose field is gone are removed.
+  the key, `0..1` for optionals). The import marks the associations it makes with the tagged
+  value `umlcraft.imported`. On a new import an association with the same role is reused, and
+  marked associations whose field is gone are removed; those drawn by hand stay.
 
 Parsing needs only the files, so the app runs it in the background (`parse_sources`); `apply`
 then runs on the UI thread inside one `Document::edit`, so one undo takes the import back. For
@@ -277,7 +284,7 @@ one, and undo replays removals without looking through the model for references,
 recorded operations rule out; 6300 files (225,000 elements) import in about ten seconds.
 Qualified names and used single-type imports are resolved before any simple name, so the
 result does not depend on the order of the files and importing again changes nothing.
-`cargo run --release -p umlcraft-reverse --example source-import -- <java|csharp|cpp> <folder>`
+`cargo run --release -p umlcraft-reverse --example source-import -- <java|csharp|cpp|python> <folder>`
 imports a real project, checks the model, undoes, redoes and imports again, and reports any
 difference; Newtonsoft.Json (951 C# files, 22,600 elements) imports in about 1.2 seconds,
 leveldb (132 C++ files, 99 of them without macros in declarations, 1,357 elements) in 0.2

@@ -27,9 +27,10 @@ icons are embedded.
 ## `uml/`
 
 UmlCraft's own icons for the diagram tools, named after the palette's tool keys
-(`Tool::key()`, e.g. `useCase.svg`, `asyncMessage.svg`). A few have no tool yet:
-`navigableAssociation`, `aggregation`, `composition`, `associationClass`, `containment`,
-`requiredInterface`, `subsystem` and `freeLine`.
+(`Tool::key()`, e.g. `useCase.svg`, `asyncMessage.svg`), except the line tool, whose key is
+`line` and whose icon is `freeLine.svg`; select and text have none here. A few have no tool yet:
+`navigableAssociation`, `aggregation`, `composition`, `associationClass`, `containment` and
+`requiredInterface`.
 
 `make_uml_icons.py` writes them; change the shapes there rather than in the SVGs. The shapes
 are laid out on a 20 px grid and mapped onto Fluent's 24 px grid.

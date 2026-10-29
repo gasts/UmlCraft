@@ -7,9 +7,10 @@ Per file: what UmlCraft's import skips, Astah's SVG (command line) and UmlCraft'
 side only, with 1 px tolerance, after shifting UmlCraft's drawing onto Astah's. Writes
 out-dir/NN/<diagram>-overlay.png (Astah red, UmlCraft blue) and prints one JSON line per file.
 Build the examples first (cargo build -p umlcraft-asta --examples). Needs Inkscape, Pillow and
-numpy.
+numpy. ASTAH_HOME and INKSCAPE override where Astah and Inkscape are.
 """
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -17,8 +18,8 @@ from pathlib import Path
 import numpy
 from PIL import Image, ImageChops, ImageFilter
 
-ASTAH = Path(r'C:\Program Files\astah-professional')
-INKSCAPE = r'C:\Program Files\Inkscape\bin\inkscape.com'
+ASTAH = Path(os.environ.get('ASTAH_HOME') or r'C:\Program Files\astah-professional')
+INKSCAPE = os.environ.get('INKSCAPE') or r'C:\Program Files\Inkscape\bin\inkscape.com'
 TARGET = Path(__file__).resolve().parent.parent / 'target' / 'debug' / 'examples'
 # Astah's command line runs elsewhere and needs absolute paths.
 src, out = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()

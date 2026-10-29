@@ -96,7 +96,7 @@ are chosen in Tools › Settings … (Ctrl+,).
 - Composite structure diagrams (ports, parts, connectors)
 - More than two regions per state in the `.asta` export, because the API divides a state only
   once
-- Data flow diagrams, flowcharts, composite structure, communication, timing, requirement, ER
+- Data flow diagrams, flowcharts, communication, timing, requirement, ER
   and mind map diagrams and matrices in `.asta` files (skipped on import)
 - Component and deployment diagrams are exported to `.asta` as class diagrams, because the API
   has no editors for them
@@ -153,7 +153,8 @@ keeps them as workflow artifacts.
 | `tools/jdk-types` | The Java tool that writes the table of JDK types used by the Java import |
 | `crates/umlcraft-app` | GPUI application (`gpui-kit` 0.8) |
 
-Details: [docs/architecture.md](docs/architecture.md).
+Details: [docs/architecture.md](docs/architecture.md). Commands and project rules for
+contributors: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

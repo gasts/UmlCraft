@@ -5,8 +5,9 @@ Usage: python -I svg_compare.py astah.svg umlcraft.svg out-prefix
 Writes out-prefix-overlay.png (Astah in red, UmlCraft in blue, both in black) and
 out-prefix-side.png (Astah left, UmlCraft right). Both exports leave a margin of 10 around the
 drawing at 96 dpi, so their top left corners line up when both draw the same. Needs Inkscape and
-Pillow.
+Pillow; INKSCAPE overrides where Inkscape is.
 """
+import os
 import subprocess
 import sys
 import tempfile
@@ -14,7 +15,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops
 
-INKSCAPE = r'C:\Program Files\Inkscape\bin\inkscape.com'
+INKSCAPE = os.environ.get('INKSCAPE') or r'C:\Program Files\Inkscape\bin\inkscape.com'
 
 
 def render(svg, png):

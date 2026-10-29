@@ -45,8 +45,7 @@ today.
   - a system boundary's name keeps its place, also above the rectangle;
   - sequence diagrams: flat message numbers (`2:`, `3:`), hidden frames, message labels moved
     by hand, the width of messages to self, «create» over a moved label;
-  - objects can hide slots without a value (a switch in the properties panel); inherited
-    slots come first;
+  - inherited slots come first;
   - containment lines with ⊕ at the owner of a nested class;
   - Java enums from Astah's reverse engineering, with their «enum constant»s; stereotypes of
     attributes and operations show in front of their name;
@@ -59,9 +58,6 @@ today.
   - bound classes that a dependency, generalization or association points to are kept, so
     associations to types such as `List<User>` are no longer left out;
   - a self-association keeps its ends where Astah has them;
-  - a found message without arguments shows the signature of the operation it calls and
-    breaks it over lines like Astah; «create» without a text stands where its label was
-    placed;
   - long attributes and operations break where Astah breaks them;
   - combined fragments show their name in the tab (`loop : name`); «create» without a text
     stands where the label goes;
