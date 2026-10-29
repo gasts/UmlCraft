@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32-35" preRepeat="until " postFor="to" preReturn="return" postForIn="in" preWhile="while " output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="tester" created="2026-10-29" origin="UmlCraft test" text="&#34;sum(a: int; b: int): int&#34;" comment="" color="ffffff" type="sub" style="nice">
+	<children>
+		<instruction text="&#34;s &#60;- a + b&#34;,&#34;say &#34;&#34;hi&#34;&#34; &amp; &#60;go&#62;&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+		<call text="&#34;log(s)&#34;" comment="" color="ffffff" disabled="0" ismethoddecl="0"></call>
+		<alternative text="&#34;s &#62; 10&#34;" comment="" color="ffffff" branch_colors="," disabled="0">
+			<qTrue>
+				<jump text="&#34;return s&#34;" comment="" color="ffffff" disabled="0"></jump>
+			</qTrue>
+			<qFalse color="ffffff">
+			</qFalse>
+		</alternative>
+		<case text="&#34;s&#34;,&#34;1&#34;,&#34;2, 3&#34;,&#34;default&#34;" comment="" color="ffffff" branch_colors=",," disabled="0">
+			<qCase color="ffffff">
+			</qCase>
+			<qCase color="ffffff">
+			</qCase>
+			<qCase color="ffffff">
+			</qCase>
+		</case>
+		<case text="&#34;s&#34;,&#34;1&#34;,&#34;%&#34;" comment="" color="ffffff" branch_colors="," disabled="0">
+			<qCase color="ffffff">
+			</qCase>
+			<qCase color="ffffff">
+			</qCase>
+		</case>
+		<for text="&#34;for i &#60;- 1 to 10 by 2&#34;" comment="" counterVar="i" startValue="1" endValue="10" stepConst="2" style="COUNTER" color="ffffff" disabled="0">
+			<qFor>
+				<instruction text="&#34;s &#60;- s + i&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qFor>
+		</for>
+		<for text="&#34;foreach x in list&#34;" comment="" counterVar="x" startValue="" stepConst="" style="TRAVERSAL" insep="in" color="ffffff" disabled="0">
+			<qFor color="ffffff">
+			</qFor>
+		</for>
+		<for text="&#34;for every line&#34;" comment="" style="FREETEXT" color="ffffff" disabled="0">
+			<qFor color="ffffff">
+			</qFor>
+		</for>
+		<while text="&#34;s &#60; 100&#34;" comment="" color="ffffff" disabled="0">
+			<qWhile color="ffffff">
+			</qWhile>
+		</while>
+		<repeat text="&#34;s &#62;= 100&#34;" comment="" color="ffffff" disabled="0">
+			<qRepeat color="ffffff">
+			</qRepeat>
+		</repeat>
+		<forever comment="" color="ffffff" disabled="0">
+			<qForever color="ffffff">
+			</qForever>
+		</forever>
+		<try text="&#34;e&#34;" comment="" color="ffffff" disabled="0">
+			<qTry color="ffffff">
+			</qTry>
+			<qCatch color="ffffff">
+			</qCatch>
+			<qFinally color="ffffff">
+			</qFinally>
+		</try>
+		<parallel text="&#34;3&#34;" comment="" color="ffffff" disabled="0">
+			<qPara color="ffffff">
+			</qPara>
+			<qPara color="ffffff">
+			</qPara>
+			<qPara color="ffffff">
+			</qPara>
+		</parallel>
+		<jump text="" comment="" color="ffffff" disabled="0"></jump>
+	</children>
+</root>
