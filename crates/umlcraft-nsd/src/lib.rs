@@ -6,6 +6,7 @@
 //! the files it writes; Structorizer is GPL-licensed and none of its code is used here.
 
 pub mod create;
+pub mod layout;
 pub mod metrics;
 pub mod model;
 pub mod read;
