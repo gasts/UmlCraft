@@ -80,6 +80,14 @@ import com.change_vision.jude.api.inf.project.ProjectAccessor;
 @SuppressWarnings("unchecked")
 public final class AstaExport {
     private static final String DEFAULT_FILL = "#FFFFCC";
+    /// Measured in Astah: where a message label stands left of the point the API gives it.
+    private static final double LABEL_SHIFT = -2.45;
+    /// How far a found or lost message without a gate position starts beside its lifeline.
+    private static final double GATE_DISTANCE = 120;
+    /// The top of a combined fragment's first operand below the frame's top: the tab's height.
+    private static final double FIRST_OPERAND_TOP = 25.09375;
+    /// Where a boundary's name stands below its top.
+    private static final double BOUNDARY_NAME_TOP = 7;
 
     public static void main(String[] args) {
         if (args.length != 4) {
@@ -1360,10 +1368,17 @@ public final class AstaExport {
 
     /// A fill color of the node's own; Astah's defaults stay otherwise.
     private static void fill(INodePresentation node, Map<String, Object> p) throws InvalidEditingException {
-        Map<String, Object> style = (Map<String, Object>) p.get("style");
-        if (style != null && style.get("fill") instanceof String f && f.length() >= 7) {
-            node.setProperty("fill.color", f.substring(0, 7).toUpperCase());
+        String own = ownFill((Map<String, Object>) p.get("style"));
+        if (own != null) {
+            node.setProperty("fill.color", own);
         }
+    }
+
+    /// The fill color a style sets, as Astah writes it (`#RRGGBB`, upper case, no alpha), or
+    /// null.
+    private static String ownFill(Map<String, Object> style) {
+        return style != null && style.get("fill") instanceof String f && f.length() >= 7
+            ? f.substring(0, 7).toUpperCase() : null;
     }
 
     /// An instance specification of its classifier. The API draws every instance as an object, so
@@ -1465,12 +1480,12 @@ public final class AstaExport {
         INodePresentation rect = editor.createRect(new Point2D.Double(x, y), width, num(r, "height"));
         String name = name(elements.get(boundary));
         if (!name.isEmpty()) {
-            INodePresentation text = editor.createText(name, new Point2D.Double(x, y + 7));
+            INodePresentation text = editor.createText(name, new Point2D.Double(x, y + BOUNDARY_NAME_TOP));
             // Where the text stood in Astah, or centered.
             if (style != null && style.get("nameOffset") instanceof Map<?, ?> at) {
                 text.setLocation(new Point2D.Double(x + num((Map<String, Object>) at, "x"), y + num((Map<String, Object>) at, "y")));
             } else {
-                text.setLocation(new Point2D.Double(x + (width - text.getWidth()) / 2, y + 7));
+                text.setLocation(new Point2D.Double(x + (width - text.getWidth()) / 2, y + BOUNDARY_NAME_TOP));
             }
         }
         return rect;
@@ -1672,9 +1687,8 @@ public final class AstaExport {
             node.setProperty("notation_type", iconic ? "icon" : "normal");
         }
         // Without a color of its own a node gets Astah's usual default, not the API's white.
-        String fill = style != null && style.get("fill") instanceof String f && f.length() >= 7
-            ? f.substring(0, 7).toUpperCase() : DEFAULT_FILL;
-        node.setProperty("fill.color", fill);
+        String fill = ownFill(style);
+        node.setProperty("fill.color", fill != null ? fill : DEFAULT_FILL);
         if (style == null) {
             return;
         }
@@ -1764,9 +1778,9 @@ public final class AstaExport {
                 } else if ("activation".equals(shape)) {
                     double top = num(p, "top");
                     Map<String, Object> style = (Map<String, Object>) p.get("style");
-                    String fill = style != null && style.get("fill") instanceof String f && f.length() >= 7
-                        ? f.substring(0, 7).toUpperCase() : DEFAULT_FILL;
-                    bars.add(new Bar((String) p.get("lifeline"), top, top + num(p, "height"), fill));
+                    String fill = ownFill(style);
+                    bars.add(new Bar((String) p.get("lifeline"), top, top + num(p, "height"),
+                        fill != null ? fill : DEFAULT_FILL));
                 } else if ("message".equals(shape) && p.get("element") instanceof String element) {
                     messageOf.putIfAbsent(element, p);
                 } else if (p.get("element") instanceof String element) {
@@ -1967,7 +1981,7 @@ public final class AstaExport {
                 // Found and lost messages may have no label position of their own yet.
                 String current = link.getProperty("name.point.x");
                 double shift = own instanceof Number n && current != null
-                    ? Double.parseDouble(current) - n.doubleValue() : -2.45;
+                    ? Double.parseDouble(current) - n.doubleValue() : LABEL_SHIFT;
                 link.setProperty("name.point.x", Double.toString(x + shift));
                 link.setProperty("name.point.y", Double.toString(y));
             }
@@ -2121,11 +2135,11 @@ public final class AstaExport {
             double x = lifeline.getLocation().getX() + lifeline.getWidth() / 2;
             ILinkPresentation link;
             if ("found".equals(gate)) {
-                double gx = p.get("gateX") instanceof Number n ? n.doubleValue() : x - 120;
+                double gx = p.get("gateX") instanceof Number n ? n.doubleValue() : x - GATE_DISTANCE;
                 link = editor.createFoundMessage(name(e), new Point2D.Double(gx, y(at)), lifeline);
                 keep(link.getTarget(), lane, at);
             } else {
-                double gx = p.get("gateX") instanceof Number n ? n.doubleValue() : x + 120;
+                double gx = p.get("gateX") instanceof Number n ? n.doubleValue() : x + GATE_DISTANCE;
                 Bar bar = barAt(lane, at);
                 INodePresentation source = bar != null && bar.astah != null ? bar.astah : lifeline;
                 link = editor.createLostMessage(name(e), source, new Point2D.Double(gx, y(at)));
@@ -2203,7 +2217,7 @@ public final class AstaExport {
                 String guard = made.get(k).guard();
                 if (guard != null && !guard.isEmpty()
                         && i < guards.size() && guards.get(i) instanceof Map<?, ?> moved) {
-                    double operandTop = i == 0 ? top + 25.09375
+                    double operandTop = i == 0 ? top + FIRST_OPERAND_TOP
                         : top + ((Number) separators.get(i - 1)).doubleValue();
                     double x = num(r, "x") + 10 + num((Map<String, Object>) moved, "x");
                     double gy = y(operandTop + 2 + num((Map<String, Object>) moved, "y"));
