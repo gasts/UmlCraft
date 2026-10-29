@@ -851,19 +851,23 @@ name index (`children_named`).
   (`palette.rs:773-778`).
 
 <a id="n-12"></a>
-#### N-12 · Low · Small inconsistencies · **Partly done**
+#### N-12 · Low · Small inconsistencies · **Done**
 
 Sources: F, O N-11.
 
-**Partly done (2026-10-29):** The state doc comment sits on `layout_state`, `Paint::Translucent` is
+**Done (2026-10-29):** The state doc comment sits on `layout_state`, `Paint::Translucent` is
 documented as the partition fill; `TextMeasure::astah_width` replaces the written-out
 "max(exact, rounded)" (labels, line breaks, tabs, SVG, test); the second `Fixed` test measure is
 gone; the layout functions take `&Element`, so no `expect("caller checked")` is left;
 `SELF_DROP` lives in `sequence.rs` and is used there too. The stereotype rows of a box's
 header come from one `stereotype_lines` (`layout_box`, `layout_object`, `layout_classifier`),
 which share `BOX_PAD_X`, `BOX_PAD_Y`, `BOX_MIN_WIDTH` and `BOX_MIN_HEIGHT`; `sequence_edit.rs`
-names its fallbacks (`FIRST_LINE_TOP`, `MIN_LIFELINE`, `EMPTY_SPAN`). Open: the remaining
-unnamed numbers in `scene.rs`, `sequence.rs` and `draw.rs`.
+names its fallbacks (`FIRST_LINE_TOP`, `MIN_LIFELINE`, `EMPTY_SPAN`). `name_arrow` builds its
+triangle from named parts (gap, length, half width, offsets beside, below and above the box;
+same points as before), `layout_text` names its first baseline. The other listed numbers are
+Astah measurements spelled out in the doc comment or comment right beside them (package tab,
+actor name, template box, edge name 9 below the line, slot spacing, `draw`'s bounding box) and
+stay literals.
 
 - The doc comment "States: the name, centered…" sits on `CUBE_DEPTH` (`scene.rs:1250-1253`).
 - `Paint::Translucent` is documented as the boundary fill (`draw.rs:36`); boundaries use
@@ -1651,8 +1655,31 @@ rewrite and export round-trip tests fails instead of passing. Byte-level jser te
 `BadHandle`, `BadTypeCode` (besides the earlier `WrongHandle`, `TooDeep` and class-chain tests).
 Proxy classes (interfaces kept, written back byte for byte) and externalizable objects
 (block data kept and written back; raw protocol-1 data refused as `Externalizable`) have
-byte-level tests too. Open: synthetic `.asta` fixtures with one mapping test per element kind,
-and fuzz targets. The export's report parsing is a pure function now
+byte-level tests too. Deterministic stand-ins for fuzzing: every byte of a jser stream
+replaced by type codes, extremes and its neighbors, and every prefix of it, is read or refused
+without a panic (`damaged_streams_are_read_or_refused`); every leaf of the sample `.ucraft`
+replaced by another id, -1, 1e30, null or "" loads into a model that passes `check` or is
+refused (`damaged_files_load_consistently_or_are_refused`, about 7 s in a debug build).
+First mapping tests on hand-built object graphs (no Astah needed, so they run on CI):
+the eight classifier and package classes map to their kinds
+(`classifiers_map_by_their_astah_class`), and features keep Astah's display order, the
+classifier scope and their parameters (`features_keep_their_order_scope_and_parameters`), and
+generalizations, dependencies, associations (role, navigability, aggregation) and includes
+(Astah's swapped fields) connect what Astah names (`relationships_connect_what_astah_names`),
+and a class's state machine brings its pseudostate, state with entry action, final state and
+transitions with triggers, without Astah's default vertex names
+(`state_machines_bring_their_states_and_transitions`), and an activity brings its initial,
+action, decision and final nodes (control nodes without Astah's names) and its flows, the
+guard taken out of the name (`activities_bring_their_nodes_and_flows`), and a class diagram
+shows its classes at Astah's places, shifted to a margin of 20 where Astah's coordinates go
+below it (`class_diagrams_show_their_classes_where_astah_put_them`), and an edge whose
+servers Astah lists the other way round runs from the specific class to the general one with
+its waypoints reversed (`edges_run_the_way_their_relationship_does`), and a sequence
+diagram's collaboration becomes an interaction with its lifelines (one representing a class)
+and messages in drawing order, the call's return value moved to the reply
+(`sequence_diagrams_bring_lifelines_and_messages_in_drawing_order`). Open: such tests for the
+drawing of sequence diagrams, fragments and the other diagram kinds, and real fuzz targets (`cargo
+fuzz` needs nightly and does not run on Windows MSVC here). The export's report parsing is a pure function now
 (`parse_report`) with a unit test.
 
 `umlcraft-asta/tests/import.rs:11-21`, `tests/rewrite.rs:7`;
