@@ -9,6 +9,8 @@ today.
   in one place. Changes apply at once. The language can also follow the system again, and the
   visibility column no longer needs editing `settings.json`. In the toolbar, a Settings button
   takes the place of the Light/Dark and language buttons; View keeps both toggles.
+- Right-angled lines whose ends nearly line up run straight instead of making a tiny step, and
+  the step of a right-angled line between two boxes lies halfway between them.
 
 ## 0.8.0 – 2026-10-28
 
