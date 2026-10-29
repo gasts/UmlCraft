@@ -69,7 +69,12 @@ pub fn reparent_vertices(tx: &mut Tx<'_>, diagram: Id, presentations: &[Id]) -> 
         }
     }
     for (element, owner) in moves {
-        let index = tx.model().children(owner).len();
+        // An earlier move may have put the owner inside the element.
+        let model = tx.model();
+        if owner == element || model.is_ancestor(element, owner) {
+            continue;
+        }
+        let index = model.children(owner).len();
         tx.move_element(element, owner, index)?;
     }
     Ok(())
@@ -172,6 +177,18 @@ pub fn move_region_line(
     let shapes = scene::state_regions(model, p);
     let mut separators = scene::region_separators(bounds, &shapes, layout.vertical);
     let Some(line) = separators.get_mut(index) else { return Ok(()) };
+    // Kept between its neighbors as the drawing keeps it, so what is stored is what is seen.
+    let origin = if layout.vertical { bounds.x } else { bounds.y };
+    let start = |r: umlcraft_model::Rect| if layout.vertical { r.x } else { r.y } - origin;
+    let end =
+        |r: umlcraft_model::Rect| if layout.vertical { r.right() } else { r.bottom() } - origin;
+    let offset = match (shapes.get(index), shapes.get(index + 1)) {
+        (Some(before), Some(after)) => {
+            let (low, high) = (start(before.rect) + MIN_REGION, end(after.rect) - MIN_REGION);
+            if low <= high { offset.clamp(low, high) } else { offset }
+        }
+        _ => offset,
+    };
     *line = offset;
     set_layout(tx, diagram, presentation, Regions { separators, ..layout })?;
     redistribute(tx, diagram, state)
@@ -362,5 +379,54 @@ mod tests {
         assert_eq!(model.get(t).unwrap().owner(), Some(shipped));
         let ElementKind::InternalTransition(p) = model.get(t).unwrap().kind() else { panic!() };
         assert_eq!(p.label(), "track");
+    }
+
+    #[test]
+    fn every_region_of_a_small_state_keeps_its_room() {
+        let (mut doc, _) = order_system();
+        let shipped = named(doc.model(), "Shipped");
+        let (diagram, node) = node_of(doc.model(), shipped);
+        doc.edit("small", |tx| {
+            tx.set_bounds(diagram, node, Rect::new(680.0, 60.0, 100.0, 40.0))?;
+            for _ in 0..4 {
+                add_region(tx, shipped, false)?;
+            }
+            Ok(())
+        })
+        .unwrap();
+        let model = doc.model();
+        let p = model.view(diagram).unwrap().get(node).unwrap();
+        let shapes = scene::state_regions(model, p);
+        assert_eq!(shapes.len(), 5);
+        for s in &shapes {
+            assert!(s.rect.height >= MIN_REGION - 0.01 && s.rect.y >= 60.0, "{:?}", s.rect);
+        }
+        // A line dragged past its neighbor stays where it is drawn.
+        doc.edit("drag", |tx| move_region_line(tx, diagram, node, 1, -50.0)).unwrap();
+        let model = doc.model();
+        let p = model.view(diagram).unwrap().get(node).unwrap();
+        let drawn =
+            scene::region_separators(p.bounds().unwrap(), &scene::state_regions(model, p), false);
+        assert_eq!(p.regions().unwrap().separators[1], drawn[1]);
+    }
+
+    #[test]
+    fn states_moved_into_each_other_close_no_cycle() {
+        let (mut doc, _) = order_system();
+        let (shipped, cancelled) = (named(doc.model(), "Shipped"), named(doc.model(), "Cancelled"));
+        let (diagram, a) = node_of(doc.model(), shipped);
+        let (_, b) = node_of(doc.model(), cancelled);
+        // Each center lies inside the other state.
+        doc.edit("overlap", |tx| {
+            tx.set_bounds(diagram, a, Rect::new(100.0, 300.0, 200.0, 100.0))?;
+            tx.set_bounds(diagram, b, Rect::new(150.0, 320.0, 200.0, 100.0))?;
+            reparent_vertices(tx, diagram, &[a, b])
+        })
+        .unwrap();
+        let model = doc.model();
+        let owners = [shipped, cancelled].map(|s| model.get(s).unwrap().owner().unwrap());
+        // One goes into the other, the other stays where it is.
+        assert!((owners[0] == cancelled) != (owners[1] == shipped), "{owners:?}");
+        model.check().unwrap();
     }
 }

@@ -11,7 +11,7 @@ use umlcraft_model::{
 
 pub fn type_label(model: &Model, type_ref: &Option<TypeRef>) -> Option<String> {
     match type_ref {
-        Some(TypeRef::Element(id)) => model.get(*id).map(|t| t.name().to_owned()),
+        Some(TypeRef::Element(id)) => model.contains(*id).then(|| display_name(model, *id)),
         Some(t) => Some(type_text(model, t)),
         None => None,
     }
@@ -21,7 +21,8 @@ pub fn type_label(model: &Model, type_ref: &Option<TypeRef>) -> Option<String> {
 /// by a bare comma (`Map<String,Foo>`), as Astah writes them.
 pub fn type_text(model: &Model, type_ref: &TypeRef) -> String {
     match type_ref {
-        TypeRef::Element(id) => model.get(*id).map(|t| t.name().to_owned()).unwrap_or_default(),
+        // A bound class without a name reads as what it binds: `Pair<int,Holder>`.
+        TypeRef::Element(id) => display_name(model, *id),
         TypeRef::Text(text) => text.clone(),
         TypeRef::Expr(e) => {
             let mut s = format!("{}{}", e.prefix, type_text(model, &e.base));
@@ -213,16 +214,35 @@ pub struct OperationSpec {
     pub return_type: Option<String>,
 }
 
-/// Byte index of the first `sep` outside of `<>`, `()` and `[]`. A `:` that is part of `::`
-/// does not count.
+/// Byte index of the first `sep` outside of `<>`, `()`, `[]` and quoted strings (`"a,b"`,
+/// `','`). A `:` that is part of `::` does not count. A `<` opens a bracket only right after a
+/// name (`List<`), so a comparison like `x < y` in a default does not; a `>` closes only an open
+/// `<`.
 fn find_top(s: &str, sep: char) -> Option<usize> {
     let bytes = s.as_bytes();
     let mut depth = 0i32;
+    let mut angles = 0i32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut previous: Option<char> = None;
     for (i, c) in s.char_indices() {
+        let before = previous.replace(c);
+        if let Some(q) = quote {
+            match c {
+                _ if escaped => escaped = false,
+                '\\' => escaped = true,
+                c if c == q => quote = None,
+                _ => {}
+            }
+            continue;
+        }
         match c {
-            '<' | '(' | '[' => depth += 1,
-            '>' | ')' | ']' => depth -= 1,
-            c if c == sep && depth == 0 => {
+            '"' | '\'' => quote = Some(c),
+            '<' if before.is_some_and(|b| b.is_alphanumeric() || b == '_') => angles += 1,
+            '>' if angles > 0 => angles -= 1,
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth -= 1,
+            c if c == sep && depth == 0 && angles == 0 => {
                 if sep == ':' && (bytes.get(i + 1) == Some(&b':') || i > 0 && bytes[i - 1] == b':')
                 {
                     continue;
@@ -235,11 +255,23 @@ fn find_top(s: &str, sep: char) -> Option<usize> {
     None
 }
 
-/// Byte index of the `)` closing the `(` at byte index `open`.
+/// Byte index of the `)` closing the `(` at byte index `open`, quoted strings left aside.
 fn matching_paren(s: &str, open: usize) -> Option<usize> {
     let mut depth = 0i32;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
     for (i, c) in s[open..].char_indices() {
+        if let Some(q) = quote {
+            match c {
+                _ if escaped => escaped = false,
+                '\\' => escaped = true,
+                c if c == q => quote = None,
+                _ => {}
+            }
+            continue;
+        }
         match c {
+            '"' | '\'' => quote = Some(c),
             '(' => depth += 1,
             ')' => {
                 depth -= 1;
@@ -274,7 +306,11 @@ fn non_empty(s: Option<&str>) -> Option<String> {
 
 fn check_name(name: &str, text: &str) -> Result<String, ParseError> {
     let name = name.trim();
-    if name.is_empty() || name.contains(['(', ')', ':', '=', '[', ']']) {
+    let mut bare = name;
+    while let Some(rest) = bare.strip_suffix("[]") {
+        bare = rest.trim_end();
+    }
+    if bare.is_empty() || bare.contains(['(', ')', ':', '=', '[', ']']) {
         return Err(ParseError(format!("no valid name in {text:?}")));
     }
     Ok(name.to_owned())
@@ -294,6 +330,8 @@ pub fn parse_attribute(text: &str) -> Result<AttributeSpec, ParseError> {
     if head.ends_with(']')
         && let Some(open) = head.rfind('[')
         && (find_top(head, ':').is_none() || head[..open].ends_with(char::is_whitespace))
+        // `arr[]` without a type is a C array named so, not a multiplicity.
+        && !(find_top(head, ':').is_none() && head[open + 1..head.len() - 1].trim().is_empty())
     {
         let m = &head[open + 1..head.len() - 1];
         multiplicity =
@@ -323,9 +361,15 @@ fn parse_parameter(text: &str) -> Result<ParameterSpec, ParseError> {
     .unwrap_or((ParameterDirection::In, text));
     let (head, default) = split_top(rest, '=');
     let (name, type_text) = split_top(head, ':');
+    // C++ declares parameters by type alone: `f(: int)`.
+    let name = if name.trim().is_empty() && type_text.is_some() {
+        String::new()
+    } else {
+        check_name(name, text)?
+    };
     Ok(ParameterSpec {
         direction,
-        name: check_name(name, text)?,
+        name,
         type_text: non_empty(type_text),
         default: non_empty(default),
     })
@@ -387,9 +431,29 @@ pub fn parse_template_parameter(text: &str) -> Result<TemplateParameterSpec, Par
     })
 }
 
+/// The length of a C++ operator name at the start of `s` (`operator<`, `operator()`,
+/// `operator bool`), up to the `(` of its parameters.
+fn operator_name_len(s: &str) -> Option<usize> {
+    let after = s.strip_prefix("operator")?;
+    if after.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+        return None;
+    }
+    let symbol = after.trim_start();
+    let skip = after.len() - symbol.len();
+    let end = match symbol.strip_prefix("()") {
+        Some(rest) => 2 + rest.find('(')?,
+        None => symbol.find('(')?,
+    };
+    Some("operator".len() + skip + end)
+}
+
 pub fn parse_operation(text: &str) -> Result<OperationSpec, ParseError> {
     let (visibility, rest) = split_visibility(text);
     let open = rest.find('(').ok_or_else(|| ParseError(format!("missing \"(\" in {text:?}")))?;
+    if let Some(len) = operator_name_len(rest) {
+        let name = rest[..len].trim_end().to_owned();
+        return finish_operation(text, visibility, name, Vec::new(), &rest[len..]);
+    }
     let (name, template_parameters) = match rest[..open].split_once('<') {
         Some((name, templates)) => {
             let templates = templates
@@ -403,9 +467,20 @@ pub fn parse_operation(text: &str) -> Result<OperationSpec, ParseError> {
         None => (&rest[..open], Vec::new()),
     };
     let name = check_name(name, text)?;
-    let close = matching_paren(rest, open)
-        .ok_or_else(|| ParseError(format!("missing \")\" in {text:?}")))?;
-    let params_text = &rest[open + 1..close];
+    finish_operation(text, visibility, name, template_parameters, &rest[open..])
+}
+
+/// Parses the parameters and the return type of an operation; `rest` starts at their `(`.
+fn finish_operation(
+    text: &str,
+    visibility: Option<Visibility>,
+    name: String,
+    template_parameters: Vec<String>,
+    rest: &str,
+) -> Result<OperationSpec, ParseError> {
+    let close =
+        matching_paren(rest, 0).ok_or_else(|| ParseError(format!("missing \")\" in {text:?}")))?;
+    let params_text = &rest[1..close];
     let tail = rest[close + 1..].trim();
     let return_type = match tail.strip_prefix(':') {
         Some(t) => non_empty(Some(t)),
@@ -471,12 +546,16 @@ pub fn resolve_type_in(model: &Model, scope: Id, name: &str) -> TypeRef {
 /// links its parts to the model as seen from `scope`. Text that links to nothing stays text.
 pub fn parse_type(model: &Model, scope: Id, text: &str) -> TypeRef {
     let text = text.trim();
-    let parsed = parse_type_expr(model, scope, text);
+    let parsed = parse_type_expr(model, scope, text, 1);
     if parsed.ids().is_empty() { TypeRef::Text(text.to_owned()) } else { parsed }
 }
 
-fn parse_type_expr(model: &Model, scope: Id, text: &str) -> TypeRef {
+/// The type at nesting level `depth` (1 at the top). At the model's limit the rest stays text.
+fn parse_type_expr(model: &Model, scope: Id, text: &str, depth: usize) -> TypeRef {
     let text = text.trim();
+    if depth >= umlcraft_model::MAX_TYPE_DEPTH {
+        return TypeRef::Text(text.to_owned());
+    }
     let (prefix, rest) = ["? extends ", "? super ", "const "]
         .into_iter()
         .find_map(|p| text.strip_prefix(p).map(|r| (p, r.trim_start())))
@@ -507,7 +586,7 @@ fn parse_type_expr(model: &Model, scope: Id, text: &str) -> TypeRef {
             let mut remaining = inner;
             while !remaining.trim().is_empty() {
                 let (argument, rest) = split_top(remaining, ',');
-                arguments.push(parse_type_expr(model, scope, argument));
+                arguments.push(parse_type_expr(model, scope, argument, depth + 1));
                 remaining = rest.unwrap_or("");
             }
             (&core[..open], arguments)
@@ -526,14 +605,30 @@ fn parse_type_expr(model: &Model, scope: Id, text: &str) -> TypeRef {
     TypeRef::Expr(Box::new(TypeExpr { base, arguments, prefix: prefix.to_owned(), modifier }))
 }
 
+/// The type `text` stands for in `scope`. Text that reads as `old` does keeps `old`, so an
+/// edit elsewhere in the member does not lose a link a name alone cannot find again (two
+/// classes `Item`, an anonymous bound class).
+fn retype_text(
+    model: &Model,
+    scope: Id,
+    old: Option<&TypeRef>,
+    text: Option<&str>,
+) -> Option<TypeRef> {
+    match (old, text) {
+        (Some(old), Some(text)) if type_text(model, old) == text.trim() => Some(old.clone()),
+        (_, text) => text.map(|t| parse_type(model, scope, t)),
+    }
+}
+
 /// Applies edited text to an attribute, operation or other element (which is just renamed).
 pub fn apply_member_text(tx: &mut Tx<'_>, id: Id, text: &str) -> Result<()> {
     let invalid = |e: ParseError| ModelError::Invalid(e.to_string());
     let kind = tx.model().element(id)?.kind().clone();
     match kind {
-        ElementKind::Attribute(_) => {
+        ElementKind::Attribute(p) => {
             let spec = parse_attribute(text).map_err(invalid)?;
-            let type_ref = spec.type_text.as_deref().map(|t| parse_type(tx.model(), id, t));
+            let type_ref =
+                retype_text(tx.model(), id, p.type_ref.as_ref(), spec.type_text.as_deref());
             tx.update(id, |data| {
                 if let Some(v) = spec.visibility {
                     data.visibility = v;
@@ -547,25 +642,37 @@ pub fn apply_member_text(tx: &mut Tx<'_>, id: Id, text: &str) -> Result<()> {
                 }
             })
         }
-        ElementKind::Operation(_) => {
+        ElementKind::Operation(op) => {
             let spec = parse_operation(text).map_err(invalid)?;
             // The operation's own template parameters, matched by position, come first so that
             // the types below can refer to them.
             let templates = template_parameters(tx.model(), id);
-            for (i, name) in spec.template_parameters.iter().enumerate() {
+            for (i, written) in spec.template_parameters.iter().enumerate() {
+                // `Ts...` is the variadic parameter `Ts`.
+                let (name, variadic) = match written.strip_suffix("...") {
+                    Some(name) => (name.trim_end(), true),
+                    None => (written.as_str(), false),
+                };
                 match templates.get(i) {
-                    Some(&t) => tx.rename(t, name.as_str())?,
+                    Some(&t) => tx.update(t, |data| {
+                        data.name = name.to_owned();
+                        if let ElementKind::TemplateParameter(p) = &mut data.kind {
+                            p.is_variadic = variadic;
+                        }
+                    })?,
                     None => {
-                        let kind =
-                            ElementKind::TemplateParameter(TemplateParameterProps::default());
-                        tx.create_at(id, i, ElementData::new(name.as_str(), kind))?;
+                        let props =
+                            TemplateParameterProps { is_variadic: variadic, ..Default::default() };
+                        let kind = ElementKind::TemplateParameter(props);
+                        tx.create_at(id, i, ElementData::new(name, kind))?;
                     }
                 }
             }
             for &t in templates.iter().skip(spec.template_parameters.len()) {
                 tx.delete(t)?;
             }
-            let return_type = spec.return_type.as_deref().map(|t| parse_type(tx.model(), id, t));
+            let return_type =
+                retype_text(tx.model(), id, op.return_type.as_ref(), spec.return_type.as_deref());
             tx.update(id, |data| {
                 if let Some(v) = spec.visibility {
                     data.visibility = v;
@@ -580,22 +687,48 @@ pub fn apply_member_text(tx: &mut Tx<'_>, id: Id, text: &str) -> Result<()> {
                 .children(id)
                 .iter()
                 .copied()
+                // A return parameter is not part of the text, so it stays as it is.
                 .filter(|&c| {
-                    tx.model().get(c).is_some_and(|e| matches!(e.kind(), ElementKind::Parameter(_)))
+                    tx.model().get(c).is_some_and(|e| {
+                        matches!(e.kind(), ElementKind::Parameter(p)
+                            if p.direction != ParameterDirection::Return)
+                    })
                 })
                 .collect();
-            for p in old {
-                tx.delete(p)?;
+            // Parameters are matched by position, so that what the text does not show (their
+            // multiplicity, stereotypes, comments on them) and their ids stay; a type written
+            // as before keeps its link even where its name alone would be ambiguous.
+            let wanted = spec.parameters.len();
+            for (i, p) in spec.parameters.into_iter().enumerate() {
+                let kept = old.get(i).and_then(|&o| match tx.model().get(o)?.kind() {
+                    ElementKind::Parameter(props) => Some((o, props.type_ref.clone())),
+                    _ => None,
+                });
+                let old_type = kept.as_ref().and_then(|(_, t)| t.as_ref());
+                let type_ref = retype_text(tx.model(), id, old_type, p.type_text.as_deref());
+                let default_value = p.default.unwrap_or_default();
+                match kept {
+                    Some((o, _)) => tx.update(o, |data| {
+                        data.name = p.name;
+                        if let ElementKind::Parameter(props) = &mut data.kind {
+                            props.type_ref = type_ref;
+                            props.direction = p.direction;
+                            props.default_value = default_value;
+                        }
+                    })?,
+                    None => {
+                        let props = ParameterProps {
+                            type_ref,
+                            direction: p.direction,
+                            multiplicity: None,
+                            default_value,
+                        };
+                        tx.create(id, ElementData::new(p.name, ElementKind::Parameter(props)))?;
+                    }
+                }
             }
-            for p in spec.parameters {
-                let type_ref = p.type_text.as_deref().map(|t| parse_type(tx.model(), id, t));
-                let props = ParameterProps {
-                    type_ref,
-                    direction: p.direction,
-                    multiplicity: None,
-                    default_value: p.default.unwrap_or_default(),
-                };
-                tx.create(id, ElementData::new(p.name, ElementKind::Parameter(props)))?;
+            for &p in old.iter().skip(wanted) {
+                tx.delete(p)?;
             }
             Ok(())
         }
@@ -838,6 +971,122 @@ mod tests {
         doc.edit("edit", |tx| apply_member_text(tx, attr, "- value : T")).unwrap();
         let ElementKind::Attribute(p) = doc.model().get(attr).unwrap().kind() else { panic!() };
         assert_eq!(p.type_ref, Some(TypeRef::Element(t)));
+    }
+
+    #[test]
+    fn editing_an_operation_keeps_its_parameters() {
+        let mut doc = Document::new(Model::new("m"));
+        let root = doc.model().root();
+        let (op, param) = doc
+            .edit("setup", |tx| {
+                let c = tx.create(root, ElementData::new("C", ElementKind::class()))?;
+                let op = tx.create(c, ElementData::new("f", ElementKind::operation(None)))?;
+                let props = ParameterProps {
+                    type_ref: Some(TypeRef::Text("int".into())),
+                    multiplicity: Some(Multiplicity::ZERO_OR_MORE),
+                    ..Default::default()
+                };
+                let mut data = ElementData::new("xs", ElementKind::Parameter(props));
+                data.stereotypes = vec!["in".into()];
+                let param = tx.create(op, data)?;
+                Ok((op, param))
+            })
+            .unwrap();
+        doc.edit("edit", |tx| apply_member_text(tx, op, "- f(ys : int, flag : bool)")).unwrap();
+        let model = doc.model();
+        let params = model.children(op);
+        assert_eq!(params.len(), 2);
+        assert_eq!(params[0], param, "the first parameter keeps its id");
+        let p = model.get(param).unwrap();
+        assert_eq!(p.name(), "ys");
+        assert_eq!(p.data().stereotypes, ["in"]);
+        let ElementKind::Parameter(props) = p.kind() else { panic!() };
+        assert_eq!(props.multiplicity, Some(Multiplicity::ZERO_OR_MORE));
+        doc.edit("fewer", |tx| apply_member_text(tx, op, "- f()")).unwrap();
+        assert!(doc.model().children(op).is_empty());
+    }
+
+    #[test]
+    fn deeply_nested_types_end_in_text() {
+        let model = Model::new("m");
+        let text = format!("{}int{}", "List<".repeat(1000), ">".repeat(1000));
+        let parsed = parse_type(&model, model.root(), &text);
+        assert!(parsed.depth() <= umlcraft_model::MAX_TYPE_DEPTH, "{}", parsed.depth());
+    }
+
+    #[test]
+    fn quoted_defaults_hide_their_commas_and_parens() {
+        let o = parse_operation(r#"f(s : String = "a,b", c : char = ')', n : int)"#).unwrap();
+        assert_eq!(o.parameters.len(), 3);
+        assert_eq!(o.parameters[0].default.as_deref(), Some(r#""a,b""#));
+        assert_eq!(o.parameters[1].default.as_deref(), Some("')'"));
+        assert_eq!(o.parameters[2].name, "n");
+        let o = parse_operation("f(a : bool = x < y, b : int = x > y, c : List<int>)").unwrap();
+        assert_eq!(o.parameters.len(), 3);
+        assert_eq!(o.parameters[0].default.as_deref(), Some("x < y"));
+        assert_eq!(o.parameters[2].type_text.as_deref(), Some("List<int>"));
+    }
+
+    #[test]
+    fn parses_operator_names_and_c_arrays() {
+        for (text, name, count) in [
+            ("+ operator=( : const Shape&) : Shape&", "operator=", 1),
+            ("+ operator==(other : const Shape&) : bool", "operator==", 1),
+            ("+ operator<(other : T) : bool", "operator<", 1),
+            ("+ operator<<(out : ostream&) : ostream&", "operator<<", 1),
+            ("+ operator()(a : int, b : int) : int", "operator()", 2),
+            ("+ operator bool() : bool", "operator bool", 0),
+            ("+ operator[](i : int) : T&", "operator[]", 1),
+        ] {
+            let o = parse_operation(text).unwrap();
+            assert_eq!((o.name.as_str(), o.parameters.len()), (name, count), "{text}");
+        }
+        assert_eq!(parse_operation("+ operatorX()").unwrap().name, "operatorX");
+        let a = parse_attribute("- arr[]").unwrap();
+        assert_eq!((a.name.as_str(), a.multiplicity), ("arr[]", None));
+    }
+
+    #[test]
+    fn edits_keep_what_the_text_does_not_show() {
+        let mut doc = Document::new(Model::new("m"));
+        let root = doc.model().root();
+        let (item, op, result) = doc
+            .edit("setup", |tx| {
+                let a = tx.create(root, ElementData::new("a", ElementKind::Package))?;
+                let b = tx.create(root, ElementData::new("b", ElementKind::Package))?;
+                tx.create(a, ElementData::new("Item", ElementKind::class()))?;
+                let item = tx.create(b, ElementData::new("Item", ElementKind::class()))?;
+                let c = tx.create(root, ElementData::new("C", ElementKind::class()))?;
+                let mut kind = ElementKind::operation(None);
+                if let ElementKind::Operation(p) = &mut kind {
+                    p.return_type = Some(TypeRef::Element(item));
+                }
+                let op = tx.create(c, ElementData::new("f", kind))?;
+                let props =
+                    ParameterProps { direction: ParameterDirection::Return, ..Default::default() };
+                let result = tx.create(op, ElementData::new("", ElementKind::Parameter(props)))?;
+                Ok((item, op, result))
+            })
+            .unwrap();
+        // A rename keeps the link to the second `Item`, which the name alone would not find.
+        doc.edit("edit", |tx| apply_member_text(tx, op, "+ g(: int) : Item")).unwrap();
+        let model = doc.model();
+        model.check().unwrap();
+        let ElementKind::Operation(p) = model.get(op).unwrap().kind() else { panic!() };
+        assert_eq!(p.return_type, Some(TypeRef::Element(item)));
+        let children = model.children(op);
+        assert!(children.contains(&result), "the return parameter stays");
+        assert_eq!(children.len(), 2);
+
+        // Variadic template parameters.
+        doc.edit("edit", |tx| apply_member_text(tx, op, "+ g<Ts...>(xs : Ts...)")).unwrap();
+        let model = doc.model();
+        let templates = template_parameters(model, op);
+        let ElementKind::TemplateParameter(t) = model.get(templates[0]).unwrap().kind() else {
+            panic!()
+        };
+        assert!(t.is_variadic);
+        assert_eq!(model.get(templates[0]).unwrap().name(), "Ts");
     }
 
     #[test]

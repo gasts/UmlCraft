@@ -111,6 +111,7 @@ fn bounds(scene: &Scene, measure: &dyn TextMeasure) -> Option<Rect> {
     });
     let edges = scene.edges.iter().flat_map(|e| {
         e.path()
+            .into_owned()
             .into_iter()
             .map(|p| Rect::from_corners(p, p))
             .chain(
@@ -119,6 +120,8 @@ fn bounds(scene: &Scene, measure: &dyn TextMeasure) -> Option<Rect> {
                     .map(|l| text(&l.text, draw::label_area(l), FONT_SIZE, false, l.align)),
             )
             .chain(e.qualifiers.iter().map(|(rect, _)| *rect))
+            // Arrow heads, diamonds and the name's arrow reach beyond the line's points.
+            .chain(draw::markers(e).into_iter().filter_map(|m| m.bounds()))
     });
     nodes.chain(edges).reduce(|a, b| a.union(&b))
 }
@@ -205,6 +208,13 @@ impl Svg<'_> {
     fn fill_attr(&self, paint: Paint) -> String {
         match paint {
             Paint::Fill => match self.fill {
+                Some(c) if c.a < 255 => format!(
+                    " fill=\"#{:02x}{:02x}{:02x}\" fill-opacity=\"{}\"",
+                    c.r,
+                    c.g,
+                    c.b,
+                    num(f32::from(c.a) / 255.0)
+                ),
                 Some(c) => format!(" fill=\"#{:02x}{:02x}{:02x}\"", c.r, c.g, c.b),
                 None => format!(" fill=\"{DEFAULT_FILL}\""),
             },
@@ -228,7 +238,7 @@ impl Svg<'_> {
         let width = if row.hinted {
             rounded
         } else {
-            rounded.max(self.measure.width(&row.text, row.size, row.bold))
+            self.measure.astah_width(&row.text, row.size, row.bold)
         };
         // Whole-pixel advances: every character at its own x.
         let advances: Option<Vec<f32>> = row
@@ -364,6 +374,8 @@ fn num(v: f32) -> String {
     format!("{}", if rounded == 0.0 { 0.0 } else { rounded })
 }
 
+/// `text` for XML content and attributes. Characters XML 1.0 forbids, even as references
+/// (control characters other than tab and line breaks, U+FFFE, U+FFFF), become U+FFFD.
 fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
@@ -372,6 +384,8 @@ fn escape(text: &str) -> String {
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
+            '\t' | '\n' | '\r' => out.push(c),
+            '\u{0}'..='\u{1F}' | '\u{FFFE}' | '\u{FFFF}' => out.push('\u{FFFD}'),
             c => out.push(c),
         }
     }
@@ -388,6 +402,26 @@ mod tests {
         let (doc, ids) = order_system();
         let scene = build(doc.model(), ids.class_diagram, &Preview::default(), &ApproxMeasure);
         render(&scene, &ApproxMeasure)
+    }
+
+    #[test]
+    fn characters_xml_forbids_are_replaced() {
+        assert_eq!(escape("a\u{1}b\u{c}<c>\u{FFFE}"), "a\u{FFFD}b\u{FFFD}&lt;c&gt;\u{FFFD}");
+        assert_eq!(escape("tab\there"), "tab\there");
+    }
+
+    #[test]
+    fn rows_and_labels_are_single_lines() {
+        let (mut doc, ids) = order_system();
+        doc.edit("names", |tx| {
+            tx.rename(ids.customer, "Cus\ttomer\u{1}")?;
+            tx.rename(ids.order_customer, "places\r\norders")
+        })
+        .unwrap();
+        let scene = build(doc.model(), ids.class_diagram, &Preview::default(), &ApproxMeasure);
+        let svg = render(&scene, &ApproxMeasure);
+        assert!(svg.contains(">Cus tomer</text>"), "{svg}");
+        assert!(svg.contains(">places orders</text>"), "{svg}");
     }
 
     #[test]

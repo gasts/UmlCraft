@@ -33,7 +33,7 @@ pub enum Paint {
     Line,
     /// The diagram background, e.g. inside a hollow diamond.
     Background,
-    /// See-through fill of system boundaries.
+    /// See-through fill of activity partitions.
     Translucent,
     /// Border of figures UmlCraft has no notation for.
     Muted,
@@ -53,6 +53,25 @@ pub enum Primitive {
     /// A rectangle whose border of `width` is centered on its outline, like a Java stroke.
     /// `radius` rounds its corners.
     Frame { rect: Rect, width: f32, radius: f32, fill: Paint, border: Paint, style: LineStyle },
+}
+
+impl Primitive {
+    /// The area the primitive covers, its line widths left aside.
+    pub fn bounds(&self) -> Option<Rect> {
+        let around = |points: &[Point]| {
+            points.iter().map(|&p| Rect::from_corners(p, p)).reduce(|a, b| a.union(&b))
+        };
+        match self {
+            Primitive::Polyline { points, .. } | Primitive::Polygon { points, .. } => {
+                around(points)
+            }
+            Primitive::Curve { points, .. } => around(points),
+            Primitive::Ellipse { center, rx, ry, .. } => {
+                Some(Rect::new(center.x - rx, center.y - ry, 2.0 * rx, 2.0 * ry))
+            }
+            Primitive::Frame { rect, .. } => Some(*rect),
+        }
+    }
 }
 
 fn line(points: Vec<Point>, style: LineStyle) -> Primitive {

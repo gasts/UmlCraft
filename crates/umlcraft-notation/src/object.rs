@@ -16,14 +16,7 @@ pub fn slot_attributes(model: &Model, classifier: Id) -> Vec<Id> {
         if !seen.insert(c) {
             return;
         }
-        let generals: Vec<Id> = model
-            .elements()
-            .filter_map(|g| match g.kind() {
-                ElementKind::Generalization(p) if p.specific == c => Some(p.general),
-                _ => None,
-            })
-            .collect();
-        for general in generals {
+        for general in model.generals_of(c) {
             collect(model, general, seen, attributes);
         }
         let Some(e) = model.get(c) else { return };
@@ -63,13 +56,14 @@ pub fn slot_text(model: &Model, attribute: Id, value: &str) -> String {
 }
 
 /// Sets the value `instance` gives `attribute`. An empty value removes the stored slot. Text
-/// typed as `name = value` keeps only the value.
+/// typed as `name = value` with the attribute's name keeps only the value; any other `=` belongs
+/// to the value.
 pub fn set_slot(tx: &mut Tx<'_>, instance: Id, attribute: Id, text: &str) -> Result<()> {
-    let value = match text.split_once('=') {
-        Some((_, value)) => value.trim(),
-        None => text.trim(),
-    };
     let name = tx.model().element(attribute)?.name().to_owned();
+    let value = match text.split_once('=') {
+        Some((prefix, value)) if prefix.trim() == name => value.trim(),
+        _ => text.trim(),
+    };
     match stored_slot(tx.model(), instance, attribute) {
         Some((slot, _)) if value.is_empty() => tx.delete(slot),
         Some((_, old)) if old == value => Ok(()),
@@ -133,6 +127,9 @@ mod tests {
         doc.edit("change", |tx| set_slot(tx, bob, name, "\"Rob\"")).unwrap();
         assert_eq!(doc.model().children(bob).len(), 1);
         assert_eq!(slots(doc.model(), bob)[0].1, "\"Rob\"");
+        // An `=` in the value stays, as the properties panel passes the value alone.
+        doc.edit("equals", |tx| set_slot(tx, bob, name, "\"k=v\"")).unwrap();
+        assert_eq!(slots(doc.model(), bob)[0].1, "\"k=v\"");
 
         doc.edit("clear", |tx| set_slot(tx, bob, name, "name = ")).unwrap();
         assert!(doc.model().children(bob).is_empty());

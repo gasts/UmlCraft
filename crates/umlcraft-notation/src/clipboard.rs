@@ -7,11 +7,11 @@
 use std::collections::{HashMap, HashSet};
 
 use umlcraft_model::{
-    EdgeLabels, ElementData, ElementKind, Id, Model, ModelError, Op, Point, Presentation, Rect,
-    Result, Shape, Tx,
+    DiagramKind, EdgeLabels, ElementData, ElementKind, Id, Model, ModelError, Op, Point,
+    Presentation, Rect, Result, Shape, Tx,
 };
 
-use crate::palette::owner_for;
+use crate::palette::{can_show, owner_for};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClipElement {
@@ -100,6 +100,8 @@ pub fn copy(model: &Model, diagram: Id, selection: &[Id]) -> Option<Clip> {
     let nodes: Vec<ClipNode> = selection
         .iter()
         .filter_map(|&p| view.get(p))
+        // The frame of a sequence or activity diagram stands for the diagram itself.
+        .filter(|p| p.element != Some(diagram))
         .filter_map(|p| {
             Some(ClipNode {
                 presentation: p.id,
@@ -118,11 +120,15 @@ pub fn copy(model: &Model, diagram: Id, selection: &[Id]) -> Option<Clip> {
         return None;
     }
     let selected: HashSet<Id> = nodes.iter().map(|n| n.element).collect();
-    // Elements already inside another copied element come along with it.
-    let roots: Vec<ClipElement> = selected
+    // Elements already inside another copied element come along with it. The roots keep the
+    // order of the selection, so pasting does the same every time.
+    let mut seen = HashSet::new();
+    let roots: Vec<ClipElement> = nodes
         .iter()
-        .filter(|&&e| !model.ancestors(e).iter().any(|a| selected.contains(a)))
-        .filter_map(|&e| snapshot(model, e))
+        .map(|n| n.element)
+        .filter(|&e| seen.insert(e))
+        .filter(|&e| !model.ancestors(e).iter().any(|a| selected.contains(a)))
+        .filter_map(|e| snapshot(model, e))
         .collect();
     let mut copied = Vec::new();
     roots.iter().for_each(|r| collect_ids(r, &mut copied));
@@ -180,35 +186,58 @@ pub fn free_name(model: &Model, owner: Id, name: &str) -> String {
     (2..).map(|n| format!("{name}{n}")).find(|n| !taken(n)).expect("names are unbounded")
 }
 
-/// Inserts `element` and what it owns. Weak references to copies that are not inserted yet,
-/// such as an attribute typed by a nested class declared after it, are left out and collected
-/// in `deferred` with the element's complete kind, to be set once everything is in place.
-fn insert_tree(
+/// Copies that cannot be inserted yet, collected while pasting.
+#[derive(Default)]
+struct Pending<'c> {
+    /// Elements with weak references to copies not inserted yet, such as an attribute typed by
+    /// a nested class declared after it, with their complete kind, to be set once everything
+    /// is in place.
+    deferred: Vec<(Id, ElementKind)>,
+    /// Elements (with what they own) whose strong references point to copies not inserted
+    /// yet, such as a generalization owned by its specific class that names a general class
+    /// pasted later; with their owner, the index they would have had there and whether to
+    /// rename them.
+    postponed: Vec<(&'c ClipElement, Id, usize, bool)>,
+}
+
+/// Inserts `element` and what it owns under `owner`, at `index` or at the end, or postpones
+/// it (see [`Pending`]).
+fn insert_tree<'c>(
     tx: &mut Tx<'_>,
-    element: &ClipElement,
+    element: &'c ClipElement,
     owner: Id,
+    index: Option<usize>,
     map: &HashMap<Id, Id>,
     rename: bool,
-    deferred: &mut Vec<(Id, ElementKind)>,
+    pending: &mut Pending<'c>,
 ) -> Result<()> {
     let mut data = element.data.clone();
     data.kind.remap(map);
-    let absent: Vec<Id> = data
-        .kind
-        .references()
+    let index = match index {
+        Some(index) => index,
+        None => tx.model().element(owner)?.children().len(),
+    };
+    let is_copy = |id: &Id| map.values().any(|v| v == id);
+    let references = data.kind.references();
+    if references
+        .iter()
+        .any(|(id, role)| role.is_strong() && !tx.model().contains(*id) && is_copy(id))
+    {
+        pending.postponed.push((element, owner, index, rename));
+        return Ok(());
+    }
+    let absent = references
         .into_iter()
         .filter(|(id, role)| !role.is_strong() && !tx.model().contains(*id))
-        .map(|(id, _)| id)
-        .collect();
-    let (later, deleted): (Vec<Id>, Vec<Id>) =
-        absent.into_iter().partition(|id| map.values().any(|v| v == id));
+        .map(|(id, _)| id);
+    let (later, deleted): (Vec<Id>, Vec<Id>) = absent.partition(is_copy);
     // Weak references to elements deleted since copying are dropped.
     for id in deleted {
         data.kind.unlink(id, "");
     }
     let id = map[&element.id];
     if !later.is_empty() {
-        deferred.push((id, data.kind.clone()));
+        pending.deferred.push((id, data.kind.clone()));
         for target in later {
             data.kind.unlink(target, "");
         }
@@ -216,18 +245,45 @@ fn insert_tree(
     if rename {
         data.name = free_name(tx.model(), owner, &data.name);
     }
-    let index = tx.model().element(owner)?.children().len();
     tx.apply(Op::InsertElement { id, owner, index, data })?;
     for child in &element.children {
-        insert_tree(tx, child, id, map, false, deferred)?;
+        insert_tree(tx, child, id, None, map, false, pending)?;
     }
     Ok(())
+}
+
+/// Inserts the postponed elements once what they refer to is in place. Later ones go first,
+/// so that each index still counts only the siblings inserted before it.
+fn insert_postponed<'c>(
+    tx: &mut Tx<'_>,
+    map: &HashMap<Id, Id>,
+    pending: &mut Pending<'c>,
+) -> Result<()> {
+    loop {
+        let postponed = std::mem::take(&mut pending.postponed);
+        let count = postponed.len();
+        if count == 0 {
+            return Ok(());
+        }
+        for (element, owner, index, rename) in postponed.into_iter().rev() {
+            let index = index.min(tx.model().element(owner)?.children().len());
+            insert_tree(tx, element, owner, Some(index), map, rename, pending)?;
+        }
+        if pending.postponed.len() >= count {
+            return Err(ModelError::Invalid("the copied elements refer to each other".into()));
+        }
+        pending.postponed.reverse();
+    }
 }
 
 /// Pastes `clip` into `diagram`, shifted by `offset`. Returns the new presentations.
 ///
 /// With `as_reference`, the original elements are shown again (those already on the diagram are
 /// skipped); otherwise they are duplicated into the diagram's namespace.
+///
+/// Only elements the diagram can show are pasted. Sequence diagrams take only free texts and
+/// lines: their lifelines, bars, messages and fragments are laid out together and cannot be
+/// pasted as boxes.
 pub fn paste(
     tx: &mut Tx<'_>,
     diagram: Id,
@@ -235,12 +291,19 @@ pub fn paste(
     offset: Point,
     as_reference: bool,
 ) -> Result<Vec<Id>> {
-    let diagram_owner = tx.model().element(diagram)?.owner().ok_or(ModelError::Root)?;
+    let diagram_element = tx.model().element(diagram)?;
+    let diagram_owner = diagram_element.owner().ok_or(ModelError::Root)?;
+    let diagram_kind =
+        diagram_element.kind().as_diagram().ok_or(ModelError::NotADiagram(diagram))?;
+    let shows =
+        |kind: &ElementKind| diagram_kind != DiagramKind::Sequence && can_show(diagram_kind, kind);
     let mut element_map: HashMap<Id, Id> = HashMap::new();
 
     if as_reference {
         for node in &clip.nodes {
-            element_map.insert(node.element, node.element);
+            if tx.model().get(node.element).is_some_and(|e| shows(e.kind())) {
+                element_map.insert(node.element, node.element);
+            }
         }
         for edge in &clip.edges {
             if let Some(e) = edge.element {
@@ -248,16 +311,18 @@ pub fn paste(
             }
         }
     } else {
+        let roots: Vec<&ClipElement> = clip.roots.iter().filter(|r| shows(&r.data.kind)).collect();
         let mut ids = Vec::new();
-        clip.roots.iter().chain(&clip.relationships).for_each(|r| collect_ids(r, &mut ids));
+        roots.iter().copied().chain(&clip.relationships).for_each(|r| collect_ids(r, &mut ids));
         element_map = ids.into_iter().map(|old| (old, Id::generate())).collect();
-        let mut deferred = Vec::new();
-        for root in &clip.roots {
+        let mut pending = Pending::default();
+        for root in roots {
             let owner = owner_for(tx.model(), diagram_owner, &root.data.kind).ok_or_else(|| {
                 ModelError::Invalid(format!("cannot paste a {} here", root.data.kind.type_name()))
             })?;
-            insert_tree(tx, root, owner, &element_map, true, &mut deferred)?;
+            insert_tree(tx, root, owner, None, &element_map, true, &mut pending)?;
         }
+        insert_postponed(tx, &element_map, &mut pending)?;
         for relationship in &clip.relationships {
             let mut kind = relationship.data.kind.clone();
             kind.remap(&element_map);
@@ -274,9 +339,10 @@ pub fn paste(
             let start = tx.model().element(source)?.owner().unwrap_or(diagram_owner);
             let owner = owner_for(tx.model(), start, &kind)
                 .ok_or_else(|| ModelError::Invalid("no owner for a relationship".into()))?;
-            insert_tree(tx, relationship, owner, &element_map, false, &mut deferred)?;
+            insert_tree(tx, relationship, owner, None, &element_map, false, &mut pending)?;
         }
-        for (id, kind) in deferred {
+        insert_postponed(tx, &element_map, &mut pending)?;
+        for (id, kind) in pending.deferred {
             tx.update(id, |data| data.kind = kind)?;
         }
     }
@@ -454,6 +520,56 @@ mod tests {
         assert!(inner2 != inner && t2 != t);
         assert_eq!(type_of("inner"), Some(TypeRef::Element(inner2)));
         assert_eq!(type_of("value"), Some(TypeRef::Element(t2)));
+    }
+
+    /// The source import stores a generalization under its specific class, so the copy of
+    /// that class refers to the copy of the general one, which may come later.
+    #[test]
+    fn paste_waits_for_what_owned_relationships_connect() {
+        let (mut doc, ids) = order_system();
+        let d = ids.class_diagram;
+        doc.edit("own", |tx| tx.move_element(ids.premium_generalization, ids.premium, 0)).unwrap();
+        let customer = doc.model().shown_on(ids.customer)[0].1;
+        let premium = doc.model().shown_on(ids.premium)[0].1;
+        for selection in [[premium, customer], [customer, premium]] {
+            let clip = copy(doc.model(), d, &selection).unwrap();
+            let mut copy = doc.clone();
+            copy.edit("paste", |tx| paste(tx, d, &clip, Point::default(), false)).unwrap();
+            let model = copy.model();
+            model.check().unwrap();
+            let premium2 = model
+                .children(ids.domain)
+                .iter()
+                .copied()
+                .find(|&c| model.get(c).unwrap().name() == "PremiumCustomer2")
+                .unwrap();
+            // The generalization is back in its place, first in the class.
+            let first = model.children(premium2)[0];
+            assert!(model.get(first).unwrap().kind().as_generalization().is_some());
+        }
+    }
+
+    #[test]
+    fn sequence_diagrams_take_no_pasted_boxes() {
+        let (mut doc, ids) = order_system();
+        let d = ids.sequence_diagram;
+        let all: Vec<Id> =
+            doc.model().view(d).unwrap().presentations().iter().map(|p| p.id).collect();
+        let clip = copy(doc.model(), d, &all).unwrap();
+        assert!(clip.nodes.iter().all(|n| n.element != d), "the frame is not copied");
+        let before = doc.model().clone();
+        for as_reference in [false, true] {
+            let created = doc
+                .edit("paste", |tx| paste(tx, d, &clip, Point::new(20.0, 20.0), as_reference))
+                .unwrap();
+            assert!(created.is_empty());
+            assert_eq!(*doc.model(), before);
+        }
+        // Classes are no lifelines.
+        let customer = doc.model().shown_on(ids.customer)[0].1;
+        let clip = copy(doc.model(), ids.class_diagram, &[customer]).unwrap();
+        let created = doc.edit("paste", |tx| paste(tx, d, &clip, Point::default(), true)).unwrap();
+        assert!(created.is_empty());
     }
 
     #[test]

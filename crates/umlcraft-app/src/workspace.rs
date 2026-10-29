@@ -352,9 +352,9 @@ impl Workspace {
     ) {
         let Some(diagram) = self.active_diagram else { return };
         let label = t!("edit.create").to_string();
-        let result = self
-            .doc
-            .edit(label, |tx| palette::create_fragment(tx, diagram, tool, slot, covered, origin));
+        let result = self.doc.edit(label, |tx| {
+            palette::create_fragment(tx, diagram, tool, slot, covered, Some(origin))
+        });
         if let Some((fragment, node)) = self.report(result) {
             self.selection = vec![node];
             self.selected_element = Some(fragment);

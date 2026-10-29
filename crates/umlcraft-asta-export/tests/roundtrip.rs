@@ -222,7 +222,7 @@ fn sample() -> Document {
             umlcraft_notation::palette::NodeTool::CombinedFragment,
             None,
             Vec::new(),
-            Point::new(0.0, below),
+            Some(Point::new(0.0, below)),
         )?;
         // Astah allows a second operand for alt, not for the default opt.
         tx.update(alt, |data| {

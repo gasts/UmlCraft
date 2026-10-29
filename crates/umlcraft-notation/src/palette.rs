@@ -670,6 +670,14 @@ pub fn show_element(tx: &mut Tx<'_>, diagram: Id, element: Id, origin: Point) ->
             kind.type_name()
         )));
     }
+    // Lifelines and fragments belong to one interaction and show only on its diagram.
+    let interaction = model.element(diagram)?.owner();
+    if diagram_kind == DiagramKind::Sequence
+        && !matches!(kind, ElementKind::Comment(_))
+        && !interaction.is_some_and(|i| model.is_ancestor(i, element))
+    {
+        return Err(ModelError::Invalid("the element belongs to another interaction".into()));
+    }
     let view = model.view(diagram).ok_or(ModelError::NotADiagram(diagram))?;
     if view.presentations_of(element).next().is_some() {
         return Err(ModelError::Invalid("the element is already on this diagram".into()));
@@ -725,13 +733,16 @@ pub fn show_element(tx: &mut Tx<'_>, diagram: Id, element: Id, origin: Point) ->
     Ok(node)
 }
 
-/// Whether nodes of this kind contain other nodes drawn inside them.
+/// Whether nodes of this kind contain other nodes drawn inside them: the same kinds whose
+/// contents move with them ([`scene::with_contents`](crate::scene::with_contents)).
 pub fn is_container(kind: &ElementKind) -> bool {
     matches!(
         kind,
         ElementKind::SystemBoundary
             | ElementKind::Package
             | ElementKind::Partition
+            | ElementKind::State(_)
+            | ElementKind::Component(_)
             | ElementKind::Node(_)
     ) || matches!(kind, ElementKind::Instance(p) if p.instance == InstanceKind::Node)
 }
@@ -744,10 +755,15 @@ fn add_node_for(tx: &mut Tx<'_>, diagram: Id, element: Id, bounds: Rect) -> Resu
     if matches!(kind, ElementKind::Lifeline(_)) {
         return sequence_edit::add_lifeline(tx, diagram, element, bounds.x, bounds.y);
     }
-    let mut presentation = umlcraft_model::Presentation::node(Some(element), bounds);
+    let fragment = matches!(kind, ElementKind::CombinedFragment(_));
+    let mut presentation = if fragment {
+        umlcraft_model::Presentation::fragment(element, bounds)
+    } else {
+        umlcraft_model::Presentation::node(Some(element), bounds)
+    };
     // New class boxes size themselves to their content, as in Astah.
     presentation.style.auto_size = crate::scene::is_boxed_classifier(kind);
-    if is_container(kind) || matches!(kind, ElementKind::CombinedFragment(_)) {
+    if is_container(kind) || fragment {
         let id = presentation.id;
         tx.apply(umlcraft_model::Op::InsertPresentation { diagram, index: 0, presentation })?;
         Ok(id)
@@ -771,9 +787,7 @@ pub fn owner_for(model: &Model, start: Id, kind: &ElementKind) -> Option<Id> {
 
 /// `base` followed by the smallest number ≥ 1 not yet used by a sibling under `owner`.
 pub fn unique_name(model: &Model, owner: Id, base: &str) -> String {
-    let taken = |name: &str| {
-        model.children(owner).iter().any(|&c| model.get(c).is_some_and(|e| e.name() == name))
-    };
+    let taken = |name: &str| !model.children_named(owner, name).is_empty();
     (1..).map(|n| format!("{base}{n}")).find(|name| !taken(name)).expect("names are unbounded")
 }
 
@@ -787,12 +801,14 @@ pub fn create_node(
     base_name: &str,
 ) -> Result<(Id, Id)> {
     if matches!(tool, NodeTool::CombinedFragment | NodeTool::InteractionUse) {
-        return create_fragment(tx, diagram, tool, None, Vec::new(), origin);
+        return create_fragment(tx, diagram, tool, None, Vec::new(), Some(origin));
     }
     let kind = tool.element_kind();
     let diagram_owner = tx.model().element(diagram)?.owner().ok_or(ModelError::Root)?;
+    let bounds = Rect::from_origin_size(origin, tool.default_size());
+    // By its center, as moved vertices are.
     let enclosing = if kind.is_vertex() {
-        crate::state_edit::vertex_owner_at(tx.model(), diagram, origin, &|_| false)
+        crate::state_edit::vertex_owner_at(tx.model(), diagram, bounds.center(), &|_| false)
     } else {
         None
     };
@@ -805,7 +821,6 @@ pub fn create_node(
     let name =
         if tool.is_named() { unique_name(tx.model(), owner, base_name) } else { String::new() };
     let element = tx.create(owner, tool.element_data(name))?;
-    let bounds = Rect::from_origin_size(origin, tool.default_size());
     let node = add_node_for(tx, diagram, element, bounds)?;
     Ok((element, node))
 }
@@ -908,21 +923,21 @@ pub fn connect_message(
 }
 
 /// Puts a new combined fragment with one empty operand, or an interaction use (`tool`), at the
-/// height of `slot` (or below everything), covering the lifelines `covered`. Returns
-/// (element, node).
+/// height of `slot`, else at `origin`, else below everything, covering the lifelines `covered`.
+/// Returns (element, node).
 pub fn create_fragment(
     tx: &mut Tx<'_>,
     diagram: Id,
     tool: NodeTool,
     slot: Option<Slot>,
     covered: Vec<Id>,
-    origin: Point,
+    origin: Option<Point>,
 ) -> Result<(Id, Id)> {
     let (owner, index) = slot_or_end(tx.model(), diagram, slot)?;
-    let y = match slot {
-        Some(slot) => slot.y,
-        None if origin != Point::default() => origin.y,
-        None => sequence_edit::next_y(tx.model(), diagram),
+    let y = match (slot, origin) {
+        (Some(slot), _) => slot.y,
+        (None, Some(origin)) => origin.y,
+        (None, None) => sequence_edit::next_y(tx.model(), diagram),
     };
     let kind = if tool == NodeTool::InteractionUse {
         ElementKind::InteractionUse(InteractionUseProps {
@@ -1059,14 +1074,8 @@ pub fn wrap_in_fragment(tx: &mut Tx<'_>, diagram: Id, items: &[Id]) -> Result<(I
     // its operand.
     let (top, bottom, lifelines) = sequence_edit::extent(tx.model(), diagram, &moved);
     let slot = Slot { y: top - sequence::TAB_HEIGHT - 10.0, owner, index: first };
-    let (fragment, node) = create_fragment(
-        tx,
-        diagram,
-        NodeTool::CombinedFragment,
-        Some(slot),
-        lifelines,
-        Point::default(),
-    )?;
+    let (fragment, node) =
+        create_fragment(tx, diagram, NodeTool::CombinedFragment, Some(slot), lifelines, None)?;
     tx.update_presentation(diagram, node, |p| {
         if let umlcraft_model::Shape::Fragment { bounds, .. } = &mut p.shape {
             bounds.height = bounds.height.max(bottom + 20.0 - bounds.y);

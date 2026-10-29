@@ -193,7 +193,8 @@ pub fn drag_segment(
         return route.clone();
     }
     let (a, b) = (points[index], points[index + 1]);
-    let horizontal = same(a.y, b.y);
+    // Imported lines may lean a little; the longer extent decides.
+    let horizontal = (b.x - a.x).abs() >= (b.y - a.y).abs();
     // How far the segment may go: the nodes its ends sit in limit it.
     let (mut low, mut high) = (f32::NEG_INFINITY, f32::INFINITY);
     let span = |r: Rect| if horizontal { (r.y, r.bottom()) } else { (r.x, r.right()) };
@@ -365,6 +366,18 @@ mod tests {
         // Moving a segment onto its neighbor's line removes the corners in between.
         let moved = drag_segment(&points, &route, [a, b], 1, p(320.0, 90.0));
         assert_eq!(moved.waypoints, vec![p(320.0, 21.0)]);
+    }
+
+    #[test]
+    fn slightly_slanted_lines_drag_like_straight_ones() {
+        // Centers 1.5 apart in y, as imported files often have them.
+        let (a, b) = (node(p(20.0, 21.0)), node(p(320.0, 22.5)));
+        let points = [p(40.0, 21.0), p(300.0, 22.5)];
+        let moved = drag_segment(&points, &Route::default(), [a, b], 0, p(150.0, 30.0));
+        let (from, to) = (moved.source_anchor.unwrap(), moved.target_anchor.unwrap());
+        for y in [from.y * a.height + a.y, to.y * b.height + b.y] {
+            assert!((y - 30.0).abs() < 1e-3, "{y}");
+        }
     }
 
     #[test]

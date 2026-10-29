@@ -1,11 +1,12 @@
 //! Turns a diagram view into drawable shapes in logical coordinates. The scene also carries the
 //! layout of every text row, so painting, hit testing and inline editing agree on positions.
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use umlcraft_model::{
     ActivityNodeKind, ActivityNodeProps, Aggregation, AssociationEnd, Color, DiagramKind,
-    EdgeLabels, ElementKind, Id, InstanceKind, LineShape, LinkEnd, MessageSort, Model,
+    EdgeLabels, Element, ElementKind, Id, InstanceKind, LineShape, LinkEnd, MessageSort, Model,
     Navigability, Point, Presentation, PseudostateKind, Qualifier, Rect, Regions, Shape, Size,
     StateProps, Style, TransitionProps,
 };
@@ -25,6 +26,12 @@ pub trait TextMeasure {
     fn rounded_width(&self, text: &str, font_size: f32, bold: bool) -> f32 {
         crate::metrics::java_width(text, font_size, bold)
             .unwrap_or_else(|| self.width(text, font_size, bold))
+    }
+
+    /// The width Astah sizes boxes, labels and tabs by: the larger of the whole-pixel width
+    /// and the exact one.
+    fn astah_width(&self, text: &str, font_size: f32, bold: bool) -> f32 {
+        self.width(text, font_size, bold).max(self.rounded_width(text, font_size, bold))
     }
 
     /// Whether members draw their visibility in UmlCraft's own column
@@ -62,9 +69,13 @@ impl Scene {
         self.edges.iter().find(|e| e.id == id)
     }
 
-    /// Bounding box of all nodes as drawn.
+    /// Bounding box of all nodes and lines as drawn, so that a diagram of free lines or a loop
+    /// to self fits too.
     pub fn bounds(&self) -> Option<Rect> {
-        self.nodes.iter().map(NodeShape::extent).reduce(|a, b| a.union(&b))
+        let nodes = self.nodes.iter().map(NodeShape::extent);
+        let lines =
+            self.edges.iter().flat_map(|e| e.path().into_owned()).map(|p| Rect::from_corners(p, p));
+        nodes.chain(lines).reduce(|a, b| a.union(&b))
     }
 }
 
@@ -89,6 +100,10 @@ impl NodeShape {
         {
             return true;
         }
+        // Names drawn outside the figure (below a lollipop or an actor) belong to it.
+        if self.rows.iter().any(|r| r.rect.contains(p)) {
+            return true;
+        }
         if !self.rect.inflate(tolerance).contains(p) {
             return false;
         }
@@ -107,12 +122,14 @@ impl NodeShape {
         }
     }
 
-    /// What the node covers as drawn: its bounds, and a template box sticking out of them.
+    /// What the node covers as drawn: its bounds, a template box sticking out of them and
+    /// names drawn outside them.
     pub fn extent(&self) -> Rect {
-        match &self.figure {
+        let rect = match &self.figure {
             Figure::Classifier { template: Some(t), .. } => self.rect.union(t),
             _ => self.rect,
-        }
+        };
+        self.rows.iter().fold(rect, |r, row| r.union(&row.rect))
     }
 
     /// Whether the user may resize the node. Lifelines, activation bars and diagram frames
@@ -402,11 +419,11 @@ impl EdgeShape {
     }
 
     /// The line as drawn: the points, or for curves many points along the curve.
-    pub fn path(&self) -> Vec<Point> {
+    pub fn path(&self) -> Cow<'_, [Point]> {
         if self.shape.is_curve() {
-            route::flatten(&route::bezier(&self.points))
+            Cow::Owned(route::flatten(&route::bezier(&self.points)))
         } else {
-            self.points.clone()
+            Cow::Borrowed(&self.points)
         }
     }
 
@@ -607,10 +624,27 @@ struct Line {
     element: Option<Id>,
 }
 
+/// `text` as one line: line breaks and tabs become spaces, other control characters are
+/// dropped. Rows and labels are drawn as single lines; texts that may have several (notes, free
+/// texts) are split before.
+pub fn single_line(text: &str) -> String {
+    if !text.chars().any(char::is_control) {
+        return text.to_owned();
+    }
+    let text = text.replace("\r\n", " ");
+    text.chars()
+        .filter_map(|c| match c {
+            '\n' | '\r' | '\t' => Some(' '),
+            c if c.is_control() => None,
+            c => Some(c),
+        })
+        .collect()
+}
+
 impl Line {
     fn new(text: impl Into<String>, size: f32, role: RowRole, element: Option<Id>) -> Self {
         Self {
-            text: text.into(),
+            text: single_line(&text.into()),
             size,
             bold: false,
             italic: false,
@@ -633,9 +667,7 @@ impl Line {
     /// UmlCraft's column for the visibility, the larger of Java's whole-pixel width and the
     /// exact one.
     fn astah_width_of(&self, text: &str, measure: &dyn TextMeasure) -> f32 {
-        measure
-            .width(text, self.size, self.bold)
-            .max(measure.rounded_width(text, self.size, self.bold))
+        measure.astah_width(text, self.size, self.bold)
     }
 
     /// Pieces the text may break between. A leading visibility symbol stays with the next word.
@@ -660,15 +692,35 @@ impl Line {
         }
         let mut texts = Vec::new();
         let mut current = String::new();
+        // The line's width so far, as the sum of its words and spaces: measuring each growing
+        // line exactly would shape it again for every word. Only a sum close to `max`, where
+        // kerning could tip it, is checked exactly.
+        let space = measure.width(" ", self.size, self.bold);
+        let mut estimate = 0.0;
         for word in self.words() {
-            let candidate =
-                if current.is_empty() { word.clone() } else { format!("{current} {word}") };
+            let word_width = measure.width(&word, self.size, self.bold);
+            if current.is_empty() {
+                current = word;
+                estimate = word_width;
+                continue;
+            }
+            let guess = estimate + space + word_width;
+            let candidate = format!("{current} {word}");
             // Break where Astah breaks: by the exact width of the plain text, not by the
             // visibility column's nor Java's whole-pixel width.
-            if !current.is_empty() && measure.width(&candidate, self.size, self.bold) > max {
+            let too_wide = if guess > max * 1.1 {
+                true
+            } else if guess < max * 0.9 {
+                false
+            } else {
+                measure.width(&candidate, self.size, self.bold) > max
+            };
+            if too_wide {
                 texts.push(std::mem::replace(&mut current, word));
+                estimate = word_width;
             } else {
                 current = candidate;
+                estimate = guess;
             }
         }
         texts.push(current);
@@ -832,6 +884,9 @@ pub fn build(model: &Model, diagram: Id, preview: &Preview, measure: &dyn TextMe
     keywords_away_from_notes(&candidates, &built, &mut edges, measure);
     edges.extend(view.presentations().iter().filter_map(|p| free_line(p, preview)));
     edges.extend(messages);
+    for label in edges.iter_mut().flat_map(|e| &mut e.labels) {
+        label.text = single_line(&label.text);
+    }
     Scene { nodes, edges, sequence }
 }
 
@@ -877,24 +932,27 @@ fn keywords_away_from_notes(
             p.id == id && matches!(&p.shape, Shape::Edge { labels, .. } if labels.keyword.is_some())
         })
     };
+    let index: HashMap<Id, usize> = edges.iter().enumerate().map(|(i, e)| (e.id, i)).collect();
     // Each anchored line with the point the note's line comes from.
     let notes: Vec<(Id, Point)> = candidates
         .iter()
         .filter_map(|p| {
             let Shape::Edge { source, target, .. } = &p.shape else { return None };
-            let pts = &edges.iter().find(|e| e.id == p.id)?.points;
-            if lines.contains(target) {
-                Some((*target, pts[pts.len() - 2]))
+            let line = if lines.contains(target) {
+                *target
             } else if lines.contains(source) {
-                Some((*source, pts[1]))
+                *source
             } else {
-                None
-            }
+                return None;
+            };
+            let pts = &edges[*index.get(&p.id)?].points;
+            Some((line, if line == *target { pts[pts.len() - 2] } else { pts[1] }))
         })
         .filter(|(line, _)| !placed(*line))
         .collect();
     for (line, from) in notes {
-        let Some(edge) = edges.iter_mut().find(|e| e.id == line) else { continue };
+        let Some(&i) = index.get(&line) else { continue };
+        let edge = &mut edges[i];
         let (a, b) = route::middle_segment(&edge.points, edge.shape.is_curve());
         let center = middle(a, b);
         let Some(label) = edge.labels.iter_mut().find(|l| l.keyword) else { continue };
@@ -957,7 +1015,7 @@ fn layout_node(
     let element = p.element.and_then(|e| model.get(e));
     let (rect, figure, rows) = match (element, &p.shape) {
         (_, Shape::Text { text, .. }) => layout_text(text, &p.style, bounds, measure),
-        (Some(e), _) => layout_element(model, e.id(), &p.style, p.regions(), bounds, measure),
+        (Some(e), _) => layout_element(model, e, &p.style, p.regions(), bounds, measure),
         (None, _) => (bounds, Figure::Other, Vec::new()),
     };
     NodeShape { id: p.id, element: p.element, rect, figure, rows, fill: p.style.fill }
@@ -992,13 +1050,13 @@ fn layout_text(
 
 fn layout_element(
     model: &Model,
-    id: Id,
+    e: &Element,
     style: &Style,
     regions: Option<&Regions>,
     bounds: Rect,
     measure: &dyn TextMeasure,
 ) -> (Rect, Figure, Vec<Row>) {
-    let e = model.get(id).expect("caller checked");
+    let id = e.id();
     let name_line = |size: f32, bold: bool| {
         let mut line = Line::new(e.name(), size, RowRole::Name, Some(id));
         line.bold = bold;
@@ -1018,7 +1076,7 @@ fn layout_element(
             (r, Figure::Lollipop, vec![row])
         }
         kind if is_boxed_classifier(kind) => {
-            layout_classifier(model, id, style, bounds, false, measure)
+            layout_classifier(model, e, style, bounds, false, measure)
         }
         ElementKind::Package | ElementKind::Model => {
             // Astah: the bold name centered 5 below a tab 15 high.
@@ -1052,7 +1110,7 @@ fn layout_element(
             );
             (r, Figure::Actor, vec![row])
         }
-        ElementKind::UseCase(_) => layout_use_case(model, id, style, bounds, measure),
+        ElementKind::UseCase(_) => layout_use_case(model, e, style, bounds, measure),
         // Astah has no system boundary of its own; it is drawn as a rectangle with a text: the
         // name in regular type, centered, its baseline 24 below the top.
         ElementKind::SystemBoundary => {
@@ -1085,13 +1143,13 @@ fn layout_element(
         }
         // The sequence layout places lifelines.
         ElementKind::Lifeline(_) => (bounds, Figure::Other, Vec::new()),
-        ElementKind::ActivityNode(p) => layout_activity_node(model, id, p, bounds, measure),
-        ElementKind::State(p) => layout_state(model, id, p, regions, bounds, measure),
+        ElementKind::ActivityNode(p) => layout_activity_node(model, e, p, bounds, measure),
+        ElementKind::State(p) => layout_state(model, e, p, regions, bounds, measure),
         ElementKind::Component(_) | ElementKind::Artifact(_) | ElementKind::Node(_) => {
-            layout_box(model, id, e.kind(), None, style, bounds, measure)
+            layout_box(model, e, e.kind(), None, style, bounds, measure)
         }
         ElementKind::Instance(p) if p.instance == InstanceKind::Object => {
-            layout_object(model, id, p.classifier, style, bounds, measure)
+            layout_object(model, e, p.classifier, style, bounds, measure)
         }
         ElementKind::Instance(p) => {
             let figure = match p.instance {
@@ -1099,7 +1157,7 @@ fn layout_element(
                 InstanceKind::Component => ElementKind::Component(Default::default()),
                 InstanceKind::Node => ElementKind::Node(Default::default()),
             };
-            layout_box(model, id, &figure, Some(p.classifier), style, bounds, measure)
+            layout_box(model, e, &figure, Some(p.classifier), style, bounds, measure)
         }
         ElementKind::FinalState => (bounds, Figure::ActivityFinal, Vec::new()),
         ElementKind::Pseudostate(p) => {
@@ -1185,14 +1243,14 @@ pub const PARTITION_HEADER: f32 = 35.0;
 /// grow around their wrapped name.
 fn layout_activity_node(
     model: &Model,
-    id: Id,
+    e: &Element,
     props: &ActivityNodeProps,
     bounds: Rect,
     measure: &dyn TextMeasure,
 ) -> (Rect, Figure, Vec<Row>) {
     const PAD_X: f32 = 10.0;
     const PAD_Y: f32 = 4.0;
-    let e = model.get(id).expect("caller checked");
+    let id = e.id();
     let figure = match props.node {
         ActivityNodeKind::Action => Figure::Action,
         ActivityNodeKind::Object => Figure::Rectangle,
@@ -1247,8 +1305,6 @@ fn layout_activity_node(
     (r, figure, rows)
 }
 
-/// States: the name, centered; below a line the internal activities (`entry / …`), or room for
-/// the substates of a composite state.
 /// Depth of a deployment node's cube.
 const CUBE_DEPTH: f32 = 4.0;
 
@@ -1262,7 +1318,7 @@ const CUBE_DEPTH: f32 = 4.0;
 /// 15 off the right of a component and 11 off an artifact.
 fn layout_box(
     model: &Model,
-    id: Id,
+    e: &Element,
     figure: &ElementKind,
     instance_of: Option<Option<Id>>,
     style: &Style,
@@ -1272,7 +1328,7 @@ fn layout_box(
     // Astah's boxes leave at least 10 beside the widest text.
     const MIN_PAD_X: f32 = 10.0;
     const PAD_Y: f32 = 4.0;
-    let e = model.get(id).expect("caller checked");
+    let id = e.id();
     let classifier = instance_of.flatten().and_then(|c| model.get(c));
     let mut lines = Vec::new();
     let own = Some(&e.data().stereotypes);
@@ -1288,7 +1344,7 @@ fn layout_box(
     }
     let mut name = match instance_of {
         Some(classifier) => {
-            let (text, _) = instance_text(model, id, classifier, style);
+            let (text, _) = instance_text(model, e, classifier, style);
             let mut line = Line::new(text, FONT_SIZE, RowRole::Name, Some(id));
             line.underline = true;
             line
@@ -1345,8 +1401,12 @@ fn layout_box(
 
 /// What an instance shows: `name : Type`, `: Type` without a name, less where `style` hides
 /// the name or the type. Also whether it starts with the colon.
-fn instance_text(model: &Model, id: Id, classifier: Option<Id>, style: &Style) -> (String, bool) {
-    let e = model.get(id).expect("caller checked");
+fn instance_text(
+    model: &Model,
+    e: &Element,
+    classifier: Option<Id>,
+    style: &Style,
+) -> (String, bool) {
     let name = if style.hide_instance_name { "" } else { e.name() };
     let type_name = classifier
         .and_then(|c| model.get(c))
@@ -1364,7 +1424,7 @@ fn instance_text(model: &Model, id: Id, classifier: Option<Id>, style: &Style) -
 /// style hides it.
 fn layout_object(
     model: &Model,
-    id: Id,
+    e: &Element,
     classifier: Option<Id>,
     style: &Style,
     bounds: Rect,
@@ -1372,7 +1432,7 @@ fn layout_object(
 ) -> (Rect, Figure, Vec<Row>) {
     const PAD_X: f32 = 10.0;
     const PAD_Y: f32 = 4.0;
-    let e = model.get(id).expect("caller checked");
+    let id = e.id();
     let mut header = Vec::new();
     // Its own stereotypes, then its class's, as Astah shows them.
     let own = Some(&e.data().stereotypes);
@@ -1387,7 +1447,7 @@ fn layout_object(
             ));
         }
     }
-    let (text, colon_first) = instance_text(model, id, classifier, style);
+    let (text, colon_first) = instance_text(model, e, classifier, style);
     let mut name = Line::new(text, FONT_SIZE, RowRole::Name, Some(id));
     name.underline = true;
     // Without a name Astah centers " : Class" but draws it from the colon on: the text sits
@@ -1456,9 +1516,11 @@ fn layout_object(
     (r, Figure::Classifier { separators, template: None }, rows)
 }
 
+/// States: the name, centered; below a line the internal activities (`entry / …`), or room for
+/// the substates of a composite state.
 fn layout_state(
     model: &Model,
-    id: Id,
+    e: &Element,
     props: &StateProps,
     layout: Option<&Regions>,
     bounds: Rect,
@@ -1466,7 +1528,7 @@ fn layout_state(
 ) -> (Rect, Figure, Vec<Row>) {
     const PAD_X: f32 = 8.0;
     const PAD_Y: f32 = 4.0;
-    let e = model.get(id).expect("caller checked");
+    let id = e.id();
     let kind_of = |c: Id| model.get(c).map(|c| c.kind());
     let regions: Vec<Id> = e
         .children()
@@ -1499,11 +1561,16 @@ fn layout_state(
     let widest = activities.iter().chain([&name]).map(|l| l.width(measure)).fold(0.0, f32::max);
     let header = h + 2.0 * PAD_Y;
     let body = if activities.is_empty() { 0.0 } else { h * activities.len() as f32 + 2.0 * PAD_Y };
+    // Every region keeps at least `MIN_REGION` across the lines, however small the state is
+    // stored.
+    let across = if regions.len() >= 2 { MIN_REGION * regions.len() as f32 } else { 0.0 };
+    let vertical = layout.is_some_and(|l| l.vertical);
+    let (min_width, min_height) = if vertical { (across, 0.0) } else { (0.0, across) };
     let r = Rect::new(
         bounds.x,
         bounds.y,
-        bounds.width.max(widest + 2.0 * PAD_X).max(40.0),
-        bounds.height.max(header + body).max(30.0),
+        bounds.width.max(widest + 2.0 * PAD_X).max(40.0).max(min_width),
+        bounds.height.max(header + body + min_height).max(30.0),
     );
     // As in Astah, the name heads every state, above a line.
     let mut rows = vec![name.place(Rect::new(r.x, r.y + PAD_Y, r.width, h), LabelAlign::Center)];
@@ -1620,7 +1687,7 @@ fn wrap(text: &str, max: f32, size: f32, measure: &dyn TextMeasure) -> Vec<Strin
 /// line plus the padding.
 fn layout_use_case(
     model: &Model,
-    id: Id,
+    e: &Element,
     style: &Style,
     bounds: Rect,
     measure: &dyn TextMeasure,
@@ -1638,7 +1705,7 @@ fn layout_use_case(
     const MARGIN: f32 = 18.2214;
     /// Space kept between a wrapped name and the ellipse.
     const NAME_GAP: f32 = 4.0;
-    let e = model.get(id).expect("caller checked");
+    let id = e.id();
     let extension_points: Vec<(Id, &str)> = e
         .children()
         .iter()
@@ -1726,10 +1793,12 @@ fn layout_use_case(
 /// Nodes drawn completely inside container nodes (system boundaries, packages) among `ids`,
 /// recursively, together with `ids` themselves. Moving a container moves its contents.
 pub fn with_contents(scene: &Scene, ids: &[Id]) -> Vec<Id> {
+    let nodes: HashMap<Id, &NodeShape> = scene.nodes.iter().map(|n| (n.id, n)).collect();
     let mut result: Vec<Id> = ids.to_vec();
+    let mut taken: HashSet<Id> = result.iter().copied().collect();
     let mut i = 0;
     while i < result.len() {
-        if let Some(container) = scene.node(result[i])
+        if let Some(container) = nodes.get(&result[i]).copied()
             && matches!(
                 container.figure,
                 Figure::Boundary
@@ -1742,8 +1811,8 @@ pub fn with_contents(scene: &Scene, ids: &[Id]) -> Vec<Id> {
         {
             for n in &scene.nodes {
                 if n.id != container.id
-                    && !result.contains(&n.id)
                     && container.rect.contains_rect(&n.rect)
+                    && taken.insert(n.id)
                 {
                     result.push(n.id);
                 }
@@ -1772,7 +1841,7 @@ pub fn fitted_box(
     if !p.style.auto_size || p.style.iconic || !is_boxed_classifier(element.kind()) {
         return None;
     }
-    let (r, _, rows) = layout_classifier(model, element.id(), &p.style, bounds, true, measure);
+    let (r, _, rows) = layout_classifier(model, element, &p.style, bounds, true, measure);
     let texts: Vec<&str> = rows.iter().map(|row| row.text.as_str()).collect();
     Some((r.size(), texts.join("\n")))
 }
@@ -1807,7 +1876,7 @@ pub fn is_boxed_classifier(kind: &ElementKind) -> bool {
 /// sizes the box automatically.
 fn layout_classifier(
     model: &Model,
-    id: Id,
+    e: &Element,
     style: &Style,
     bounds: Rect,
     fit: bool,
@@ -1817,7 +1886,7 @@ fn layout_classifier(
     // each compartment; an empty compartment is 8 px high.
     const PAD_X: f32 = 10.0;
     const PAD_Y: f32 = 4.0;
-    let e = model.get(id).expect("caller checked");
+    let id = e.id();
     let kind = e.kind();
     let size = style.font_size.unwrap_or(FONT_SIZE);
 
@@ -2319,8 +2388,7 @@ struct End {
 /// The width of the box Astah gives a label: the text's whole-pixel width or its exact one,
 /// whichever is larger, and at least 10.
 pub fn label_width(text: &str, measure: &dyn TextMeasure) -> f32 {
-    let exact = measure.width(text, FONT_SIZE, false);
-    exact.max(measure.rounded_width(text, FONT_SIZE, false)).max(10.0)
+    measure.astah_width(text, FONT_SIZE, false).max(10.0)
 }
 
 /// Places a role name (`role`) or multiplicity at an end of the line as Astah does: the
@@ -2437,6 +2505,7 @@ pub fn distance_to_segment(p: Point, a: Point, b: Point) -> f32 {
 }
 
 /// Topmost node or edge under `p` (logical coordinates), with `tolerance` for thin lines.
+/// Lines are drawn above all nodes, so they are hit first.
 pub fn hit_test(scene: &Scene, p: Point, tolerance: f32) -> Option<Id> {
     edge_at(scene, p, tolerance)
         .or_else(|| scene.nodes.iter().rev().find(|n| n.hit(p, tolerance)).map(|n| n.id))
@@ -2863,16 +2932,6 @@ mod tests {
 
     #[test]
     fn use_cases_list_extension_points_as_astah_does() {
-        /// Every text as wide as Astah measured "Film ansehen" in bold.
-        struct Fixed(f32);
-        impl TextMeasure for Fixed {
-            fn width(&self, _: &str, _: f32, _: bool) -> f32 {
-                self.0
-            }
-            fn rounded_width(&self, _: &str, _: f32, _: bool) -> f32 {
-                self.0
-            }
-        }
         let (mut doc, ids) = order_system();
         let d = ids.use_case_diagram;
         let place_order = doc.model().children(doc.model().root())[2];
@@ -3499,10 +3558,7 @@ mod tests {
         let widest = node
             .rows
             .iter()
-            .map(|r| {
-                let exact = ApproxMeasure.width(&r.text, r.size, r.bold);
-                exact.max(ApproxMeasure.rounded_width(&r.text, r.size, r.bold))
-            })
+            .map(|r| ApproxMeasure.astah_width(&r.text, r.size, r.bold))
             .fold(0.0, f32::max);
         let size = fitted(&doc);
         assert!((size.width - (widest + 20.0)).abs() < 1e-3);

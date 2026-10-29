@@ -15,6 +15,8 @@ use umlcraft_model::{
     Result, Shape, Tx, View,
 };
 
+use crate::sequence::SELF_DROP;
+
 /// Height of the bar a call starts.
 pub const RECEIVER_BAR: f32 = 25.0;
 /// Height of a bar a lifeline gets for sending.
@@ -25,8 +27,6 @@ const LOST_SENDER_BAR: f32 = 30.0;
 const BAR_MARGIN: f32 = 20.0;
 /// Space a lifeline keeps below the last thing on it.
 const LIFELINE_MARGIN: f32 = 30.0;
-/// How far a message to self comes back below where it leaves.
-const SELF_DROP: f32 = 20.0;
 /// How far the open end of a found or lost message is from its lifeline.
 const GATE_DISTANCE: f32 = 120.0;
 /// Length of a lifeline on an empty diagram.
@@ -356,7 +356,8 @@ pub fn add_message(
         }
         (_, MessageSort::Create) => {
             sender(tx, CREATE_SENDER_BAR)?;
-            // The new lifeline's head comes down to the message; its line keeps its end.
+            // The new lifeline's head comes down to the message; its line keeps its end. As in
+            // Astah, the new lifeline gets no bar: the message ends at its head.
             let head =
                 Rect::new(to.head.x, y - to.head.height / 2.0, to.head.width, to.head.height);
             let line_top = head.bottom() + if to.iconic { ICON_NAME } else { 0.0 };
@@ -366,12 +367,12 @@ pub fn add_message(
                     (*h, *l) = (head, length);
                 }
             })?;
-            add_bar(tx, diagram, to.id, line_top, RECEIVER_BAR)?;
         }
         (_, MessageSort::Destroy) => {
             sender(tx, SENDER_BAR)?;
             add_bar(tx, diagram, to.id, y, RECEIVER_BAR)?;
-            let length = y + RECEIVER_BAR - to.line_top();
+            // Above the head the lifeline keeps at least the bar's length.
+            let length = (y + RECEIVER_BAR - to.line_top()).max(RECEIVER_BAR);
             tx.update_presentation(diagram, to.id, |p| {
                 if let Shape::Lifeline { length: l, destroyed, .. } = &mut p.shape {
                     (*l, *destroyed) = (length, true);
@@ -436,6 +437,44 @@ pub fn add_operand_space(tx: &mut Tx<'_>, fragment: Id) -> Result<()> {
             }
         })?;
         tidy(tx, diagram)?;
+    }
+    Ok(())
+}
+
+/// Deletes `operand` with the line above it (below it for the first one) and its guard's place
+/// on every diagram that shows its fragment. The last operand takes the fragment along: a
+/// combined fragment has at least one.
+pub fn delete_operand(tx: &mut Tx<'_>, operand: Id) -> Result<()> {
+    let model = tx.model();
+    let Some(fragment) = model.element(operand)?.owner() else { return Ok(()) };
+    let operands: Vec<Id> = model
+        .children(fragment)
+        .iter()
+        .copied()
+        .filter(|&c| {
+            matches!(model.get(c).map(|e| e.kind()), Some(ElementKind::InteractionOperand(_)))
+        })
+        .collect();
+    if operands == [operand] {
+        return tx.delete(fragment);
+    }
+    let index = operands.iter().position(|&o| o == operand).unwrap_or(0);
+    let shown: Vec<(Id, Id)> = model
+        .views()
+        .flat_map(|(diagram, view)| view.presentations_of(fragment).map(move |p| (diagram, p.id)))
+        .collect();
+    tx.delete(operand)?;
+    for (diagram, id) in shown {
+        tx.update_presentation(diagram, id, |p| {
+            if let Shape::Fragment { separators, guards, .. } = &mut p.shape {
+                if !separators.is_empty() {
+                    separators.remove(index.saturating_sub(1).min(separators.len() - 1));
+                }
+                if index < guards.len() {
+                    guards.remove(index);
+                }
+            }
+        })?;
     }
     Ok(())
 }
@@ -553,6 +592,8 @@ pub fn tidy(tx: &mut Tx<'_>, diagram: Id) -> Result<()> {
 }
 
 /// Tidies every sequence diagram, e.g. after deleting elements that may have been shown there.
+/// A diagram that cannot be tidied (a broken file, say) stays as it is rather than failing an
+/// edit elsewhere.
 pub fn tidy_all(tx: &mut Tx<'_>) -> Result<()> {
     let diagrams: Vec<Id> = tx
         .model()
@@ -560,7 +601,11 @@ pub fn tidy_all(tx: &mut Tx<'_>) -> Result<()> {
         .filter(|e| e.kind().as_diagram() == Some(umlcraft_model::DiagramKind::Sequence))
         .map(|e| e.id())
         .collect();
-    diagrams.into_iter().try_for_each(|d| tidy(tx, d))
+    for d in diagrams {
+        // Skipped on purpose: the edit that asked for the tidy-up is not about this diagram.
+        let _ = tx.attempt(|tx| tidy(tx, d));
+    }
+    Ok(())
 }
 
 /// Removes bars that no message reaches any more, as Astah removes a bar with the message that
@@ -648,10 +693,12 @@ fn fit_fragments(tx: &mut Tx<'_>, diagram: Id) -> Result<()> {
             let r = f.rect;
             let inside = |x: f32, y: f32| r.y < y && y < r.bottom() && r.x <= x && x <= r.right();
             let bars = g.bars.iter().filter(|b| inside(center(b.lane), b.top)).map(|b| b.bottom);
+            // As in `sync_order`: a message is inside when both of its ends are, so one that
+            // crosses the frame's side does not grow the fragment it is not put into.
             let messages = g
                 .messages
                 .iter()
-                .filter(|m| inside(center(m.source), m.y))
+                .filter(|m| inside(center(m.source), m.y) && inside(center(m.target), m.y))
                 .map(|m| m.y.max(m.end()));
             let frames = g
                 .frames
@@ -682,7 +729,17 @@ fn fit_fragments(tx: &mut Tx<'_>, diagram: Id) -> Result<()> {
 
 fn fit_lifelines(tx: &mut Tx<'_>, diagram: Id) -> Result<()> {
     let g = Geometry::read(tx.model(), diagram)?;
-    for lane in g.lanes.iter().filter(|l| !l.destroyed) {
+    // A lifeline whose destroy message is gone runs on again.
+    let destroying =
+        |lane: Id| g.messages.iter().any(|m| m.target == lane && m.sort == MessageSort::Destroy);
+    for lane in g.lanes.iter().filter(|l| l.destroyed && !destroying(l.id)) {
+        tx.update_presentation(diagram, lane.id, |p| {
+            if let Shape::Lifeline { destroyed, .. } = &mut p.shape {
+                *destroyed = false;
+            }
+        })?;
+    }
+    for lane in g.lanes.iter().filter(|l| !l.destroyed || !destroying(l.id)) {
         let bars = g.bars.iter().filter(|b| b.lane == lane.id).map(|b| b.bottom);
         let messages = g
             .messages
@@ -853,6 +910,10 @@ pub fn sync_order(tx: &mut Tx<'_>, diagram: Id) -> Result<()> {
         let current = model.get(element).and_then(|e| e.owner());
         let position = model.children(owner).iter().position(|&c| c == element);
         if current == Some(owner) && position == Some(index) {
+            continue;
+        }
+        // An earlier move may have put the owner inside the element.
+        if owner == element || model.is_ancestor(element, owner) {
             continue;
         }
         let index = index.min(model.children(owner).len() - usize::from(current == Some(owner)));
@@ -1098,6 +1159,14 @@ mod tests {
     }
 
     #[test]
+    fn tidying_leaves_the_sample_as_it_is() {
+        let (mut doc, ids) = order_system();
+        let before = doc.model().clone();
+        doc.edit("tidy", |tx| super::tidy(tx, ids.sequence_diagram)).unwrap();
+        assert_eq!(*doc.model(), before);
+    }
+
+    #[test]
     fn the_sample_is_drawn_from_its_geometry() {
         let (doc, ids) = order_system();
         let scene = scene_of(&doc, ids.sequence_diagram);
@@ -1105,7 +1174,7 @@ mod tests {
         assert_eq!(labels(&scene), ["1: addItem(item)", "2: submit() : confirmation", ""]);
         let count = |f: fn(&Figure) -> bool| scene.nodes.iter().filter(|n| f(&n.figure)).count();
         assert_eq!(count(|f| matches!(f, Figure::Lifeline { .. })), 2);
-        assert_eq!(count(|f| matches!(f, Figure::Activation)), 3);
+        assert_eq!(count(|f| matches!(f, Figure::Activation)), 4);
         assert_eq!(count(|f| matches!(f, Figure::Frame { .. })), 1);
         let rows = |figure: fn(&Figure) -> bool| -> Vec<String> {
             let node = scene.nodes.iter().find(|n| figure(&n.figure)).unwrap();
@@ -1284,11 +1353,71 @@ mod tests {
         };
         let (head, _, _) = lane(&doc);
         assert_eq!(head.center().y, 150.0);
+        // Only the sender gets a bar.
+        assert_eq!(bars(&doc, d), vec![(150.0, 210.0)]);
         draw(&mut doc, d, EdgeTool::DestroyMessage, a, b, 260.0);
         let (head, length, destroyed) = lane(&doc);
         assert!(destroyed);
         assert_eq!(head.bottom() + length, 285.0);
         assert_eq!(scene_of(&doc, d).sequence.unwrap().destructions.len(), 1);
+        // Without its destroy message the lifeline runs on.
+        let destroy =
+            doc.model().view(d).unwrap().presentations().iter().find_map(|p| match p.shape {
+                Shape::Message { y: 260.0, .. } => p.element,
+                _ => None,
+            });
+        doc.edit("undestroy", |tx| {
+            tx.delete(destroy.unwrap())?;
+            super::tidy_all(tx)
+        })
+        .unwrap();
+        assert!(!lane(&doc).2);
+        assert!(scene_of(&doc, d).sequence.unwrap().destructions.is_empty());
+    }
+
+    #[test]
+    fn deleting_operands_takes_their_lines_along() {
+        let (mut doc, d, a, b) = two_lifelines();
+        let call = draw(&mut doc, d, EdgeTool::Message, a, b, 120.0);
+        let (fragment, node) =
+            doc.edit("wrap", |tx| palette::wrap_in_fragment(tx, d, &[call])).unwrap();
+        doc.edit("operands", |tx| {
+            palette::add_operand(tx, fragment).and(palette::add_operand(tx, fragment))
+        })
+        .unwrap();
+        let separators =
+            |doc: &Document| match &doc.model().view(d).unwrap().get(node).unwrap().shape {
+                Shape::Fragment { separators, .. } => separators.clone(),
+                other => panic!("{other:?}"),
+            };
+        assert_eq!(separators(&doc).len(), 2);
+        let operands = doc.model().children(fragment).to_vec();
+        doc.edit("first", |tx| super::delete_operand(tx, operands[0]).and(super::tidy_all(tx)))
+            .unwrap();
+        assert_eq!(separators(&doc).len(), 1);
+        doc.edit("second", |tx| super::delete_operand(tx, operands[1]).and(super::tidy_all(tx)))
+            .unwrap();
+        assert!(separators(&doc).is_empty());
+        // The last one takes the fragment along.
+        doc.edit("last", |tx| super::delete_operand(tx, operands[2]).and(super::tidy_all(tx)))
+            .unwrap();
+        assert!(!doc.model().contains(fragment));
+        doc.model().check().unwrap();
+    }
+
+    #[test]
+    fn a_destroy_above_the_head_leaves_a_line() {
+        let (mut doc, d, a, b) = two_lifelines();
+        let top = match doc.model().view(d).unwrap().get(b).unwrap().shape {
+            Shape::Lifeline { head, .. } => head.y,
+            ref other => panic!("{other:?}"),
+        };
+        draw(&mut doc, d, EdgeTool::DestroyMessage, a, b, top - 30.0);
+        match doc.model().view(d).unwrap().get(b).unwrap().shape {
+            Shape::Lifeline { length, .. } => assert!(length > 0.0, "{length}"),
+            ref other => panic!("{other:?}"),
+        }
+        doc.model().check().unwrap();
     }
 
     #[test]

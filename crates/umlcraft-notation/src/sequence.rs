@@ -35,6 +35,8 @@ pub const BAR: f32 = 10.0;
 pub const GATE_DOT: f32 = 4.0;
 /// How far a message to self loops out to the right of its bar.
 const SELF_WIDTH: f32 = 40.0;
+/// How far a message to self comes back below where it leaves.
+pub const SELF_DROP: f32 = 20.0;
 /// How far right a message that branches off another one runs before it turns.
 const BRANCH_RUN: f32 = 20.0;
 /// The top of a message's label above its line.
@@ -631,7 +633,7 @@ fn tab(keyword: &str, r: Rect, measure: &dyn TextMeasure) -> Rect {
 
 /// The larger of a plain text's whole-pixel and exact width, by which Astah sizes tabs.
 fn wide(text: &str, measure: &dyn TextMeasure) -> f32 {
-    measure.rounded_width(text, 12.0, false).max(measure.width(text, 12.0, false))
+    measure.astah_width(text, FONT_SIZE, false)
 }
 
 fn tab_row(keyword: &str, r: Rect, top: f32, element: Id) -> Row {
@@ -809,7 +811,7 @@ fn message_edge(
             let own = to.bar_starting(y1);
             let outer = from.bar_at(y0, own.map(|b| b.id));
             let start = from.side(outer, true);
-            let y1 = if m.end_y.is_some() { y1 } else { y0 + 20.0 };
+            let y1 = if m.end_y.is_some() { y1 } else { y0 + SELF_DROP };
             let end = to.side(own.or_else(|| to.bar_at(y1, None)), true);
             let loop_x = match m.loop_x {
                 Some(x) => (from.center() + x).max(start + BAR),
