@@ -51,6 +51,13 @@ impl Metrics {
         (sum + 0.5).floor() as i32
     }
 
+    /// The width of the diagram's title, which is bold: Structorizer cuts the fraction off
+    /// here instead of rounding.
+    pub fn title_width(&self, lines: &[String]) -> i32 {
+        let width = |l: &String| l.chars().map(|c| self.bold.advance(c)).sum::<f64>() as i32;
+        lines.iter().map(width).max().unwrap_or(0)
+    }
+
     /// The widest of `lines`.
     pub fn max_width(&self, lines: &[String], bold: bool) -> i32 {
         lines.iter().map(|l| self.width(l, bold)).max().unwrap_or(0)
