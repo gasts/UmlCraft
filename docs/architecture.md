@@ -462,8 +462,11 @@ writes, and none of its code is used.
   antialiased with integer metrics: a line is as wide as its characters' advances summed and
   rounded, the bold title's widths are cut off instead. The font behind Dialog differs by
   platform; `tools/nsd-metrics/DialogMetrics.java` writes a table per platform
-  (`src/metrics/dialog12-<platform>.txt`). Linux's is there; the Windows table, which is to
-  become the default, needs a run of the tool on Windows.
+  (`src/metrics/dialog12-<platform>.txt`). Linux (DejaVu Sans) and Windows (Arial, whole-pixel
+  advances, title lines 16 px apart instead of 17) are measured; Linux uses its own, every
+  other platform the Windows table, Structorizer's most common one. The include list's box
+  above the title uses a smaller font whose widths are not tabled: its height and caption
+  width were measured in Structorizer's images and stand in each table (`includes`).
 - **Layout** (`layout`) works in whole pixels, with the rules read off Structorizer's images
   (GUI defaults, syntax highlighting off): `measure` gives each element its natural size from
   the inside out, `place` its box. A box is given by its lines; neighbours share theirs.
@@ -524,10 +527,12 @@ tests check our own diagrams, one feature each, as Structorizer saved them
 (`tests/fixtures/structorizer`), and a snapshot of a new diagram with every kind
 (`tests/fixtures/new`, `UPDATE_SNAPSHOTS=1` rewrites it). With `UMLCRAFT_NSD_REFS` pointing at a
 folder of further reference files kept outside the repository (Structorizer's samples and
-Java imports, our measuring diagrams; 256 files), `reference_files_round_trip` checks those too,
+Java imports, our measuring diagrams, a file saved by Structorizer's GUI on Windows, which
+is byte for byte the Linux one; 258 files), `reference_files_round_trip` checks those too,
 and `structorizer_drawing` draws all diagrams Structorizer can draw (389), rasterizes them with
 resvg and compares their straight lines with Structorizer's PNG exports (`plain/…`, exported
-with the GUI's settings and highlighting off); differences we understand are listed with their
+with the GUI's settings and highlighting off); with the Windows table it does the same for the
+exports made on Windows (`windows/…`, 187). Differences we understand are listed with their
 reason in `tests/structorizer_deviations.txt`. Snapshots of the fixtures' layout and of one
 SVG (`tests/drawing.rs`) guard the rest. `cargo run -p umlcraft-nsd --example nsd-svg --
 FILE.nsd` draws a file.

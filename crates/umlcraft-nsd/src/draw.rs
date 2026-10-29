@@ -167,7 +167,8 @@ impl Drawing<'_> {
             self.line(last.x, last.y, first.x, first.y);
         }
         if let Some(list) = diagram.header("includeList").filter(|l| !l.is_empty()) {
-            let (top, height, _) = INCLUDES;
+            let small = self.m.includes();
+            let (top, height) = (INCLUDES.0, small.height);
             let (l, r, b) = (PADDING, w - PADDING, top + height);
             for (x0, y0, x1, y1) in [
                 (l, top, r - 5, top),
@@ -186,7 +187,7 @@ impl Drawing<'_> {
             let names = list.split(',').map(str::trim).collect::<Vec<_>>().join(", ");
             for (i, t) in [INCLUDES_LABEL.to_owned(), names].into_iter().enumerate() {
                 self.texts.push(Primitive::Text {
-                    at: px(l + 10, top + 16 + 12 * i as i32),
+                    at: px(l + 10, top + small.baseline + small.line * i as i32),
                     text: t,
                     bold: false,
                     upwards: false,

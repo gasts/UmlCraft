@@ -28,8 +28,9 @@ const CATCH_INDENT: i32 = 40;
 const PARALLEL_MIN: i32 = 31;
 /// The first baseline of an alternative's condition below its top line.
 pub const COND_BASELINE: i32 = 19;
-/// The include list above the title: its box's top, height and the space below it.
-pub const INCLUDES: (i32, i32, i32) = (20, 33, 10);
+/// The include list above the title: its box's top and the space below it (its height and
+/// caption width depend on the platform's small font, `Metrics::includes`).
+pub const INCLUDES: (i32, i32) = (20, 10);
 /// Case heads: the diagonal ends this far above the head's bottom line.
 pub const CASE_LABELS: i32 = 24;
 
@@ -272,7 +273,7 @@ impl Layouter<'_> {
         let body = self.sequence_size(&d.children, false);
         let framed = d.style() == RootStyle::Nice;
         let includes = if d.header("includeList").is_some_and(|l| !l.is_empty()) {
-            INCLUDES.1 + INCLUDES.2
+            self.m.includes().height + INCLUDES.1
         } else {
             0
         };
@@ -280,9 +281,8 @@ impl Layouter<'_> {
             let header = includes + PADDING + self.m.title_line() * n + PADDING;
             let mut w = (title_w + 2 * PADDING).max(body.w + 2 * PADDING);
             if includes > 0 {
-                // The list's caption in its small font (8 of 12 px) with the box's margins.
-                let caption = self.m.width(INCLUDES_LABEL, false);
-                w = w.max(caption * 2 / 3 + 26 + 2 * PADDING);
+                // The list's caption in its small font with the box's margins.
+                w = w.max(self.m.includes().caption + 26 + 2 * PADDING);
             }
             let body_rect = Rect::new(PADDING, header, w - 2 * PADDING, body.h);
             let body = self.place_sequence(&d.children, body_rect, &[], false);
@@ -380,7 +380,7 @@ impl Layouter<'_> {
         let _ = tw;
         let mut l = self.sequence_size(&e.branches[0], false);
         let mut r = self.sequence_size(&e.branches[1], false);
-        l.w = l.w.max(self.m.width(TRUE_LABEL, false) + 24);
+        l.w = l.w.max(2 * self.m.width(TRUE_LABEL, false) + 16);
         r.w = r.w.max(self.m.width(FALSE_LABEL, false) + 23);
         (head, min_w, l, r)
     }
