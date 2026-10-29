@@ -427,3 +427,40 @@ through its official API (`astah-api.jar`):
   `end_a.name.point.x`, `end_b.multiplicity.point.y` …); the sidecar turns UmlCraft's offsets into
   those positions. `setProperty` silently ignores keys it does not know. Constraints of
   association ends become constraints on the end.
+
+## Nassi-Shneiderman diagrams
+
+`umlcraft-nsd` holds structograms in the `.nsd` format of
+[Structorizer](https://structorizer.fisch.lu) 3.32-35. They are not part of the UML model:
+a diagram is a file of its own. Structorizer is GPL-licensed; the format and the way
+Structorizer writes it were worked out from its XML schema, its user guide and the files it
+writes, and none of its code is used.
+
+- **Model.** A `Diagram` has the attributes of `<root>` (header: version, parser keywords,
+  author, dates, licence; the root's own text, comment, colour, `type` program/sub/includable,
+  `style` nice/abbr) and a `Sequence` of `Element`s. An element has a kind (instruction, call,
+  jump, alternative, case, for, while, repeat, forever, try, parallel), its attributes and its
+  branches (`qTrue`/`qFalse`, one `qCase` per case …). Every node keeps its attributes as an
+  ordered list exactly as read and offers typed access on top (`text`, `comment`, `color`,
+  `disabled`, `branch_colors` …). Texts are lists of lines, stored as `"line1","line2"` with
+  doubled quotes (`text`). Setting an attribute a node lacks puts it where Structorizer writes
+  it (`ElementKind::order`, `ROOT_ORDER`).
+- **Reading** (`read`) uses quick-xml. Attribute values are unescaped but not normalized: a
+  tab Structorizer wrote stays a tab, where an XML parser (Structorizer's too) would read a
+  space. Unknown attributes are kept; unknown elements, wrong branches and other encodings
+  than UTF-8 are errors with line and column.
+- **Writing** (`write`) is done by hand, because Structorizer escapes differently from XML
+  libraries (`&#34;`, `&#60;`, `&#62;`, `&amp;`, `&#10;`): the declaration, a tab per level,
+  elements without branches on one line, branch tags on lines of their own, LF line ends and
+  none after `</root>`. Empty sequences carry `color="ffffff"`, as in Structorizer's files.
+- **New diagrams and elements** (`create`) get the attributes Structorizer gives them: the
+  header of a fresh installation's GUI (its keywords `"until "` and `"while "` end in a space),
+  `branch_colors` with one slot per branch, a parallel element's branch count as its text,
+  the attributes of counting, traversing and free-text for loops.
+
+Every file Structorizer 3.32-35 wrote that we have reads and writes back byte for byte. The
+tests check our own diagrams, one feature each, as Structorizer saved them
+(`tests/fixtures/structorizer`), and a snapshot of a new diagram with every kind
+(`tests/fixtures/new`, `UPDATE_SNAPSHOTS=1` rewrites it). With `UMLCRAFT_NSD_REFS` pointing at a
+folder of further reference files kept outside the repository (Structorizer's samples and
+Java imports, our measuring diagrams; 256 files), `reference_files_round_trip` checks those too.
