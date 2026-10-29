@@ -141,6 +141,10 @@ impl MainView {
             paste_count: 0,
             _subscriptions: subscriptions,
         };
+        if !crate::canvas::choose_diagram_font(cx) {
+            let revision = view.workspace.read(cx).doc.revision();
+            view.notice = Some((t!("status.no_diagram_font").to_string(), revision));
+        }
         view.sync_from_workspace(window, cx);
         view
     }

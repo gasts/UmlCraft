@@ -61,6 +61,8 @@ overrides:
       - libfontconfig1
     recommends:
       - mesa-vulkan-drivers
+      # Arial's metrics for diagram texts, where Arial itself is missing.
+      - fonts-liberation
   rpm:
     depends:
       - libxcb.so.1()(64bit)
@@ -72,3 +74,4 @@ overrides:
       - libfontconfig.so.1()(64bit)
     recommends:
       - mesa-vulkan-drivers
+      - liberation-sans-fonts

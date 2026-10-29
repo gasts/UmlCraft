@@ -4,7 +4,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu};
@@ -33,8 +33,24 @@ use crate::{
 };
 
 const MIN_ZOOM: f32 = 0.25;
-/// The font of diagram texts. Astah uses Java's "Dialog", which is Arial on Windows.
-const DIAGRAM_FONT: &str = "Arial";
+/// The fonts for diagram texts, by preference. Astah uses Java's "Dialog", which is Arial on
+/// Windows; Liberation Sans and Arimo have Arial's metrics, for Linux without Arial.
+const DIAGRAM_FONTS: [&str; 3] = ["Arial", "Liberation Sans", "Arimo"];
+static DIAGRAM_FONT: OnceLock<SharedString> = OnceLock::new();
+
+/// Picks the diagram font from the installed families, once at startup. False when none of
+/// [`DIAGRAM_FONTS`] is installed: the text system then substitutes another font, and texts
+/// are measured wider or narrower than Astah draws them.
+pub fn choose_diagram_font(cx: &App) -> bool {
+    let installed = cx.text_system().all_font_names();
+    let found = DIAGRAM_FONTS.iter().find(|f| installed.iter().any(|i| i == *f));
+    DIAGRAM_FONT.get_or_init(|| found.copied().unwrap_or(DIAGRAM_FONTS[0]).into());
+    found.is_some()
+}
+
+fn diagram_font() -> SharedString {
+    DIAGRAM_FONT.get().cloned().unwrap_or(DIAGRAM_FONTS[0].into())
+}
 /// Where GPUI puts the baseline below the top of its line, relative to the font size. It
 /// centers ascent plus descent in the line: (15.09375 − 10.86328 − 2.54297) / 2 + 10.86328 =
 /// 11.70703 for Arial's 1854 and 434 units per 2048 at 12 px in a line of
@@ -330,7 +346,7 @@ pub struct FontMeasure<'a> {
 impl<'a> FontMeasure<'a> {
     /// Measures in the diagram font; `column` turns on UmlCraft's visibility column.
     pub fn new(window: &'a Window, column: bool) -> Self {
-        Self { window, family: DIAGRAM_FONT.into(), column }
+        Self { window, family: diagram_font(), column }
     }
 }
 
@@ -385,8 +401,8 @@ impl AppMeasure {
     /// `column` turns on UmlCraft's visibility column.
     pub fn new(cx: &App, column: bool) -> Self {
         let text = cx.text_system().clone();
-        let regular = text.resolve_font(&font(DIAGRAM_FONT));
-        let bold = text.resolve_font(&font(DIAGRAM_FONT).bold());
+        let regular = text.resolve_font(&font(diagram_font()));
+        let bold = text.resolve_font(&font(diagram_font()).bold());
         Self { text, regular, bold, column }
     }
 }
@@ -1626,7 +1642,7 @@ impl Render for DiagramCanvas {
             (ws.active_diagram, ws.tool)
         };
         self.switch_viewport(active);
-        let font_family: SharedString = DIAGRAM_FONT.into();
+        let font_family = diagram_font();
         let key = {
             let ws = self.workspace.read(cx);
             ws.active_diagram.map(|d| {
