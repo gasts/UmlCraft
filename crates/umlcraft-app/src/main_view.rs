@@ -1200,29 +1200,34 @@ impl MainView {
 
         let kind = ws.active_diagram.and_then(|d| model.get(d)).and_then(|e| e.kind().as_diagram());
         let current_tool = ws.tool;
-        let palette_row =
-            h_flex().gap_1().px_2().py_1().border_b_1().border_color(cx.theme().border).children(
-                kind.map(palette::palette).unwrap_or_default().into_iter().enumerate().map(
-                    |(ix, tool)| {
-                        let workspace = self.workspace.clone();
-                        let label = match tool {
-                            Tool::Node(NodeTool::Note) => t!("tool.note").to_string(),
-                            _ => t!(format!("tool.{}", tool.key())).to_string(),
-                        };
-                        Button::new(("tool", ix))
-                            .ghost()
-                            .xsmall()
-                            .label(label)
-                            .selected(current_tool == tool)
-                            .on_click(move |_, _, cx| {
-                                workspace.update(cx, |ws, cx| {
-                                    ws.tool = tool;
-                                    cx.notify();
-                                });
-                            })
-                    },
-                ),
-            );
+        // Wraps onto further lines where the diagram area is narrower than the palette.
+        let palette_row = h_flex()
+            .flex_wrap()
+            .gap_1()
+            .px_2()
+            .py_1()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .children(kind.map(palette::palette).unwrap_or_default().into_iter().enumerate().map(
+                |(ix, tool)| {
+                    let workspace = self.workspace.clone();
+                    let label = match tool {
+                        Tool::Node(NodeTool::Note) => t!("tool.note").to_string(),
+                        _ => t!(format!("tool.{}", tool.key())).to_string(),
+                    };
+                    Button::new(("tool", ix))
+                        .ghost()
+                        .xsmall()
+                        .label(label)
+                        .selected(current_tool == tool)
+                        .on_click(move |_, _, cx| {
+                            workspace.update(cx, |ws, cx| {
+                                ws.tool = tool;
+                                cx.notify();
+                            });
+                        })
+                },
+            ));
 
         let body = if ws.active_diagram.is_some() {
             div().flex_1().min_h_0().child(self.canvas.clone()).into_any_element()
@@ -1237,7 +1242,8 @@ impl MainView {
                 .child(t!("canvas.no_diagram").to_string())
                 .into_any_element()
         };
-        v_flex().size_full().child(tab_bar).child(palette_row).child(body)
+        // Nothing of the diagram area draws over the panels beside it.
+        v_flex().size_full().overflow_hidden().child(tab_bar).child(palette_row).child(body)
     }
 
     fn status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
