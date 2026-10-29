@@ -272,14 +272,16 @@ sizes go through `num`, font sizes must be finite. The model-side check remains 
   [M-1](#m-1).
 
 <a id="a-6"></a>
-#### A-6 · Medium · The export's Java process has no timeout or cancel · **Partly done**
+#### A-6 · Medium · The export's Java process has no timeout or cancel · **Done**
 
 Sources: F M12, O A-7. Traced.
 
-**Partly done (2026-10-29):** the Java tool is spawned with both pipes drained on threads and
+**Done (2026-10-29):** the Java tool is spawned with both pipes drained on threads and
 killed after 10 minutes (`ExportError::TimedOut`), so a hanging Astah no longer blocks further
-exports and imports, and the temp folder is removed. Test with a process that sleeps. Open:
-progress and a cancel button in the app.
+exports and imports, and the temp folder is removed. `Export::run_cancellable` kills it as soon
+as a flag is set (`ExportError::Cancelled`); the status bar shows "Exporting …" with a Cancel
+button that sets it, and a cancelled export reports nothing. Test with a process that sleeps,
+for the deadline and for cancelling. The button was not clicked during a real export.
 
 `umlcraft-asta-export/src/lib.rs:148-150`
 
@@ -335,8 +337,11 @@ sample that ships with Astah imports with nothing failed and no shape lost.
 Sources: F (crate section), O A-10.
 
 **Partly done (2026-10-29):** a panic on the reader thread becomes `AstaError::Damaged`;
-`WrongHandle` names the actual handle. Open: the array element type default, the per-instance
-clones and the linear `View::get`.
+`WrongHandle` names the actual handle; an array whose class is no array class is a broken
+stream (`array_element`, reader and writer) instead of an array of objects; `View` keeps an
+index of its presentations by id, so `View::get` no longer scans (test
+`presentations_are_found_by_id_after_every_change`). Open: the per-instance clones of class
+descriptions and field names.
 
 - `join().expect("stream thread panicked")` (`lib.rs:89`) turns any parser panic into an abort;
   map `Err` to an `AstaError`. (F)
@@ -372,17 +377,18 @@ the note exists. A new `problem()` reports failures that are not one element's.
 - **Fix:** wrap each item, as the tool's README says.
 
 <a id="a-11"></a>
-#### A-11 · Low · Export robustness details · **Partly done**
+#### A-11 · Low · Export robustness details · **Done**
 
 Sources: O A-9, F (export bullets).
 
-**Partly done (2026-10-29):** problem lines are put on one line (`oneLine`), so a name with a
+**Done (2026-10-29):** problem lines are put on one line (`oneLine`), so a name with a
 line break or tab cannot split them; `Json.string()` checks the bounds after a backslash and in
 `\u`; `dropped` lines add up and the report parsing is a tested function (see A-6/X-1); the tool
 gets bare file names; the result is copied next to the target and renamed over it, so a failed
 copy leaves the old file whole; an `ASTAH_HOME` without Astah falls back to the usual places, and
-the `java` fallback is documented. Open: `Astah::find` still knows only Windows' program
-folders.
+the `java` fallback is documented. `Astah::find` also tries the macOS app bundles and the
+Linux install folders (candidates only, not checked against real installations; `Astah::at`
+requires the jars).
 
 - Problem lines embed raw element names (`AstaExport.java:2210-2211`, `:2299`); a name with `\n`
   or `\t` splits the line, and `lib.rs:157` can then report a successful export as
@@ -407,9 +413,10 @@ Sources: F, O A-10.
 **Partly done (2026-10-29):** the self-loop comment names `SELF_LOOP`; the font size in
 `map.rs` and `layout.rs` is `scene::FONT_SIZE`; the `is_default_node_name` doc sits on its
 function; `asta-dump` no longer computes an annotation to discard it; `write_entity_store`,
-`write_asta` and `jser/write.rs` are documented as tooling. Open: the duplicated flag reads,
-label position formula and Java fill normalisation, the unnamed measured numbers in the Java
-tool, and splitting `map.rs`.
+`write_asta` and `jser/write.rs` are documented as tooling. Flags are read through
+`Graph::bool_field` (twelve places), and the edge labels' position is one `place` closure for
+the end labels, the name and the keyword. Open: the Java fill normalisation, the unnamed
+measured numbers in the Java tool, and splitting `map.rs`.
 
 - Comment says 40, constant `SELF_LOOP` is 49.9 (`map.rs:1759` vs `:40`). Font size 12.0 is a
   literal in `map.rs:1786` and `layout.rs:330` although `scene::FONT_SIZE` exists. The
@@ -569,14 +576,15 @@ dependency naming itself.
   to non-relationship kinds.
 
 <a id="m-8"></a>
-#### M-8 · Low · Gaps in `check` and `Tx` · **Partly done**
+#### M-8 · Low · Gaps in `check` and `Tx` · **Done**
 
 Sources: F M20 (Medium), O M-8. Confirmed for the binding.
 
-**Partly done (2026-10-29):** the binding is visited, remapped and unlinked for every kind with
+**Done (2026-10-29):** the binding is visited, remapped and unlinked for every kind with
 `ClassifierProps`; `check_presentation` requires both ends of a `Shape::Message` to be lifelines;
-`Tx::update_presentation` keeps the presentation's id whatever the closure does. Open: a closure
-that panics in `Document::edit`.
+`Tx::update_presentation` keeps the presentation's id whatever the closure does; a closure that
+panics in `Document::edit` has its changes taken back before the panic goes on (test
+`a_panicking_edit_leaves_the_model_as_it_was`).
 
 - `ClassifierProps::binding` is visited, remapped and unlinked only for `Class`
   (`element.rs:262`, `:1232`, `:1299`, `:1396`): a binding on an interface naming a missing id
@@ -947,12 +955,15 @@ API (`docs/asta-format.md`); the test checks that only the sender gets one.
   at the message, or drop the code.
 
 <a id="e-5"></a>
-#### E-5 · Medium · Sequence edits without `tidy`, and `covered` without effect · **Partly done**
+#### E-5 · Medium · Sequence edits without `tidy`, and `covered` without effect · **Done**
 
 Source: F M6. Traced.
 
-**Partly done (2026-10-29):** `Workspace::update_element` tidies the sequence diagrams
-that show the element. Open: `tidy` still ignores `covered`.
+**Done (2026-10-29):** `Workspace::update_element` tidies the sequence diagrams that show the
+element. When the covered lifelines of a combined fragment or interaction use change, the new
+`sequence_edit::cover` spans its frames across them (all lifelines when none is named) on every
+diagram; `tidy` itself still leaves frame widths alone, so imported frames keep theirs. Test
+`frames_follow_what_they_cover`.
 
 `umlcraft-app/src/workspace.rs:957-961`; `properties.rs:415-428`, `:1752-1764`
 
@@ -1246,9 +1257,11 @@ Sources: O R-7, F M17. Confirmed.
 (`Model::children_named`), updated on insert, remove, rename and move and compared in `check`;
 `child_type` and `child_package` use it, so lookups in large flat namespaces no longer scan all
 children. `merge` finds a type's entries through a `HashMap` instead of `by_type.iter().find` and
-`.any`. Test for renames, moves and undo. Not measured again. Open: `enclosing()` leaving out the
-root, `signature_of_model` inside `position`, imports cloned per simple name, and the model scans
-in `retype`.
+`.any`. Test for renames, moves and undo. For C# and C++ the type lookup ends at the global
+namespace, so global types are found by the index instead of a scan for a placeholder; the model
+side of operation signatures is computed once per class. Measured again with 8,000 global C++
+structs and 11 references each: 1.27 s (was 13.3 s). Open: imports cloned per simple name and
+the model scans in `retype`.
 
 `resolve.rs:58-70`, `:85-90`, `:385`, `:403-413`, `:527`; `merge.rs:204`, `:274`, `:487-503`,
 `:586-597`
@@ -1432,16 +1445,18 @@ opened meanwhile, the result is discarded with a message.
   disable file operations while busy.
 
 <a id="u-9"></a>
-#### U-9 · Medium · Error texts and English strings outside the locale files · **Partly done**
+#### U-9 · Medium · Error texts and English strings outside the locale files · **Done**
 
 Sources: F M5 (Medium), O U-9 (Low), F (app lows).
 
-**Partly done (2026-10-29):** new module `errors.rs` turns every `ModelError` variant, the
+**Done (2026-10-29):** new module `errors.rs` turns every `ModelError` variant, the
 `FormatError` variants and a mistyped multiplicity into a localized text (`error.*` in both locale
 files) that names elements instead of showing their ids. Used for refused edits in the status bar,
 the multiplicity field, and opening and saving projects. The dialog button and the placeholders
-"entity, control", "ordered, unique", "filled, paid" come from the locale files. Open: the
-messages of the Astah import and export, the source import and the PNG export.
+"entity, control", "ordered, unique", "filled, paid" come from the locale files. The Astah
+import (`asta_error`), the Astah export (`export_error`), a refused source import and the PNG
+export's own messages have locale texts too; what the system, Java or Astah say themselves
+(I/O errors, Astah's report) is passed on as they say it.
 
 - `ModelError`/`FormatError` `Display` texts with raw UUIDs ("no element or presentation 0192…")
   reach the status bar and dialogs, also in the German UI, whenever a connection is refused or a
@@ -1473,8 +1488,10 @@ Sources: F, O U-10.
 
 **Partly done (2026-10-29):** The app's shortcuts use `secondary-` (Cmd on macOS, Ctrl elsewhere); fields
 get Ctrl+Shift+Z as their own redo on Windows and Linux, so it no longer redoes a model change
-and reloads the field. Open: a background import finishing while the user types, quit and
-reopen handlers on macOS, and the silent `Arial` fallback on Linux.
+and reloads the field. A resync of the element being edited (a background import finishing,
+an undo elsewhere) keeps the focused field's text and its pending edit while something typed
+is not written back yet. Open: quit and reopen handlers on macOS, and the silent `Arial`
+fallback on Linux.
 
 `main.rs:123-155`
 
@@ -1561,12 +1578,13 @@ the Select items when the language changed.
 - Select items in the properties panel keep the old language until the next workspace change.
 
 <a id="u-17"></a>
-#### U-17 · Low · Loading and `.asta` import block the UI · **Partly done**
+#### U-17 · Low · Loading and `.asta` import block the UI · **Done**
 
 Source: O U-15. See [A-1](#a-1).
 
-**Partly done (2026-10-29):** the `.asta` import runs on the background executor (see
-[A-1](#a-1)). Loading `.ucraft` files is still synchronous.
+**Done (2026-10-29):** the `.asta` import runs on the background executor (see
+[A-1](#a-1)), and so does opening a `.ucraft` file, upgrade of old sequence diagrams included;
+the status bar says "Opening the project …" meanwhile, and a project opened in between wins.
 
 `main_view.rs:319`, `:333`
 
@@ -1631,9 +1649,16 @@ kind, and fuzz targets. The export's report parsing is a pure function now
 Sources: F, O X-2.
 
 **Partly done (2026-10-29):** The workspace declares `rust-version = "1.92"`, the highest of the
-dependencies (`oo7`), inherited by every crate; not checked with a 1.92 toolchain. Open: a
-pinned toolchain, actions pinned to SHAs with Dependabot, `cargo deny`, tests before the release
-build, the duplicated resvg, and a release profile.
+dependencies (`oo7`), inherited by every crate; not checked with a 1.92 toolchain. CI runs
+`cargo deny check`, and Dependabot updates the actions (see X-4). `cargo deny` flags
+`ttf-parser` as unmaintained (RUSTSEC-2026-0192), a direct dependency of umlcraft-asta that
+GPUI's fontdb pulls as well; ignored in `deny.toml` with that reason. Every action is pinned
+to a commit SHA with the version as a comment, which Dependabot keeps current; the
+`rust-toolchain` steps name `toolchain: stable` since the ref no longer does. The release
+workflow calls `ci.yml` (now also `workflow_call`) as a `checks` job that the package builds
+need, so a tag with failing fmt, clippy, tests or `cargo deny` builds nothing. Both workflows
+parse as YAML; neither has run on GitHub yet. Open: a pinned toolchain, the duplicated resvg,
+and a release profile.
 
 - Toolchain is floating `stable`, edition 2024, no `rust-version`, no `rust-toolchain.toml`
   (`ci.yml:25`, `Cargo.toml:7`): a new clippy lint can turn CI red without a change; the code needs
@@ -1648,9 +1673,16 @@ build, the duplicated resvg, and a release profile.
 - No `[profile.release]` (`lto = "thin"`, `codegen-units = 1`, `strip = true`); optional.
 
 <a id="x-3"></a>
-#### X-3 · Low · Packaging
+#### X-3 · Low · Packaging · **Partly done**
 
 Sources: F, O X-3.
+
+**Partly done (2026-10-29):** `Info.plist` declares `.ucraft` (exported type `com.umlcraft.project`, owner)
+and `.asta` (imported type, alternate viewer), and the app opens files the system hands over
+(`on_open_urls`, through the same unsaved-changes question as recent files; tested only for the
+URL decoding, not on macOS). On Linux the MIME file and the desktop entry cover `.asta` too.
+`metainfo.xml` lists 0.7.0 again. Open: file association on Windows (the release is a plain
+`.zip`), and the Fluent icon licence in the release copies once icons are embedded.
 
 - `packaging/macos/Info.plist` declares no `CFBundleDocumentTypes` or UTI for `.ucraft`/`.asta`;
   the Windows release is a plain `.zip` without file association; on Linux the desktop and MIME
@@ -1660,15 +1692,19 @@ Sources: F, O X-3.
   crate embeds the icons.
 
 <a id="x-4"></a>
-#### X-4 · Low · Repository files and platform tests · **Partly done**
+#### X-4 · Low · Repository files and platform tests · **Done**
 
 Sources: F, O X-4.
 
-**Partly done (2026-10-29):** New root `.gitattributes` (`* text=auto eol=lf`, images and `.asta` binary;
+**Done (2026-10-29):** New root `.gitattributes` (`* text=auto eol=lf`, images and `.asta` binary;
 every tracked file is LF already) and `.editorconfig`; `CONTRIBUTING.md` came with D-1. The
 `recent_label` test has a variant for Linux and macOS (not run here). `asta_compare_all.py` and
 `svg_compare.py` take `ASTAH_HOME` and `INKSCAPE`. `JdkTypes.java` imports `IOException` once
-already. Open: `deny.toml`, SECURITY.md, Dependabot.
+already. `deny.toml` (licenses as in `about.toml`, sources, advisories; checked locally:
+all ok) with a CI job, `SECURITY.md` pointing to GitHub's private vulnerability reporting, and
+`.github/dependabot.yml` (actions and Cargo weekly, GPUI excluded). Private vulnerability
+reporting is still switched off in the repository settings, so the link in `SECURITY.md` only
+works once it is enabled there.
 
 - No root `.gitattributes` (`* text=auto eol=lf`), `.editorconfig`, `deny.toml`, SECURITY.md,
   CONTRIBUTING.md or dependabot. The two nested `.gitattributes` for encoding fixtures are right.
@@ -1679,15 +1715,15 @@ already. Open: `deny.toml`, SECURITY.md, Dependabot.
 ### Documentation
 
 <a id="d-1"></a>
-#### D-1 · Medium · `docs/handoff-source-import.md` is tracked, public and stale · **Partly done**
+#### D-1 · Medium · `docs/handoff-source-import.md` is tracked, public and stale · **Done**
 
 Sources: F M19 (Medium), O D-2 (Low).
 
-**Partly done (2026-10-29):** the project rules (commands, language, i18n, `Document::edit`
+**Done (2026-10-29):** the project rules (commands, language, i18n, `Document::edit`
 and `tidy`, no Astah files, line endings, snapshot and golden updates, `ASTAH_HOME` and
 `UMLCRAFT_REQUIRE_ASTAH`) are in a new `CONTRIBUTING.md`, linked from the README. `.gitignore` no
-longer lists the handoff as an exception. Open: the file is still tracked; it leaves the
-repository with `git rm --cached docs/handoff-source-import.md` in the next commit.
+longer lists the handoff as an exception, and commit f894358 took the file out of the
+repository; it stays local like the rest of `docs/`.
 
 - `.gitignore:27` keeps it public, while CLAUDE.md and TASKS.md say only `architecture.md` is. It
   is addressed to one person, calls C#, C++ and Python the goal (shipped in 0.5.0) and names
