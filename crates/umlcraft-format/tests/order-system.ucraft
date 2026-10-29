@@ -1,0 +1,1271 @@
+{
+  "format": "umlcraft",
+  "formatVersion": 3,
+  "root": "01a1870d-47ca-76a1-80d8-f44f0d8b60d6",
+  "elements": [
+    {
+      "id": "01a1870d-47ca-76a1-80d8-f44f0d8b60d6",
+      "name": "Order System",
+      "type": "model",
+      "children": [
+        "01a1870d-47ca-76a1-80d8-f450466db5cd",
+        "01a1870d-47cb-73ca-bfa0-89cac64ce529",
+        "01a1870d-47cb-73ca-bfa0-89cbdad25e0b",
+        "01a1870d-47cb-73ca-bfa0-89cc45aa8163",
+        "01a1870d-47cb-73ca-bfa0-89cdd9ccc56f"
+      ]
+    },
+    {
+      "id": "01a1870d-47ca-76a1-80d8-f450466db5cd",
+      "name": "domain",
+      "type": "package",
+      "children": [
+        "01a1870d-47ca-76a1-80d8-f451302d7cc2",
+        "01a1870d-47ca-76a1-80d8-f453dec621bf",
+        "01a1870d-47ca-76a1-80d8-f456e6cfe23a",
+        "01a1870d-47ca-76a1-80d8-f45765844021",
+        "01a1870d-47ca-76a1-80d8-f458fb6849b0",
+        "01a1870d-47ca-76a1-80d8-f4597906838e",
+        "01a1870d-47cb-73ca-bfa0-8a04de28150c",
+        "01a1870d-47cb-73ca-bfa0-8a05a09263a8",
+        "01a1870d-47cb-73ca-bfa0-8a065d85025f",
+        "01a1870d-47cb-73ca-bfa0-8a07c1daca9e",
+        "01a1870d-47cb-73ca-bfa0-8a0896b87b3b",
+        "01a1870d-47cb-73ca-bfa0-8a09b59c0b2b",
+        "01a1870d-47cb-73ca-bfa0-8a0a0b15952c",
+        "01a1870d-47cb-73ca-bfa0-8a0b167dbd19",
+        "01a1870d-47cb-73ca-bfa0-8a135f51f54e",
+        "01a1870d-47cb-73ca-bfa0-8a1418f4f06e",
+        "01a1870d-47cb-73ca-bfa0-8a156244dc0a",
+        "01a1870d-47cb-73ca-bfa0-8a164bff66af",
+        "01a1870d-47cb-73ca-bfa0-8a179ab903ba",
+        "01a1870d-47cb-73ca-bfa0-8a18ee8041a9",
+        "01a1870d-47cb-73ca-bfa0-8a1ec810db8a",
+        "01a1870d-47cb-73ca-bfa0-8a1ff5950193",
+        "01a1870d-47cb-73ca-bfa0-8a22a1217462",
+        "01a1870d-47cb-73ca-bfa0-8a23594ff911"
+      ]
+    },
+    {
+      "id": "01a1870d-47ca-76a1-80d8-f451302d7cc2",
+      "name": "Customer",
+      "type": "class",
+      "children": [
+        "01a1870d-47ca-76a1-80d8-f452626c63d0"
+      ]
+    },
+    {
+      "id": "01a1870d-47ca-76a1-80d8-f452626c63d0",
+      "name": "name",
+      "visibility": "private",
+      "type": "attribute",
+      "typeRef": {
+        "text": "String"
+      }
+    },
+    {
+      "id": "01a1870d-47ca-76a1-80d8-f453dec621bf",
+      "name": "Order",
+      "type": "class",
+      "children": [
+        "01a1870d-47ca-76a1-80d8-f45404ff14bf",
+        "01a1870d-47ca-76a1-80d8-f455345b16f3",
+        "01a1870d-47cb-73ca-bfa0-8a277a9630d6"
+      ]
+    },
+    {
+      "id": "01a1870d-47ca-76a1-80d8-f45404ff14bf",
+      "name": "total",
+      "visibility": "private",
+      "type": "attribute",
+      "typeRef": {
+        "text": "Money"
+      }
+    },
+    {
+      "id": "01a1870d-47ca-76a1-80d8-f455345b16f3",
+      "name": "submit",
+      "type": "operation"
+    },
+    {
+      "id": "01a1870d-47ca-76a1-80d8-f456e6cfe23a",
+      "name": "PremiumCustomer",
+      "type": "class"
+    },
+    {
+      "id": "01a1870d-47ca-76a1-80d8-f45765844021",
+      "type": "association",
+      "ends": [
+        {
+          "participant": "01a1870d-47ca-76a1-80d8-f453dec621bf",
+          "multiplicity": "*"
+        },
+        {
+          "participant": "01a1870d-47ca-76a1-80d8-f451302d7cc2",
+          "role": "customer",
+          "multiplicity": "1"
+        }
+      ]
+    },
+    {
+      "id": "01a1870d-47ca-76a1-80d8-f458fb6849b0",
+      "type": "generalization",
+      "specific": "01a1870d-47ca-76a1-80d8-f456e6cfe23a",
+      "general": "01a1870d-47ca-76a1-80d8-f451302d7cc2"
+    },
+    {
+      "id": "01a1870d-47ca-76a1-80d8-f4597906838e",
+      "name": "Domain",
+      "type": "diagram",
+      "diagram": "class"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89cac64ce529",
+      "name": "Clerk",
+      "type": "actor"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89cbdad25e0b",
+      "name": "Place order",
+      "type": "useCase",
+      "children": [
+        "01a1870d-47cb-73ca-bfa0-89d18afdc620",
+        "01a1870d-47cb-73ca-bfa0-89e432475606"
+      ]
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89cc45aa8163",
+      "type": "association",
+      "ends": [
+        {
+          "participant": "01a1870d-47cb-73ca-bfa0-89cac64ce529"
+        },
+        {
+          "participant": "01a1870d-47cb-73ca-bfa0-89cbdad25e0b"
+        }
+      ]
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89cdd9ccc56f",
+      "name": "Use cases",
+      "type": "diagram",
+      "diagram": "useCase"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89d18afdc620",
+      "name": "Place order",
+      "type": "interaction",
+      "children": [
+        "01a1870d-47cb-73ca-bfa0-89d2adad0cd1",
+        "01a1870d-47cb-73ca-bfa0-89d3616acc57",
+        "01a1870d-47cb-73ca-bfa0-89d40bc16526",
+        "01a1870d-47cb-73ca-bfa0-89d7ed45994e",
+        "01a1870d-47cb-73ca-bfa0-89d8791312f2",
+        "01a1870d-47cb-73ca-bfa0-89d9d762a939"
+      ]
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89d2adad0cd1",
+      "name": "c",
+      "type": "lifeline",
+      "represents": "01a1870d-47ca-76a1-80d8-f451302d7cc2"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89d3616acc57",
+      "name": "o",
+      "type": "lifeline",
+      "represents": "01a1870d-47ca-76a1-80d8-f453dec621bf"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89d40bc16526",
+      "type": "combinedFragment",
+      "operator": "loop",
+      "children": [
+        "01a1870d-47cb-73ca-bfa0-89d5a68ab74d"
+      ]
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89d5a68ab74d",
+      "type": "interactionOperand",
+      "guard": "more items",
+      "children": [
+        "01a1870d-47cb-73ca-bfa0-89d6b374b408"
+      ]
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89d6b374b408",
+      "name": "addItem",
+      "type": "message",
+      "from": "01a1870d-47cb-73ca-bfa0-89d2adad0cd1",
+      "to": "01a1870d-47cb-73ca-bfa0-89d3616acc57",
+      "arguments": "item"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89d7ed45994e",
+      "name": "submit",
+      "type": "message",
+      "from": "01a1870d-47cb-73ca-bfa0-89d2adad0cd1",
+      "to": "01a1870d-47cb-73ca-bfa0-89d3616acc57"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89d8791312f2",
+      "type": "message",
+      "sort": "reply",
+      "from": "01a1870d-47cb-73ca-bfa0-89d3616acc57",
+      "to": "01a1870d-47cb-73ca-bfa0-89d2adad0cd1",
+      "returnValue": "confirmation"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89d9d762a939",
+      "name": "Place order",
+      "type": "diagram",
+      "diagram": "sequence"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89e432475606",
+      "name": "Handle order",
+      "type": "activity",
+      "children": [
+        "01a1870d-47cb-73ca-bfa0-89e5bde024c9",
+        "01a1870d-47cb-73ca-bfa0-89e66627304d",
+        "01a1870d-47cb-73ca-bfa0-89e8e60dd3c1",
+        "01a1870d-47cb-73ca-bfa0-89ea5761c0ed",
+        "01a1870d-47cb-73ca-bfa0-89ec058ead4f",
+        "01a1870d-47cb-73ca-bfa0-89eed64beec3",
+        "01a1870d-47cb-73ca-bfa0-89f095355219",
+        "01a1870d-47cb-73ca-bfa0-89f2d6cf308b",
+        "01a1870d-47cb-73ca-bfa0-89f4899c09db",
+        "01a1870d-47cb-73ca-bfa0-89f63925c0b3",
+        "01a1870d-47cb-73ca-bfa0-89f8d39b95ce",
+        "01a1870d-47cb-73ca-bfa0-89fab0c7a425",
+        "01a1870d-47cb-73ca-bfa0-89fca5220e75",
+        "01a1870d-47cb-73ca-bfa0-89feaed1710b",
+        "01a1870d-47cb-73ca-bfa0-8a00cc7d7c28",
+        "01a1870d-47cb-73ca-bfa0-8a0216ec7590"
+      ]
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89e5bde024c9",
+      "name": "Handle order",
+      "type": "diagram",
+      "diagram": "activity"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89e66627304d",
+      "name": "Clerk",
+      "type": "partition"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89e8e60dd3c1",
+      "name": "Warehouse",
+      "type": "partition"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89ea5761c0ed",
+      "type": "activityNode",
+      "node": "initial"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89ec058ead4f",
+      "name": "Check stock",
+      "type": "activityNode"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89eed64beec3",
+      "type": "activityNode",
+      "node": "decision"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89f095355219",
+      "name": "Ship order",
+      "type": "activityNode"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89f2d6cf308b",
+      "name": "Cancel order",
+      "type": "activityNode"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89f4899c09db",
+      "type": "activityNode",
+      "node": "activityFinal"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89f63925c0b3",
+      "type": "activityNode",
+      "node": "activityFinal"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89f8d39b95ce",
+      "type": "activityEdge",
+      "source": "01a1870d-47cb-73ca-bfa0-89ea5761c0ed",
+      "target": "01a1870d-47cb-73ca-bfa0-89ec058ead4f"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89fab0c7a425",
+      "type": "activityEdge",
+      "source": "01a1870d-47cb-73ca-bfa0-89ec058ead4f",
+      "target": "01a1870d-47cb-73ca-bfa0-89eed64beec3"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89fca5220e75",
+      "type": "activityEdge",
+      "source": "01a1870d-47cb-73ca-bfa0-89eed64beec3",
+      "target": "01a1870d-47cb-73ca-bfa0-89f095355219",
+      "guard": "in stock"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-89feaed1710b",
+      "type": "activityEdge",
+      "source": "01a1870d-47cb-73ca-bfa0-89eed64beec3",
+      "target": "01a1870d-47cb-73ca-bfa0-89f2d6cf308b",
+      "guard": "else"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a00cc7d7c28",
+      "type": "activityEdge",
+      "source": "01a1870d-47cb-73ca-bfa0-89f095355219",
+      "target": "01a1870d-47cb-73ca-bfa0-89f4899c09db"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a0216ec7590",
+      "type": "activityEdge",
+      "source": "01a1870d-47cb-73ca-bfa0-89f2d6cf308b",
+      "target": "01a1870d-47cb-73ca-bfa0-89f63925c0b3"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a04de28150c",
+      "name": "Shop",
+      "type": "component"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a05a09263a8",
+      "name": "Billing",
+      "type": "component"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a065d85025f",
+      "name": "Payment",
+      "type": "interface"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a07c1daca9e",
+      "name": "shop.jar",
+      "type": "artifact"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a0896b87b3b",
+      "type": "realization",
+      "client": "01a1870d-47cb-73ca-bfa0-8a05a09263a8",
+      "supplier": "01a1870d-47cb-73ca-bfa0-8a065d85025f"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a09b59c0b2b",
+      "stereotypes": [
+        "use"
+      ],
+      "type": "dependency",
+      "client": "01a1870d-47cb-73ca-bfa0-8a04de28150c",
+      "supplier": "01a1870d-47cb-73ca-bfa0-8a065d85025f"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a0a0b15952c",
+      "stereotypes": [
+        "manifest"
+      ],
+      "type": "dependency",
+      "client": "01a1870d-47cb-73ca-bfa0-8a07c1daca9e",
+      "supplier": "01a1870d-47cb-73ca-bfa0-8a04de28150c"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a0b167dbd19",
+      "name": "Components",
+      "type": "diagram",
+      "diagram": "component"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a135f51f54e",
+      "name": "AppServer",
+      "type": "node"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a1418f4f06e",
+      "name": "DBServer",
+      "type": "node"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a156244dc0a",
+      "type": "association",
+      "ends": [
+        {
+          "participant": "01a1870d-47cb-73ca-bfa0-8a135f51f54e"
+        },
+        {
+          "participant": "01a1870d-47cb-73ca-bfa0-8a1418f4f06e"
+        }
+      ]
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a164bff66af",
+      "name": "web1",
+      "type": "instance",
+      "instance": "node",
+      "classifier": "01a1870d-47cb-73ca-bfa0-8a135f51f54e"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a179ab903ba",
+      "type": "instance",
+      "instance": "component",
+      "classifier": "01a1870d-47cb-73ca-bfa0-8a04de28150c"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a18ee8041a9",
+      "name": "Deployment",
+      "type": "diagram",
+      "diagram": "deployment"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a1ec810db8a",
+      "name": "ada",
+      "type": "instance",
+      "classifier": "01a1870d-47ca-76a1-80d8-f451302d7cc2",
+      "children": [
+        "01a1870d-47cb-73ca-bfa0-8a20715279e4"
+      ]
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a1ff5950193",
+      "name": "o1",
+      "type": "instance",
+      "classifier": "01a1870d-47ca-76a1-80d8-f453dec621bf",
+      "children": [
+        "01a1870d-47cb-73ca-bfa0-8a21249af323"
+      ]
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a20715279e4",
+      "name": "name",
+      "type": "slot",
+      "attribute": "01a1870d-47ca-76a1-80d8-f452626c63d0",
+      "value": "\"Ada\""
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a21249af323",
+      "name": "total",
+      "type": "slot",
+      "attribute": "01a1870d-47ca-76a1-80d8-f45404ff14bf",
+      "value": "120"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a22a1217462",
+      "type": "link",
+      "ends": [
+        {
+          "instance": "01a1870d-47cb-73ca-bfa0-8a1ff5950193"
+        },
+        {
+          "instance": "01a1870d-47cb-73ca-bfa0-8a1ec810db8a",
+          "role": "customer",
+          "navigability": "navigable"
+        }
+      ],
+      "association": "01a1870d-47ca-76a1-80d8-f45765844021"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a23594ff911",
+      "name": "Orders",
+      "type": "diagram",
+      "diagram": "class"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a277a9630d6",
+      "name": "Order lifecycle",
+      "type": "stateMachine",
+      "children": [
+        "01a1870d-47cb-73ca-bfa0-8a28a15163d0",
+        "01a1870d-47cb-73ca-bfa0-8a29c7c99c6c",
+        "01a1870d-47cb-73ca-bfa0-8a2b4f0d8861",
+        "01a1870d-47cb-73ca-bfa0-8a33abc197d4",
+        "01a1870d-47cb-73ca-bfa0-8a35c1cbeb01",
+        "01a1870d-47cb-73ca-bfa0-8a37bdb57dbf",
+        "01a1870d-47cb-73ca-bfa0-8a399ffb86d1",
+        "01a1870d-47cb-73ca-bfa0-8a3b74a5c4ab",
+        "01a1870d-47cb-73ca-bfa0-8a3d42bf838d",
+        "01a1870d-47cb-73ca-bfa0-8a3ffe1f64d9",
+        "01a1870d-47cb-73ca-bfa0-8a418c009ca1",
+        "01a1870d-47cb-73ca-bfa0-8a4362f8f597",
+        "01a1870d-47cb-73ca-bfa0-8a45845d7db8",
+        "01a1870d-47cb-73ca-bfa0-8a4788187649",
+        "01a1870d-47cb-73ca-bfa0-8a4955a51656",
+        "01a1870d-47cb-73ca-bfa0-8a4b8a31c1ff"
+      ]
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a28a15163d0",
+      "name": "Order lifecycle",
+      "type": "diagram",
+      "diagram": "stateMachine"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a29c7c99c6c",
+      "type": "pseudostate"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a2b4f0d8861",
+      "name": "Open",
+      "type": "state",
+      "children": [
+        "01a1870d-47cb-73ca-bfa0-8a2d57db54ed",
+        "01a1870d-47cb-73ca-bfa0-8a2faf69d22c",
+        "01a1870d-47cb-73ca-bfa0-8a3191b8780b"
+      ]
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a2d57db54ed",
+      "type": "pseudostate"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a2faf69d22c",
+      "name": "Empty",
+      "type": "state"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a3191b8780b",
+      "name": "Filled",
+      "type": "state"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a33abc197d4",
+      "name": "Submitted",
+      "type": "state",
+      "entry": "check stock"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a35c1cbeb01",
+      "name": "Shipped",
+      "type": "state"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a37bdb57dbf",
+      "name": "Cancelled",
+      "type": "state"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a399ffb86d1",
+      "type": "finalState"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a3b74a5c4ab",
+      "type": "transition",
+      "source": "01a1870d-47cb-73ca-bfa0-8a29c7c99c6c",
+      "target": "01a1870d-47cb-73ca-bfa0-8a2b4f0d8861"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a3d42bf838d",
+      "type": "transition",
+      "source": "01a1870d-47cb-73ca-bfa0-8a2d57db54ed",
+      "target": "01a1870d-47cb-73ca-bfa0-8a2faf69d22c"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a3ffe1f64d9",
+      "type": "transition",
+      "source": "01a1870d-47cb-73ca-bfa0-8a2faf69d22c",
+      "target": "01a1870d-47cb-73ca-bfa0-8a3191b8780b",
+      "trigger": "add item"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a418c009ca1",
+      "type": "transition",
+      "source": "01a1870d-47cb-73ca-bfa0-8a3191b8780b",
+      "target": "01a1870d-47cb-73ca-bfa0-8a3191b8780b",
+      "trigger": "add item"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a4362f8f597",
+      "type": "transition",
+      "source": "01a1870d-47cb-73ca-bfa0-8a2b4f0d8861",
+      "target": "01a1870d-47cb-73ca-bfa0-8a33abc197d4",
+      "trigger": "submit"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a45845d7db8",
+      "type": "transition",
+      "source": "01a1870d-47cb-73ca-bfa0-8a33abc197d4",
+      "target": "01a1870d-47cb-73ca-bfa0-8a35c1cbeb01",
+      "guard": "in stock",
+      "effect": "ship"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a4788187649",
+      "type": "transition",
+      "source": "01a1870d-47cb-73ca-bfa0-8a33abc197d4",
+      "target": "01a1870d-47cb-73ca-bfa0-8a37bdb57dbf",
+      "trigger": "cancel"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a4955a51656",
+      "type": "transition",
+      "source": "01a1870d-47cb-73ca-bfa0-8a35c1cbeb01",
+      "target": "01a1870d-47cb-73ca-bfa0-8a399ffb86d1"
+    },
+    {
+      "id": "01a1870d-47cb-73ca-bfa0-8a4b8a31c1ff",
+      "type": "transition",
+      "source": "01a1870d-47cb-73ca-bfa0-8a37bdb57dbf",
+      "target": "01a1870d-47cb-73ca-bfa0-8a399ffb86d1"
+    }
+  ],
+  "views": {
+    "01a1870d-47ca-76a1-80d8-f4597906838e": [
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89c557ce7a14",
+        "element": "01a1870d-47ca-76a1-80d8-f451302d7cc2",
+        "shape": "node",
+        "bounds": {
+          "x": 80.0,
+          "y": 80.0,
+          "width": 160.0,
+          "height": 90.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89c60dae674b",
+        "element": "01a1870d-47ca-76a1-80d8-f453dec621bf",
+        "shape": "node",
+        "bounds": {
+          "x": 380.0,
+          "y": 80.0,
+          "width": 160.0,
+          "height": 100.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89c7a319b9f7",
+        "element": "01a1870d-47ca-76a1-80d8-f456e6cfe23a",
+        "shape": "node",
+        "bounds": {
+          "x": 80.0,
+          "y": 260.0,
+          "width": 160.0,
+          "height": 60.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89c81b4e9078",
+        "element": "01a1870d-47ca-76a1-80d8-f45765844021",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-89c60dae674b",
+        "target": "01a1870d-47cb-73ca-bfa0-89c557ce7a14"
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89c90b5c38c3",
+        "element": "01a1870d-47ca-76a1-80d8-f458fb6849b0",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-89c7a319b9f7",
+        "target": "01a1870d-47cb-73ca-bfa0-89c557ce7a14"
+      }
+    ],
+    "01a1870d-47cb-73ca-bfa0-89cdd9ccc56f": [
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89ce2586e8bd",
+        "element": "01a1870d-47cb-73ca-bfa0-89cac64ce529",
+        "shape": "node",
+        "bounds": {
+          "x": 60.0,
+          "y": 100.0,
+          "width": 40.0,
+          "height": 80.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89cfbe5fdf25",
+        "element": "01a1870d-47cb-73ca-bfa0-89cbdad25e0b",
+        "shape": "node",
+        "bounds": {
+          "x": 220.0,
+          "y": 110.0,
+          "width": 140.0,
+          "height": 60.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89d0c51b0210",
+        "element": "01a1870d-47cb-73ca-bfa0-89cc45aa8163",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-89ce2586e8bd",
+        "target": "01a1870d-47cb-73ca-bfa0-89cfbe5fdf25"
+      }
+    ],
+    "01a1870d-47cb-73ca-bfa0-89d9d762a939": [
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89da88607825",
+        "element": "01a1870d-47cb-73ca-bfa0-89d9d762a939",
+        "shape": "node",
+        "bounds": {
+          "x": 35.0,
+          "y": 5.0,
+          "width": 360.0,
+          "height": 330.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89dba7228826",
+        "element": "01a1870d-47cb-73ca-bfa0-89d40bc16526",
+        "shape": "fragment",
+        "bounds": {
+          "x": 50.0,
+          "y": 120.0,
+          "width": 330.0,
+          "height": 70.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89dc57eb1911",
+        "element": "01a1870d-47cb-73ca-bfa0-89d2adad0cd1",
+        "shape": "lifeline",
+        "head": {
+          "x": 60.0,
+          "y": 50.0,
+          "width": 110.0,
+          "height": 30.0
+        },
+        "length": 240.0
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89ddd3c42458",
+        "element": "01a1870d-47cb-73ca-bfa0-89d3616acc57",
+        "shape": "lifeline",
+        "head": {
+          "x": 260.0,
+          "y": 50.0,
+          "width": 110.0,
+          "height": 30.0
+        },
+        "length": 240.0
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89de1680fbde",
+        "shape": "activation",
+        "lifeline": "01a1870d-47cb-73ca-bfa0-89dc57eb1911",
+        "top": 150.0,
+        "height": 115.0
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89dfabea6f2f",
+        "shape": "activation",
+        "lifeline": "01a1870d-47cb-73ca-bfa0-89ddd3c42458",
+        "top": 150.0,
+        "height": 25.0
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89e0ddbf58ea",
+        "shape": "activation",
+        "lifeline": "01a1870d-47cb-73ca-bfa0-89ddd3c42458",
+        "top": 220.0,
+        "height": 25.0
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89e17cdde2de",
+        "element": "01a1870d-47cb-73ca-bfa0-89d6b374b408",
+        "shape": "message",
+        "source": "01a1870d-47cb-73ca-bfa0-89dc57eb1911",
+        "target": "01a1870d-47cb-73ca-bfa0-89ddd3c42458",
+        "y": 150.0
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89e29ffa5a26",
+        "element": "01a1870d-47cb-73ca-bfa0-89d7ed45994e",
+        "shape": "message",
+        "source": "01a1870d-47cb-73ca-bfa0-89dc57eb1911",
+        "target": "01a1870d-47cb-73ca-bfa0-89ddd3c42458",
+        "y": 220.0
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89e3fd44ec2b",
+        "element": "01a1870d-47cb-73ca-bfa0-89d8791312f2",
+        "shape": "message",
+        "source": "01a1870d-47cb-73ca-bfa0-89ddd3c42458",
+        "target": "01a1870d-47cb-73ca-bfa0-89dc57eb1911",
+        "y": 245.0
+      }
+    ],
+    "01a1870d-47cb-73ca-bfa0-89e5bde024c9": [
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89e7c5947a3d",
+        "element": "01a1870d-47cb-73ca-bfa0-89e66627304d",
+        "shape": "node",
+        "bounds": {
+          "x": 40.0,
+          "y": 40.0,
+          "width": 220.0,
+          "height": 420.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89e9a3fc7396",
+        "element": "01a1870d-47cb-73ca-bfa0-89e8e60dd3c1",
+        "shape": "node",
+        "bounds": {
+          "x": 260.0,
+          "y": 40.0,
+          "width": 220.0,
+          "height": 420.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89ebb78f76b5",
+        "element": "01a1870d-47cb-73ca-bfa0-89ea5761c0ed",
+        "shape": "node",
+        "bounds": {
+          "x": 140.0,
+          "y": 100.0,
+          "width": 20.0,
+          "height": 20.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89ed0e8a6d14",
+        "element": "01a1870d-47cb-73ca-bfa0-89ec058ead4f",
+        "shape": "node",
+        "bounds": {
+          "x": 90.0,
+          "y": 150.0,
+          "width": 120.0,
+          "height": 36.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89ef1dcdee53",
+        "element": "01a1870d-47cb-73ca-bfa0-89eed64beec3",
+        "shape": "node",
+        "bounds": {
+          "x": 138.0,
+          "y": 226.0,
+          "width": 24.0,
+          "height": 24.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89f19a04c9cd",
+        "element": "01a1870d-47cb-73ca-bfa0-89f095355219",
+        "shape": "node",
+        "bounds": {
+          "x": 310.0,
+          "y": 300.0,
+          "width": 120.0,
+          "height": 36.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89f3e73dcdc1",
+        "element": "01a1870d-47cb-73ca-bfa0-89f2d6cf308b",
+        "shape": "node",
+        "bounds": {
+          "x": 90.0,
+          "y": 300.0,
+          "width": 120.0,
+          "height": 36.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89f5ee81d416",
+        "element": "01a1870d-47cb-73ca-bfa0-89f4899c09db",
+        "shape": "node",
+        "bounds": {
+          "x": 360.0,
+          "y": 400.0,
+          "width": 20.0,
+          "height": 20.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89f7fc5d4472",
+        "element": "01a1870d-47cb-73ca-bfa0-89f63925c0b3",
+        "shape": "node",
+        "bounds": {
+          "x": 140.0,
+          "y": 400.0,
+          "width": 20.0,
+          "height": 20.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89f9dc419325",
+        "element": "01a1870d-47cb-73ca-bfa0-89f8d39b95ce",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-89ebb78f76b5",
+        "target": "01a1870d-47cb-73ca-bfa0-89ed0e8a6d14"
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89fb7d1cb2d7",
+        "element": "01a1870d-47cb-73ca-bfa0-89fab0c7a425",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-89ed0e8a6d14",
+        "target": "01a1870d-47cb-73ca-bfa0-89ef1dcdee53"
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89fda7f60688",
+        "element": "01a1870d-47cb-73ca-bfa0-89fca5220e75",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-89ef1dcdee53",
+        "target": "01a1870d-47cb-73ca-bfa0-89f19a04c9cd",
+        "waypoints": [
+          {
+            "x": 370.0,
+            "y": 238.0
+          }
+        ]
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-89ffea395b6e",
+        "element": "01a1870d-47cb-73ca-bfa0-89feaed1710b",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-89ef1dcdee53",
+        "target": "01a1870d-47cb-73ca-bfa0-89f3e73dcdc1"
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a01b082c5a5",
+        "element": "01a1870d-47cb-73ca-bfa0-8a00cc7d7c28",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-89f19a04c9cd",
+        "target": "01a1870d-47cb-73ca-bfa0-89f5ee81d416"
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a038a6b8053",
+        "element": "01a1870d-47cb-73ca-bfa0-8a0216ec7590",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-89f3e73dcdc1",
+        "target": "01a1870d-47cb-73ca-bfa0-89f7fc5d4472"
+      }
+    ],
+    "01a1870d-47cb-73ca-bfa0-8a0b167dbd19": [
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a0c294694c5",
+        "element": "01a1870d-47cb-73ca-bfa0-8a04de28150c",
+        "shape": "node",
+        "bounds": {
+          "x": 60.0,
+          "y": 60.0,
+          "width": 140.0,
+          "height": 60.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a0dc59dacfd",
+        "element": "01a1870d-47cb-73ca-bfa0-8a065d85025f",
+        "shape": "node",
+        "bounds": {
+          "x": 300.0,
+          "y": 60.0,
+          "width": 140.0,
+          "height": 60.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a0e77c0e4dd",
+        "element": "01a1870d-47cb-73ca-bfa0-8a05a09263a8",
+        "shape": "node",
+        "bounds": {
+          "x": 540.0,
+          "y": 60.0,
+          "width": 140.0,
+          "height": 60.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a0f2a70df7e",
+        "element": "01a1870d-47cb-73ca-bfa0-8a07c1daca9e",
+        "shape": "node",
+        "bounds": {
+          "x": 60.0,
+          "y": 220.0,
+          "width": 140.0,
+          "height": 60.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a10af136787",
+        "element": "01a1870d-47cb-73ca-bfa0-8a09b59c0b2b",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-8a0c294694c5",
+        "target": "01a1870d-47cb-73ca-bfa0-8a0dc59dacfd"
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a1174b77817",
+        "element": "01a1870d-47cb-73ca-bfa0-8a0896b87b3b",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-8a0e77c0e4dd",
+        "target": "01a1870d-47cb-73ca-bfa0-8a0dc59dacfd"
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a122fb6a5b8",
+        "element": "01a1870d-47cb-73ca-bfa0-8a0a0b15952c",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-8a0f2a70df7e",
+        "target": "01a1870d-47cb-73ca-bfa0-8a0c294694c5"
+      }
+    ],
+    "01a1870d-47cb-73ca-bfa0-8a18ee8041a9": [
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a19553d8f3d",
+        "element": "01a1870d-47cb-73ca-bfa0-8a164bff66af",
+        "shape": "node",
+        "bounds": {
+          "x": 60.0,
+          "y": 60.0,
+          "width": 220.0,
+          "height": 140.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a1a17a1c6f1",
+        "element": "01a1870d-47cb-73ca-bfa0-8a179ab903ba",
+        "shape": "node",
+        "bounds": {
+          "x": 90.0,
+          "y": 110.0,
+          "width": 140.0,
+          "height": 60.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a1bb1d472bf",
+        "element": "01a1870d-47cb-73ca-bfa0-8a135f51f54e",
+        "shape": "node",
+        "bounds": {
+          "x": 60.0,
+          "y": 260.0,
+          "width": 160.0,
+          "height": 100.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a1c56d9724f",
+        "element": "01a1870d-47cb-73ca-bfa0-8a1418f4f06e",
+        "shape": "node",
+        "bounds": {
+          "x": 360.0,
+          "y": 260.0,
+          "width": 160.0,
+          "height": 100.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a1d33ea19dc",
+        "element": "01a1870d-47cb-73ca-bfa0-8a156244dc0a",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-8a1bb1d472bf",
+        "target": "01a1870d-47cb-73ca-bfa0-8a1c56d9724f"
+      }
+    ],
+    "01a1870d-47cb-73ca-bfa0-8a23594ff911": [
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a241805b8c7",
+        "element": "01a1870d-47cb-73ca-bfa0-8a1ec810db8a",
+        "shape": "node",
+        "bounds": {
+          "x": 80.0,
+          "y": 80.0,
+          "width": 140.0,
+          "height": 50.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a25067eff75",
+        "element": "01a1870d-47cb-73ca-bfa0-8a1ff5950193",
+        "shape": "node",
+        "bounds": {
+          "x": 380.0,
+          "y": 80.0,
+          "width": 140.0,
+          "height": 50.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a2690204fe9",
+        "element": "01a1870d-47cb-73ca-bfa0-8a22a1217462",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-8a25067eff75",
+        "target": "01a1870d-47cb-73ca-bfa0-8a241805b8c7"
+      }
+    ],
+    "01a1870d-47cb-73ca-bfa0-8a28a15163d0": [
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a2ab668d382",
+        "element": "01a1870d-47cb-73ca-bfa0-8a29c7c99c6c",
+        "shape": "node",
+        "bounds": {
+          "x": 40.0,
+          "y": 135.0,
+          "width": 20.0,
+          "height": 20.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a2c20c4d4ef",
+        "element": "01a1870d-47cb-73ca-bfa0-8a2b4f0d8861",
+        "shape": "node",
+        "bounds": {
+          "x": 100.0,
+          "y": 60.0,
+          "width": 300.0,
+          "height": 170.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a2e06c77b9d",
+        "element": "01a1870d-47cb-73ca-bfa0-8a2d57db54ed",
+        "shape": "node",
+        "bounds": {
+          "x": 115.0,
+          "y": 130.0,
+          "width": 20.0,
+          "height": 20.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a30476dd351",
+        "element": "01a1870d-47cb-73ca-bfa0-8a2faf69d22c",
+        "shape": "node",
+        "bounds": {
+          "x": 160.0,
+          "y": 120.0,
+          "width": 80.0,
+          "height": 40.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a32f4b13458",
+        "element": "01a1870d-47cb-73ca-bfa0-8a3191b8780b",
+        "shape": "node",
+        "bounds": {
+          "x": 290.0,
+          "y": 120.0,
+          "width": 80.0,
+          "height": 40.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a3443de72e4",
+        "element": "01a1870d-47cb-73ca-bfa0-8a33abc197d4",
+        "shape": "node",
+        "bounds": {
+          "x": 480.0,
+          "y": 115.0,
+          "width": 120.0,
+          "height": 60.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a367def611d",
+        "element": "01a1870d-47cb-73ca-bfa0-8a35c1cbeb01",
+        "shape": "node",
+        "bounds": {
+          "x": 680.0,
+          "y": 60.0,
+          "width": 100.0,
+          "height": 40.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a38856f852f",
+        "element": "01a1870d-47cb-73ca-bfa0-8a37bdb57dbf",
+        "shape": "node",
+        "bounds": {
+          "x": 680.0,
+          "y": 180.0,
+          "width": 100.0,
+          "height": 40.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a3adb4bb918",
+        "element": "01a1870d-47cb-73ca-bfa0-8a399ffb86d1",
+        "shape": "node",
+        "bounds": {
+          "x": 850.0,
+          "y": 135.0,
+          "width": 20.0,
+          "height": 20.0
+        }
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a3c69e32ace",
+        "element": "01a1870d-47cb-73ca-bfa0-8a3b74a5c4ab",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-8a2ab668d382",
+        "target": "01a1870d-47cb-73ca-bfa0-8a2c20c4d4ef"
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a3ebba653af",
+        "element": "01a1870d-47cb-73ca-bfa0-8a3d42bf838d",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-8a2e06c77b9d",
+        "target": "01a1870d-47cb-73ca-bfa0-8a30476dd351"
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a4044fc4f91",
+        "element": "01a1870d-47cb-73ca-bfa0-8a3ffe1f64d9",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-8a30476dd351",
+        "target": "01a1870d-47cb-73ca-bfa0-8a32f4b13458"
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a425a41afc4",
+        "element": "01a1870d-47cb-73ca-bfa0-8a418c009ca1",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-8a32f4b13458",
+        "target": "01a1870d-47cb-73ca-bfa0-8a32f4b13458",
+        "waypoints": [
+          {
+            "x": 388.0,
+            "y": 140.0
+          },
+          {
+            "x": 388.0,
+            "y": 102.0
+          },
+          {
+            "x": 345.0,
+            "y": 102.0
+          }
+        ]
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a44438e055b",
+        "element": "01a1870d-47cb-73ca-bfa0-8a4362f8f597",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-8a2c20c4d4ef",
+        "target": "01a1870d-47cb-73ca-bfa0-8a3443de72e4"
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a46b3723c53",
+        "element": "01a1870d-47cb-73ca-bfa0-8a45845d7db8",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-8a3443de72e4",
+        "target": "01a1870d-47cb-73ca-bfa0-8a367def611d"
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a4870a346ad",
+        "element": "01a1870d-47cb-73ca-bfa0-8a4788187649",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-8a3443de72e4",
+        "target": "01a1870d-47cb-73ca-bfa0-8a38856f852f"
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a4ad04d2129",
+        "element": "01a1870d-47cb-73ca-bfa0-8a4955a51656",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-8a367def611d",
+        "target": "01a1870d-47cb-73ca-bfa0-8a3adb4bb918"
+      },
+      {
+        "id": "01a1870d-47cb-73ca-bfa0-8a4ceef86c27",
+        "element": "01a1870d-47cb-73ca-bfa0-8a4b8a31c1ff",
+        "shape": "edge",
+        "source": "01a1870d-47cb-73ca-bfa0-8a38856f852f",
+        "target": "01a1870d-47cb-73ca-bfa0-8a3adb4bb918"
+      }
+    ]
+  }
+}

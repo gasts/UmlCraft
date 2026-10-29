@@ -1,7 +1,12 @@
 use pretty_assertions::assert_eq;
-use umlcraft_format::{FORMAT_VERSION, FormatError, from_str, load, save, to_string};
+use umlcraft_format::{
+    FORMAT_VERSION, FormatError, from_str, from_str_versioned, load, save, to_string,
+};
 use umlcraft_model::sample::order_system;
-use umlcraft_model::{ElementData, ElementKind, Multiplicity, Point, Shape, TypeRef, Visibility};
+use umlcraft_model::{
+    ElementData, ElementKind, MAX_TYPE_DEPTH, ModelError, Multiplicity, Point, Rect, Shape,
+    TypeExpr, TypeRef, Visibility,
+};
 
 #[test]
 fn sample_roundtrips_byte_for_byte() {
@@ -109,7 +114,8 @@ fn templates_and_type_expressions_survive() {
 fn output_is_stable_and_readable() {
     let (doc, ids) = order_system();
     let json = to_string(doc.model());
-    assert!(json.starts_with("{\n  \"format\": \"umlcraft\",\n  \"formatVersion\": 2,\n"));
+    let head = format!("{{\n  \"format\": \"umlcraft\",\n  \"formatVersion\": {FORMAT_VERSION},\n");
+    assert!(json.starts_with(&head));
     assert!(json.contains("\"shape\": \"lifeline\""));
     assert!(json.ends_with("}\n"));
     // Defaults are omitted, enums use readable names.
@@ -134,7 +140,12 @@ fn older_files_get_language_tags_under_umlcraft_names() {
         })
     })
     .unwrap();
-    let model = from_str(&to_string(doc.model())).unwrap();
+    let v2 = to_string(doc.model()).replacen(
+        &format!("\"formatVersion\": {FORMAT_VERSION}"),
+        "\"formatVersion\": 2",
+        1,
+    );
+    let model = from_str(&v2).unwrap();
     let keys: Vec<&str> = model
         .get(ids.customer)
         .unwrap()
@@ -144,6 +155,22 @@ fn older_files_get_language_tags_under_umlcraft_names() {
         .map(|t| t.key.as_str())
         .collect();
     assert_eq!(keys, ["java.transient", "table"]);
+}
+
+#[test]
+fn only_older_files_get_their_language_tags_renamed() {
+    let file = |version: u32| {
+        format!(
+            r#"{{"format":"umlcraft","formatVersion":{version},"root":"00000000-0000-0000-0000-000000000000","elements":[{{"id":"00000000-0000-0000-0000-000000000000","name":"m","type":"model","taggedValues":[{{"key":"jude.java.mine","value":"x"}}]}}]}}"#
+        )
+    };
+    let key = |version| {
+        let (model, read) = from_str_versioned(&file(version)).unwrap();
+        assert_eq!(read, version);
+        model.get(model.root()).unwrap().data().tagged_values[0].key.clone()
+    };
+    assert_eq!(key(2), "java.mine");
+    assert_eq!(key(3), "jude.java.mine", "a current file keeps its own tags");
 }
 
 #[test]
@@ -159,6 +186,7 @@ fn rejects_foreign_newer_and_broken_files() {
     // Version 1 files still load.
     let v1 = r#"{"format":"umlcraft","formatVersion":1,"root":"00000000-0000-0000-0000-000000000000","elements":[{"id":"00000000-0000-0000-0000-000000000000","name":"m","type":"model"}]}"#;
     assert!(from_str(v1).is_ok(), "{:?}", from_str(v1).err());
+    assert_eq!(from_str_versioned(v1).unwrap().1, 1, "the file's own version");
 
     // Valid JSON, invalid model: the owner still lists a child whose record is gone.
     let (doc, ids) = order_system();
@@ -166,6 +194,67 @@ fn rejects_foreign_newer_and_broken_files() {
     let premium = ids.premium.to_string();
     value["elements"].as_array_mut().unwrap().retain(|e| e["id"] != premium.as_str());
     assert!(matches!(from_str(&value.to_string()), Err(FormatError::Model(_))));
+}
+
+/// A project file as UmlCraft writes it today must stay readable, field for field: renaming a
+/// field or changing how a value is written fails here, unlike the round trips above. After a
+/// deliberate format change, run with `UPDATE_GOLDEN=1` and commit the new file together with
+/// a migration for the old one.
+#[test]
+fn golden_file_loads_unchanged() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/order-system.ucraft");
+    if std::env::var_os("UPDATE_GOLDEN").is_some() {
+        let (doc, _) = order_system();
+        std::fs::write(&path, to_string(doc.model())).unwrap();
+    }
+    // A checkout with `core.autocrlf` may have turned the line ends into CRLF.
+    let golden = std::fs::read_to_string(&path).unwrap().replace("\r\n", "\n");
+    let model = from_str(&golden).unwrap();
+    assert_eq!(to_string(&model), golden);
+    // The sample's ids are new each time, so it is compared by its shape.
+    let (doc, _) = order_system();
+    let names = |m: &umlcraft_model::Model| {
+        let mut names: Vec<(String, &'static str)> = m
+            .to_records()
+            .elements
+            .iter()
+            .map(|e| (e.data.name.clone(), e.data.kind.type_name()))
+            .collect();
+        names.sort();
+        names
+    };
+    assert_eq!(names(&model), names(doc.model()));
+}
+
+/// What JSON cannot hold or read back is refused when it enters the model.
+#[test]
+fn unreadable_states_are_refused() {
+    let (mut doc, ids) = order_system();
+    let node = doc.model().shown_on(ids.customer)[0].1;
+    for bad in [f32::NAN, f32::INFINITY] {
+        let rect = Rect::new(bad, 0.0, 100.0, 50.0);
+        let result = doc.edit("bounds", |tx| tx.set_bounds(ids.class_diagram, node, rect));
+        assert!(matches!(result, Err(ModelError::NotFinite(_))), "{result:?}");
+    }
+
+    let nested = |depth: usize| {
+        (1..depth).fold(TypeRef::Element(ids.order), |inner, _| {
+            TypeRef::Expr(Box::new(TypeExpr {
+                base: TypeRef::Text("List".into()),
+                arguments: vec![inner],
+                prefix: String::new(),
+                modifier: String::new(),
+            }))
+        })
+    };
+    // The deepest type the model allows still loads.
+    let deepest = ElementData::new("deep", ElementKind::attribute(Some(nested(MAX_TYPE_DEPTH))));
+    doc.edit("deep", |tx| tx.create(ids.customer, deepest)).unwrap();
+    assert_eq!(from_str(&to_string(doc.model())).unwrap(), *doc.model());
+    let deeper =
+        ElementData::new("deeper", ElementKind::attribute(Some(nested(MAX_TYPE_DEPTH + 1))));
+    let result = doc.edit("deeper", |tx| tx.create(ids.customer, deeper));
+    assert!(matches!(result, Err(ModelError::TypeTooDeep(_))), "{result:?}");
 }
 
 #[test]
@@ -179,4 +268,26 @@ fn save_and_load_files() {
     assert_eq!(load(&path).unwrap(), *doc.model());
     assert!(!dir.join("order.ucraft.tmp").exists());
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_byte_order_mark_and_a_missing_empty_view_are_fine() {
+    let (doc, ids) = order_system();
+    let json = to_string(doc.model());
+    assert_eq!(from_str(&format!("\u{feff}{json}")).unwrap(), *doc.model());
+
+    // An empty diagram whose view entry a merge dropped.
+    let mut doc = doc;
+    let d = doc
+        .edit("diagram", |tx| {
+            let kind = umlcraft_model::ElementKind::diagram(umlcraft_model::DiagramKind::Class);
+            tx.create(ids.order, umlcraft_model::ElementData::new("empty", kind))
+        })
+        .unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&to_string(doc.model())).unwrap();
+    if let Some(views) = value["views"].as_object_mut() {
+        views.remove(&d.to_string());
+    }
+    let model = from_str(&value.to_string()).unwrap();
+    assert!(model.view(d).is_some_and(|v| v.presentations().is_empty()));
 }
