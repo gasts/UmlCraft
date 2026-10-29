@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32-35" preRepeat="until" postFor="to" preReturn="return" postForIn="in" preWhile="while" output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="???" changedby="tester" changed="2026-10-29" origin="Structorizer 3.32-35" text="&#34;farben&#34;" comment="" color="e0e0ff" type="program" style="nice">
+	<children>
+		<instruction text="&#34;ff8080&#34;" comment="" color="ff8080" rotated="0" disabled="0"></instruction>
+		<instruction text="&#34;ffff80&#34;" comment="" color="ffff80" rotated="0" disabled="0"></instruction>
+		<instruction text="&#34;80ff80&#34;" comment="" color="80ff80" rotated="0" disabled="0"></instruction>
+		<instruction text="&#34;80ffff&#34;" comment="" color="80ffff" rotated="0" disabled="0"></instruction>
+		<instruction text="&#34;0080ff&#34;" comment="" color="0080ff" rotated="0" disabled="0"></instruction>
+		<instruction text="&#34;ff80c0&#34;" comment="" color="ff80c0" rotated="0" disabled="0"></instruction>
+		<instruction text="&#34;c0c0c0&#34;" comment="" color="c0c0c0" rotated="0" disabled="0"></instruction>
+		<instruction text="&#34;ff8000&#34;" comment="" color="ff8000" rotated="0" disabled="0"></instruction>
+		<instruction text="&#34;8080ff&#34;" comment="" color="8080ff" rotated="0" disabled="0"></instruction>
+		<alternative text="&#34;zweige&#34;" comment="" color="ffff80" branch_colors="80ff80,ff8080" disabled="0">
+			<qTrue>
+				<instruction text="&#34;a &#60;- 1&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qTrue>
+			<qFalse>
+				<instruction text="&#34;ab &#60;- c + d&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qFalse>
+		</alternative>
+		<case text="&#34;x&#34;,&#34;1&#34;,&#34;default&#34;" comment="" color="ffffff" branch_colors="80ffff," disabled="0">
+			<qCase>
+				<instruction text="&#34;a &#60;- 1&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qCase>
+			<qCase>
+				<instruction text="&#34;ab &#60;- c + d&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qCase>
+		</case>
+		<while text="&#34;gefärbt&#34;" comment="" color="c0c0c0" disabled="0">
+			<qWhile>
+				<instruction text="&#34;a &#60;- 1&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qWhile>
+		</while>
+	</children>
+</root>
