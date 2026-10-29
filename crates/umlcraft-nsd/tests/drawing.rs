@@ -66,5 +66,9 @@ fn fixtures_lay_out_as_before() {
 fn a_diagram_of_every_kind_draws_as_before() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/new");
     let diagram = read(&std::fs::read_to_string(dir.join("all-elements.nsd")).unwrap()).unwrap();
-    snapshot("new/all-elements.svg", &svg::render(&diagram, Metrics::linux()));
+    // The font list depends on the platform the image is made on.
+    let svg = svg::render(&diagram, Metrics::linux());
+    let family = Metrics::linux().font_family();
+    let svg = svg.replace(family, "'DejaVu Sans', Dialog, Arial, sans-serif");
+    snapshot("new/all-elements.svg", &svg);
 }

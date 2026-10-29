@@ -37,6 +37,12 @@ impl Face {
 }
 
 impl Metrics {
+    /// The metrics of the platform UmlCraft runs on. Only Linux's table is measured so far;
+    /// the others use it until theirs are.
+    pub fn for_platform() -> &'static Metrics {
+        Metrics::linux()
+    }
+
     /// Dialog 12 as Java draws it on Linux (DejaVu Sans).
     pub fn linux() -> &'static Metrics {
         static LINUX: OnceLock<Metrics> = OnceLock::new();
@@ -63,9 +69,16 @@ impl Metrics {
         lines.iter().map(|l| self.width(l, bold)).max().unwrap_or(0)
     }
 
-    /// The fonts an SVG export names: the one Java draws Dialog with on this platform first.
+    /// The fonts an SVG image names: the one Java draws Dialog with on the platform the image
+    /// is made on first (DejaVu Sans on Linux, Arial on Windows, Lucida Grande on macOS).
     pub fn font_family(&self) -> &'static str {
-        "'DejaVu Sans', Dialog, Arial, sans-serif"
+        if cfg!(windows) {
+            "Arial, Dialog, 'DejaVu Sans', sans-serif"
+        } else if cfg!(target_os = "macos") {
+            "'Lucida Grande', Dialog, Arial, sans-serif"
+        } else {
+            "'DejaVu Sans', Dialog, Arial, sans-serif"
+        }
     }
 
     /// The distance between the lines of an element's text.
