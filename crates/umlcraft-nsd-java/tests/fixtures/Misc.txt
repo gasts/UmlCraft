@@ -1,0 +1,42 @@
+== Misc.Misc (line 12)
+| Misc(int start)
+# Creates a counter.
+# 
+# @param start the first value
+  instruction
+    | count = start;
+
+== Misc.twice (line 16)
+| int twice(int a)
+  jump
+    | return 2 * a
+
+== Misc.localClass (line 20)
+| void localClass()
+  instruction
+    | Local l = new Local();
+  instruction
+    | l.value = 1;
+! line 21: LocalClass
+
+== Misc.sync (line 28)
+| void sync()
+  instruction
+    | count++;
+    # synchronized (lock)
+! line 29: Synchronized
+
+== Misc.check (line 34)
+| void check(int a)
+  instruction
+    | assert a > 0 : "positive";
+  instruction
+    | count = a;
+    # Line comment before a statement
+  instruction
+    | count++;
+    # Block comment before a statement
+  instruction
+    | count--;
+    # trailing comment
+

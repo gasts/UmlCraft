@@ -1,0 +1,5 @@
+== Generic.first (line 4)
+| <T> T first(List<T> list)
+  jump
+    | return list.get(0)
+

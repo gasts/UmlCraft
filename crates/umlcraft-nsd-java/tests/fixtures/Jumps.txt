@@ -1,0 +1,73 @@
+== Jumps.plainReturn (line 2)
+| void plainReturn(int a)
+  alternative
+    | a > 0
+    -
+      jump
+        | return
+    -
+  call
+    | work();
+
+== Jumps.loops (line 9)
+| int loops(int[] values)
+  instruction
+    | int sum = 0;
+  for style=FREETEXT
+    | for (int v : values)
+    -
+      alternative
+        | v < 0
+        -
+          instruction color=ff0000 disabled
+            | continue;
+        -
+      alternative
+        | v > 100
+        -
+          jump
+            | break
+        -
+      instruction
+        | sum += v;
+  jump
+    | return sum
+! line 13: Continue
+
+== Jumps.labels (line 23)
+| int labels(int[][] grid)
+  instruction
+    | int found = -1;
+  for style=FREETEXT
+    | for (int i = 0; i < grid.length; i++)
+    -
+      for style=FREETEXT
+        | for (int j = 0; j < grid[i].length; j++)
+        -
+          alternative
+            | grid[i][j] == 0
+            -
+              instruction
+                | found = i;
+              jump
+                | break outer
+            -
+          alternative
+            | grid[i][j] < 0
+            -
+              instruction color=ff0000 disabled
+                | continue outer;
+            -
+  jump
+    | return found
+! line 25: Label
+! line 33: Continue
+
+== Jumps.fail (line 40)
+| void fail(String message)
+  jump
+    | throw new IllegalStateException(message)
+
+== Jumps.work (line 44)
+| void work()
+
