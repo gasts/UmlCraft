@@ -350,6 +350,25 @@ impl MainView {
         }
     }
 
+    /// Chooses a Java file and methods of it, each opening as a structogram.
+    fn structogram_from_java(
+        &mut self,
+        _: &StructogramFromJava,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        crate::nsd::choose_java_method(window, cx, |message, detail, window, cx| {
+            let rx = window.prompt(
+                PromptLevel::Critical,
+                &message,
+                Some(&detail),
+                &[t!("dialog.ok").as_ref()],
+                cx,
+            );
+            cx.spawn(async move |_| rx.await.ok()).detach();
+        });
+    }
+
     fn open_structogram(
         &mut self,
         _: &OpenStructogram,
@@ -1504,6 +1523,7 @@ fn menus(settings: &Settings) -> Vec<Menu> {
         menu_item("menu.open", OpenProject),
         menu_item("menu.new_structogram", NewStructogram),
         menu_item("menu.open_structogram", OpenStructogram),
+        menu_item("menu.structogram_from_java", StructogramFromJava),
         MenuItem::submenu(Menu::new(t!("menu.recent").to_string()).items(recent)),
         menu_item("menu.import_astah", ImportAstah),
     ];
@@ -1718,6 +1738,7 @@ impl Render for MainView {
             .on_action(cx.listener(Self::open_project))
             .on_action(cx.listener(Self::new_structogram))
             .on_action(cx.listener(Self::open_structogram))
+            .on_action(cx.listener(Self::structogram_from_java))
             .on_action(cx.listener(Self::import_astah))
             .on_action(cx.listener(Self::export_astah))
             .on_action(cx.listener(Self::import_source))

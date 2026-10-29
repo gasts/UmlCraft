@@ -15,6 +15,7 @@ menu:
   open: Open …
   new_structogram: New structogram
   open_structogram: Open structogram …
+  structogram_from_java: Structogram from Java file …
   import_astah: Import Astah project …
   export: Export
   export_svg: Diagram as SVG …
@@ -571,3 +572,18 @@ nsd:
   color_7: Grey
   color_8: Orange
   color_9: Violet
+  java_title: "Structogram from %{file}"
+  java_search: Search methods …
+  java_hint: Tick methods and open them, or double-click one. Each opens in a window of its own, not saved yet.
+  java_open: Open
+  java_failed: The Java file could not be read.
+  java_no_methods: The file contains no methods with a body.
+  java_too_many: "Only the first %{max} methods were opened."
+  notes: "%{count} places are not shown as written"
+  note_line: "Line %{line}: %{what}"
+  note_continue: continue has no element; kept as a red, disabled instruction
+  note_label: the label is left out
+  note_local_class: a class declared in the method is left out
+  note_synchronized: synchronized – the body stands in its place, the lock as a comment
+  note_fallthrough: the case runs on into the next one; its statements are copied there
+  note_syntax_error: the parser could not read this; kept as a red, disabled instruction

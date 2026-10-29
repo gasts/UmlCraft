@@ -3,6 +3,7 @@
 //! that is open already brings its window to the front.
 
 mod dialog;
+mod java;
 mod view;
 
 use std::path::{Path, PathBuf};
@@ -11,7 +12,8 @@ use gpui_kit::*;
 use rust_i18n::t;
 use umlcraft_nsd::{Diagram, ElementKind};
 
-use view::NsdView;
+pub use java::choose as choose_java_method;
+use view::{NsdView, Opening};
 
 actions!(
     nsd,
@@ -170,22 +172,34 @@ pub fn open(path: &Path, cx: &mut App) -> Result<(), String> {
     }
     let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let diagram = umlcraft_nsd::read(&text).map_err(|e| crate::errors::nsd_error(&e))?;
-    show(Some(path), diagram, cx)
+    show(Opening { path: Some(path), ..Opening::default() }, diagram, cx)
 }
 
 /// Opens a window with a new, empty structogram.
 pub fn new(cx: &mut App) -> Result<(), String> {
     let diagram = umlcraft_nsd::save::new_diagram(&user_name(), &today(), &origin());
-    show(None, diagram, cx)
+    show(Opening::default(), diagram, cx)
 }
 
-fn show(path: Option<PathBuf>, diagram: Diagram, cx: &mut App) -> Result<(), String> {
+/// Opens a structogram made from code: unsaved, to be saved as `draft` (suggested), with what
+/// the import could not show as written (`notes`).
+pub fn open_imported(
+    diagram: Diagram,
+    draft: PathBuf,
+    notes: Vec<String>,
+    cx: &mut App,
+) -> Result<(), String> {
+    let opening = Opening { path: None, draft: Some(draft), notes, unsaved: true };
+    show(opening, diagram, cx)
+}
+
+fn show(opening: Opening, diagram: Diagram, cx: &mut App) -> Result<(), String> {
     let (w, h) = view::window_size(&diagram);
     let bounds = Bounds::centered(None, size(px(w), px(h)), cx);
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitlebarOptions {
-            title: Some(view::title(path.as_deref(), false).into()),
+            title: Some(view::title(opening.name(), false).into()),
             ..Default::default()
         }),
         window_min_size: Some(size(px(480.0), px(320.0))),
@@ -193,7 +207,7 @@ fn show(path: Option<PathBuf>, diagram: Diagram, cx: &mut App) -> Result<(), Str
         ..Default::default()
     };
     let (handle, view) = gpui_kit::open_window(options, cx, move |window, cx| {
-        cx.new(|cx| NsdView::new(path, diagram, window, cx))
+        cx.new(|cx| NsdView::new(opening, diagram, window, cx))
     })
     .map_err(|e| e.to_string())?;
     open_windows(cx);

@@ -31,6 +31,7 @@ actions!(
         OpenProject,
         OpenStructogram,
         NewStructogram,
+        StructogramFromJava,
         ImportAstah,
         ExportAstah,
         ExportSvg,

@@ -6685,6 +6685,7 @@ dependencies = [
  "umlcraft-model",
  "umlcraft-notation",
  "umlcraft-nsd",
+ "umlcraft-nsd-java",
  "umlcraft-reverse",
 ]
 
