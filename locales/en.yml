@@ -251,6 +251,8 @@ status:
   exporting: Exporting to Astah …
   importing: Importing source code …
   importing_astah: Importing the Astah project …
+  opening: Opening the project …
+  cancel: Cancel
   imported: "Imported %{files} files: %{created} new types, %{updated} updated, %{associations} associations."
   hint: "Wheel: scroll · Ctrl+wheel: zoom · middle button: pan"
   hint_node: "Click to place the element · Esc: cancel"
@@ -497,5 +499,15 @@ error:
   multiplicity: "\"%{text}\" is not a multiplicity. Examples: 1, 0..1, 1..*, *"
   malformed: "The file is damaged (line %{line}, column %{column})."
   not_a_project: The file is not an UmlCraft project.
+  not_astah: The file is not an Astah project, or it is damaged.
+  astah_no_model: The Astah project contains no model.
+  astah_too_large: The Astah project is too large.
+  java_launch: "Java could not be started (%{java}): %{reason}"
+  astah_reported: "Astah reported: %{message}"
+  export_tool: "The export tool failed (%{status}): %{output}"
+  export_timeout: "The export did not finish within %{minutes} minutes and was stopped."
+  export_cancelled: The export was cancelled.
+  image_empty: The image would be empty.
+  image_too_large: The image is too large.
   too_new: "The file was saved by a newer UmlCraft (format version %{found}; this version reads up to %{supported})."
   migration: "The file could not be upgraded from format version %{from}: %{reason}"

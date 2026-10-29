@@ -17,9 +17,9 @@ pub fn from_svg(svg: &str, scale: f32) -> anyhow::Result<Vec<u8>> {
         .size()
         .to_int_size()
         .scale_by(scale)
-        .ok_or_else(|| anyhow::anyhow!("the image would be empty"))?;
+        .ok_or_else(|| anyhow::anyhow!(rust_i18n::t!("error.image_empty").to_string()))?;
     let mut pixmap = tiny_skia::Pixmap::new(size.width(), size.height())
-        .ok_or_else(|| anyhow::anyhow!("the image is too large"))?;
+        .ok_or_else(|| anyhow::anyhow!(rust_i18n::t!("error.image_too_large").to_string()))?;
     resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
     Ok(pixmap.encode_png()?)
 }

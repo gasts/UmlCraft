@@ -10,6 +10,11 @@ mod settings;
 mod settings_dialog;
 mod workspace;
 
+use std::cell::RefCell;
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::time::Duration;
+
 use gpui_kit::*;
 use umlcraft_model::{Id, LineShape};
 use umlcraft_reverse::SourceLanguage;
@@ -121,7 +126,15 @@ fn main() {
     let settings = settings::Settings::load();
     rust_i18n::set_locale(&settings.ui_language());
 
-    gpui_kit::application().with_assets(gpui_kit::assets::Assets).run(move |cx| {
+    let app = gpui_kit::application().with_assets(gpui_kit::assets::Assets);
+    // Files the system asks to open while UmlCraft runs (on macOS also at launch, instead of
+    // the command line), picked up by the main view.
+    let requested: Rc<RefCell<Vec<PathBuf>>> = Rc::default();
+    let sink = requested.clone();
+    app.on_open_urls(move |urls| {
+        sink.borrow_mut().extend(urls.iter().filter_map(|u| file_path(u)))
+    });
+    app.run(move |cx| {
         gpui_kit::init(cx);
         // "secondary" is Cmd on macOS and Ctrl elsewhere.
         cx.bind_keys([
@@ -181,6 +194,19 @@ fn main() {
                     if let Some(path) = std::env::args_os().nth(1) {
                         view.open(path.into(), window, cx);
                     }
+                    cx.spawn_in(window, async move |this, cx| {
+                        loop {
+                            cx.background_executor().timer(Duration::from_millis(250)).await;
+                            let Some(path) = requested.borrow_mut().pop() else { continue };
+                            let opened = this.update_in(cx, |view, window, cx| {
+                                view.ask_to_open(path, window, cx)
+                            });
+                            if opened.is_err() {
+                                break;
+                            }
+                        }
+                    })
+                    .detach();
                     view
                 })
             },
@@ -188,4 +214,49 @@ fn main() {
         .expect("failed to open the main window");
         cx.activate(true);
     });
+}
+
+/// The local path of a `file://` URL, with `%XX` escapes decoded.
+fn file_path(url: &str) -> Option<PathBuf> {
+    let rest = url.strip_prefix("file://")?;
+    let bytes = rest.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        match (
+            bytes[i],
+            bytes.get(i + 1).copied().and_then(hex),
+            bytes.get(i + 2).copied().and_then(hex),
+        ) {
+            (b'%', Some(h), Some(l)) => {
+                decoded.push((h * 16 + l) as u8);
+                i += 3;
+            }
+            (b, _, _) => {
+                decoded.push(b);
+                i += 1;
+            }
+        }
+    }
+    Some(PathBuf::from(String::from_utf8(decoded).ok()?))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn file_urls_become_paths() {
+        use super::file_path;
+        use std::path::PathBuf;
+
+        assert_eq!(
+            file_path("file:///Users/ulf/My%20Shop.ucraft"),
+            Some(PathBuf::from("/Users/ulf/My Shop.ucraft"))
+        );
+        assert_eq!(
+            file_path("file:///tmp/%C3%9Cbung.asta"),
+            Some(PathBuf::from("/tmp/Übung.asta"))
+        );
+        assert_eq!(file_path("https://example.com/a.ucraft"), None);
+    }
 }

@@ -13,6 +13,7 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -28,6 +29,17 @@ const TOOL_FILE: &str = "AstaExport.java";
 const EDITION_JARS: &[&str] = &["astah-pro.jar", "astah-uml.jar", "astah-sysml.jar"];
 /// Install folder names under "Program Files".
 const INSTALL_DIRS: &[&str] = &["astah-professional", "astah-uml", "astah-sysml"];
+/// Where Astah's installers put the jars on macOS (inside the app bundle) and Linux. Each is
+/// only a candidate: `Astah::at` checks for the jars.
+const UNIX_HOMES: &[&str] = &[
+    "/Applications/astah professional/astah professional.app/Contents/Java",
+    "/Applications/astah UML/astah UML.app/Contents/Java",
+    "/Applications/astah SysML/astah SysML.app/Contents/Java",
+    "/usr/lib/astah_professional",
+    "/usr/lib/astah_uml",
+    "/usr/lib/astah_sysml",
+    "/opt/astah_professional",
+];
 /// How long the export tool may run. Astah can hang on a modal dialog it cannot show, and the
 /// export then has to end rather than block every further export.
 const TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -47,6 +59,8 @@ pub enum ExportError {
     License,
     #[error("the export tool did not finish within {minutes} minutes")]
     TimedOut { minutes: u64 },
+    #[error("the export was cancelled")]
+    Cancelled,
 }
 
 /// What could not be carried over. `dropped` counts by kind, with the keys the tool reports
@@ -73,7 +87,7 @@ pub struct Astah {
 
 impl Astah {
     /// The installation named by `ASTAH_HOME`, else the first one found in the usual places
-    /// (Windows' program folders).
+    /// (Windows' program folders, the macOS and Linux install folders).
     pub fn find() -> Option<Self> {
         if let Some(found) = std::env::var_os("ASTAH_HOME").and_then(|h| Self::at(Path::new(&h))) {
             return Some(found);
@@ -87,6 +101,7 @@ impl Astah {
         roots
             .iter()
             .flat_map(|root| INSTALL_DIRS.iter().map(move |dir| root.join(dir)))
+            .chain(UNIX_HOMES.iter().filter(|_| !cfg!(windows)).map(PathBuf::from))
             .find_map(|home| Self::at(&home))
     }
 
@@ -131,6 +146,17 @@ impl Export {
 
     /// Builds the Astah project and writes it to `target`, replacing what is there.
     pub fn run(&self, astah: &Astah, target: &Path) -> Result<Report, ExportError> {
+        self.run_cancellable(astah, target, &AtomicBool::new(false))
+    }
+
+    /// [`run`](Self::run), stopped with [`ExportError::Cancelled`] as soon as `cancel` is set:
+    /// the tool is killed and the target left as it was.
+    pub fn run_cancellable(
+        &self,
+        astah: &Astah,
+        target: &Path,
+        cancel: &AtomicBool,
+    ) -> Result<Report, ExportError> {
         let dir = TempDir::new()?;
         let file = |name: &str| dir.0.join(name);
         fs::write(file(TOOL_FILE), TOOL_SOURCE)?;
@@ -156,7 +182,7 @@ impl Export {
         let child = command
             .spawn()
             .map_err(|source| ExportError::Launch { java: astah.java.clone(), source })?;
-        let output = wait_with_deadline(child, TIMEOUT)?;
+        let output = wait_with_deadline(child, TIMEOUT, cancel)?;
 
         let report = fs::read_to_string(file("report.txt")).ok();
         let result = match &report {
@@ -222,7 +248,11 @@ struct Output {
 
 /// Waits for `child`, reading its output on threads so that a full pipe cannot stall it, and
 /// kills it once `timeout` has passed.
-fn wait_with_deadline(mut child: Child, timeout: Duration) -> Result<Output, ExportError> {
+fn wait_with_deadline(
+    mut child: Child,
+    timeout: Duration,
+    cancel: &AtomicBool,
+) -> Result<Output, ExportError> {
     let drain = |pipe: Option<Box<dyn Read + Send>>| {
         thread::spawn(move || {
             let mut bytes = Vec::new();
@@ -238,6 +268,11 @@ fn wait_with_deadline(mut child: Child, timeout: Duration) -> Result<Output, Exp
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break status;
+        }
+        if cancel.load(Ordering::Relaxed) {
+            child.kill().ok();
+            child.wait().ok();
+            return Err(ExportError::Cancelled);
         }
         if start.elapsed() >= timeout {
             child.kill().ok();
@@ -370,8 +405,14 @@ mod tests {
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
         let Ok(child) = command.spawn() else { return };
         let start = Instant::now();
-        let result = wait_with_deadline(child, Duration::from_millis(300));
+        let result = wait_with_deadline(child, Duration::from_millis(300), &AtomicBool::new(false));
         assert!(matches!(result, Err(ExportError::TimedOut { .. })));
+        assert!(start.elapsed() < Duration::from_secs(10));
+        // Cancelling ends it at once, long before the deadline.
+        let Ok(child) = command.spawn() else { return };
+        let start = Instant::now();
+        let result = wait_with_deadline(child, Duration::from_secs(60), &AtomicBool::new(true));
+        assert!(matches!(result, Err(ExportError::Cancelled)));
         assert!(start.elapsed() < Duration::from_secs(10));
     }
 

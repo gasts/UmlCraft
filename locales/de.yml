@@ -250,6 +250,8 @@ status:
   unsaved_file: Nicht gespeichert
   exporting: Export nach Astah läuft …
   importing: Quellcode wird importiert …
+  opening: Projekt wird geöffnet …
+  cancel: Abbrechen
   importing_astah: Astah-Projekt wird importiert …
   imported: "%{files} Dateien importiert: %{created} neue Typen, %{updated} aktualisiert, %{associations} Assoziationen."
   hint: "Mausrad: verschieben · Strg+Mausrad: zoomen · mittlere Taste: Ansicht ziehen"
@@ -496,6 +498,16 @@ error:
   invalid: "Das Modell ist widersprüchlich: %{detail}"
   multiplicity: "„%{text}“ ist keine Multiplizität. Beispiele: 1, 0..1, 1..*, *"
   malformed: "Die Datei ist beschädigt (Zeile %{line}, Spalte %{column})."
+  not_astah: Die Datei ist kein Astah-Projekt oder beschädigt.
+  astah_no_model: Das Astah-Projekt enthält kein Modell.
+  astah_too_large: Das Astah-Projekt ist zu groß.
+  java_launch: "Java konnte nicht gestartet werden (%{java}): %{reason}"
+  astah_reported: "Astah meldet: %{message}"
+  export_tool: "Das Export-Werkzeug ist gescheitert (%{status}): %{output}"
+  export_timeout: "Der Export war nach %{minutes} Minuten nicht fertig und wurde abgebrochen."
+  export_cancelled: Der Export wurde abgebrochen.
+  image_empty: Das Bild wäre leer.
+  image_too_large: Das Bild ist zu groß.
   not_a_project: Die Datei ist kein UmlCraft-Projekt.
   too_new: "Die Datei stammt von einem neueren UmlCraft (Formatversion %{found}; diese Version liest bis %{supported})."
   migration: "Die Datei ließ sich nicht von Formatversion %{from} umstellen: %{reason}"

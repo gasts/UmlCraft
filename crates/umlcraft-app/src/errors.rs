@@ -78,6 +78,40 @@ pub fn format_error(err: &FormatError) -> String {
     }
 }
 
+/// Why an `.asta` file could not be imported.
+pub fn asta_error(err: &umlcraft_asta::AstaError) -> String {
+    use umlcraft_asta::AstaError;
+    match err {
+        AstaError::Io(err) => err.to_string(),
+        AstaError::Zip(_) | AstaError::Stream(_) | AstaError::BadHeader | AstaError::Damaged => {
+            t!("error.not_astah").to_string()
+        }
+        AstaError::NoModel => t!("error.astah_no_model").to_string(),
+        AstaError::TooLarge => t!("error.astah_too_large").to_string(),
+    }
+}
+
+/// Why the export to an `.asta` file failed. What Astah or Java say themselves stays as they
+/// say it.
+pub fn export_error(err: &umlcraft_asta_export::ExportError) -> String {
+    use umlcraft_asta_export::ExportError;
+    match err {
+        ExportError::Io(err) => err.to_string(),
+        ExportError::Launch { java, source } => {
+            t!("error.java_launch", java = java.display(), reason = source).to_string()
+        }
+        ExportError::Astah(message) => t!("error.astah_reported", message = message).to_string(),
+        ExportError::Tool { status, output } => {
+            t!("error.export_tool", status = status, output = output).to_string()
+        }
+        ExportError::License => t!("dialog.astah_unlicensed").to_string(),
+        ExportError::TimedOut { minutes } => {
+            t!("error.export_timeout", minutes = minutes).to_string()
+        }
+        ExportError::Cancelled => t!("error.export_cancelled").to_string(),
+    }
+}
+
 pub fn multiplicity_error(err: &ParseMultiplicityError) -> String {
     t!("error.multiplicity", text = err.0).to_string()
 }
@@ -95,5 +129,22 @@ mod tests {
         assert!(text.contains("Order") && !text.contains(&ids.order.to_string()), "{text}");
         let text = model_error(None, &err);
         assert!(!text.contains(&ids.order.to_string()) && !text.contains("error."), "{text}");
+    }
+
+    #[test]
+    fn import_and_export_errors_have_texts() {
+        use umlcraft_asta::AstaError;
+        use umlcraft_asta_export::ExportError;
+        let texts = [
+            asta_error(&AstaError::Damaged),
+            asta_error(&AstaError::NoModel),
+            asta_error(&AstaError::TooLarge),
+            export_error(&ExportError::TimedOut { minutes: 10 }),
+            export_error(&ExportError::Astah("boom".into())),
+            export_error(&ExportError::Tool { status: "1".into(), output: "out".into() }),
+        ];
+        for text in texts {
+            assert!(!text.is_empty() && !text.contains("error."), "{text}");
+        }
     }
 }

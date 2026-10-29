@@ -37,6 +37,7 @@ type Continuation = Box<dyn FnOnce(&mut MainView, &mut Window, &mut Context<Main
 /// Work running in the background, shown in the status bar.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Busy {
+    Opening,
     ExportingAstah,
     ImportingAstah,
     ImportingSource,
@@ -69,6 +70,8 @@ pub struct MainView {
     /// Set once the user agreed to close despite unsaved changes.
     close_confirmed: bool,
     busy: Option<Busy>,
+    /// Set to stop the running export to Astah.
+    cancel_export: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     /// Counts replaced documents, so background work can tell whether its document is still
     /// the open one.
     generation: u64,
@@ -131,6 +134,7 @@ impl MainView {
             tree_selection: None,
             close_confirmed: false,
             busy: None,
+            cancel_export: None,
             generation: 0,
             notice: None,
             clipboard: None,
@@ -319,6 +323,16 @@ impl MainView {
         );
     }
 
+    /// Opens `path` once unsaved changes are saved or discarded, e.g. for a file the system
+    /// hands over.
+    pub fn ask_to_open(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.confirm_discard(
+            window,
+            cx,
+            Box::new(move |this, window, cx| this.open(path, window, cx)),
+        );
+    }
+
     fn open_recent(&mut self, action: &OpenRecent, window: &mut Window, cx: &mut Context<Self>) {
         let Some(path) = self.settings.recent.get(action.index).cloned() else { return };
         self.confirm_discard(
@@ -336,13 +350,49 @@ impl MainView {
             self.import(&path, window, cx);
             return;
         }
-        match umlcraft_format::load_versioned(&path) {
-            Ok((model, version)) => {
-                let mut doc = Document::new(model);
-                // Version 1 stored no geometry for sequence diagrams.
-                if version < 2 {
-                    umlcraft_notation::sequence_edit::upgrade_document(&mut doc);
+        if self.busy.is_some() {
+            return;
+        }
+        // Read in the background, so a large file does not freeze the window.
+        self.busy = Some(Busy::Opening);
+        cx.notify();
+        let generation = self.generation;
+        cx.spawn_in(window, async move |this, cx| {
+            let file = path.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let (model, version) = umlcraft_format::load_versioned(&file)?;
+                    let mut doc = Document::new(model);
+                    // Version 1 stored no geometry for sequence diagrams.
+                    if version < 2 {
+                        umlcraft_notation::sequence_edit::upgrade_document(&mut doc);
+                    }
+                    Ok(doc)
+                })
+                .await;
+            this.update_in(cx, |this, window, cx| {
+                this.busy = None;
+                cx.notify();
+                // Another project opened meanwhile was the user's later choice.
+                if this.generation == generation {
+                    this.apply_open(path, result, window, cx);
                 }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn apply_open(
+        &mut self,
+        path: PathBuf,
+        result: Result<Document, umlcraft_format::FormatError>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(doc) => {
                 self.replace_document(doc, Some(path.clone()), cx);
                 self.remember(&path, cx);
             }
@@ -426,7 +476,10 @@ impl MainView {
                     self.inform(PromptLevel::Info, &message, &detail, window, cx);
                 }
             }
-            Err(err) => self.show_error(&t!("dialog.import_failed"), &err.to_string(), window, cx),
+            Err(err) => {
+                let detail = crate::errors::asta_error(&err);
+                self.show_error(&t!("dialog.import_failed"), &detail, window, cx)
+            }
         }
     }
 
@@ -457,20 +510,28 @@ impl MainView {
         cx.spawn_in(window, async move |this, cx| {
             let Ok(Ok(Some(path))) = rx.await else { return };
             let path = with_extension(path, "asta");
+            let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             let started = this.update(cx, |this, cx| {
                 this.busy = Some(Busy::ExportingAstah);
+                this.cancel_export = Some(cancel.clone());
                 cx.notify();
             });
             if started.is_err() {
                 return;
             }
             let target = path.clone();
-            let result =
-                cx.background_executor().spawn(async move { export.run(astah, &target) }).await;
+            let result = cx
+                .background_executor()
+                .spawn(async move { export.run_cancellable(astah, &target, &cancel) })
+                .await;
             this.update_in(cx, |this, window, cx| {
                 this.busy = None;
+                this.cancel_export = None;
                 cx.notify();
-                this.report_export(result, &path, window, cx);
+                // Cancelled by the user: nothing to report.
+                if !matches!(result, Err(umlcraft_asta_export::ExportError::Cancelled)) {
+                    this.report_export(result, &path, window, cx);
+                }
             })
             .ok();
         })
@@ -558,7 +619,9 @@ impl MainView {
         match result {
             Ok(report) => self.report_source_import(&report, window, cx),
             Err(err) => {
-                self.show_error(&t!("dialog.import_source_failed"), &err.to_string(), window, cx)
+                let detail =
+                    crate::errors::model_error(Some(self.workspace.read(cx).doc.model()), &err);
+                self.show_error(&t!("dialog.import_source_failed"), &detail, window, cx)
             }
         }
     }
@@ -722,7 +785,10 @@ impl MainView {
                 let detail = t!("dialog.astah_unlicensed");
                 self.show_error(&t!("dialog.export_failed"), &detail, window, cx);
             }
-            Err(err) => self.show_error(&t!("dialog.export_failed"), &err.to_string(), window, cx),
+            Err(err) => {
+                let detail = crate::errors::export_error(&err);
+                self.show_error(&t!("dialog.export_failed"), &detail, window, cx)
+            }
         }
     }
 
@@ -1180,8 +1246,20 @@ impl MainView {
         };
         let notice = self.notice.as_ref().filter(|(_, r)| *r == ws.doc.revision());
         let right = match &ws.message {
+            _ if self.busy == Some(Busy::Opening) => div().child(t!("status.opening").to_string()),
             _ if self.busy == Some(Busy::ExportingAstah) => {
-                div().child(t!("status.exporting").to_string())
+                let cancel = self.cancel_export.clone();
+                h_flex().gap_2().child(t!("status.exporting").to_string()).child(
+                    Button::new("cancel-export")
+                        .ghost()
+                        .xsmall()
+                        .label(t!("status.cancel").to_string())
+                        .on_click(move |_, _, _| {
+                            if let Some(cancel) = &cancel {
+                                cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+                            }
+                        }),
+                )
             }
             _ if self.busy == Some(Busy::ImportingSource) => {
                 div().child(t!("status.importing").to_string())
