@@ -116,6 +116,33 @@ pub fn multiplicity_error(err: &ParseMultiplicityError) -> String {
     t!("error.multiplicity", text = err.0).to_string()
 }
 
+/// Why an `.nsd` file could not be read as a structogram.
+pub fn nsd_error(err: &umlcraft_nsd::ReadError) -> String {
+    use umlcraft_nsd::ReadError;
+    match err {
+        ReadError::Xml { line, column, message } => {
+            t!("error.nsd_xml", line = line, column = column, message = message)
+        }
+        ReadError::NotStructorizer => t!("error.nsd_not_structorizer"),
+        ReadError::UnexpectedElement { line, column, name, parent } => t!(
+            "error.nsd_unexpected_element",
+            line = line,
+            column = column,
+            name = name,
+            parent = parent
+        ),
+        ReadError::WrongBranches { line, column, element, .. } => {
+            t!("error.nsd_wrong_branches", line = line, column = column, element = element)
+        }
+        ReadError::UnexpectedText { line, column, parent } => {
+            t!("error.nsd_unexpected_text", line = line, column = column, parent = parent)
+        }
+        ReadError::Encoding(encoding) => t!("error.nsd_encoding", encoding = encoding),
+        ReadError::Truncated(element) => t!("error.nsd_truncated", element = element),
+    }
+    .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

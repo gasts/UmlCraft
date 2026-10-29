@@ -6673,6 +6673,7 @@ dependencies = [
  "anyhow",
  "embed-resource",
  "gpui-kit",
+ "image",
  "resvg 0.46.0",
  "rust-embed",
  "rust-i18n",
@@ -6684,6 +6685,7 @@ dependencies = [
  "umlcraft-format",
  "umlcraft-model",
  "umlcraft-notation",
+ "umlcraft-nsd",
  "umlcraft-reverse",
 ]
 

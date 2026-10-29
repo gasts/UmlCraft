@@ -45,6 +45,7 @@ menu:
   file: File
   new: New project
   open: Open …
+  open_structogram: Open structogram …
   import_astah: Import .asta project …
   export: Export
   export_svg: Diagram as SVG …
@@ -300,6 +301,7 @@ dialog:
   discard: Discard
   cancel: Cancel
   ok: OK
+  structogram_open_failed: The structogram could not be opened.
   open_failed: The project could not be opened.
   save_failed: The project could not be saved.
   import_failed: The .asta project could not be imported.
@@ -506,6 +508,13 @@ kind:
   link: Link
   interactionUse: Interaction use
 error:
+  nsd_xml: "Line %{line}, column %{column}: not valid XML (%{message})."
+  nsd_not_structorizer: The file is not a Structorizer structogram.
+  nsd_unexpected_element: "Line %{line}, column %{column}: unknown element <%{name}> in <%{parent}>."
+  nsd_wrong_branches: "Line %{line}, column %{column}: <%{element}> lacks the branches Structorizer writes."
+  nsd_unexpected_text: "Line %{line}, column %{column}: unexpected text in <%{parent}>."
+  nsd_encoding: "The file is encoded as %{encoding}; structograms are UTF-8."
+  nsd_truncated: "The file ends inside <%{element}>."
   named: "\"%{name}\""
   unnamed: an element
   not_found: "%{a} does not exist."
