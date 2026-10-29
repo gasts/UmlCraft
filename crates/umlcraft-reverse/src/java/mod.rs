@@ -142,11 +142,14 @@ impl<'a> Reader<'a> {
 
     /// `a.b.c` as `["a", "b", "c"]`, ignoring whitespace and comments in between.
     fn path(&self, node: Node) -> Vec<String> {
-        self.text(node)
-            .split('.')
-            .map(|s| s.split_whitespace().collect::<String>())
-            .filter(|s| !s.is_empty())
-            .collect()
+        // From the tree, not the text: a comment may hold dots of its own.
+        if node.child_count() == 0 {
+            return match node.kind() {
+                "identifier" => vec![self.text(node).to_owned()],
+                _ => Vec::new(),
+            };
+        }
+        children(node).into_iter().flat_map(|c| self.path(c)).collect()
     }
 
     fn import(&self, node: Node) -> Import {

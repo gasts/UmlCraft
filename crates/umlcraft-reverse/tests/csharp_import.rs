@@ -174,7 +174,8 @@ fn properties_become_attributes_or_accessors() {
 fn partial_types_are_one_type() {
     let (doc, report) = fresh("partial");
     let model = doc.model();
-    assert_eq!(report.created, 1);
+    // Counted once, not as created in one file and updated in the other.
+    assert_eq!((report.created, report.updated), (1, 0));
     assert_eq!(
         supertypes(model, "Partial.Order"),
         ["realization System.IDisposable", "realization System.IComparable"]

@@ -12,6 +12,7 @@
 //! one drawn by hand between types of the sources is deleted; dependencies are left alone.
 
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use umlcraft_model::{
     AttributeProps, ClassifierProps, DirectedProps, ElementData, ElementKind, GeneralizationProps,
@@ -34,8 +35,9 @@ pub(crate) struct Entry<'p> {
     pub id: Id,
     /// The package the type is in.
     pub namespace: Id,
-    /// The imports that apply, outermost scope first.
-    pub imports: Vec<&'p Import>,
+    /// The imports that apply, outermost scope first; shared by the types of one scope and
+    /// cloned for every name resolved.
+    pub imports: Rc<[&'p Import]>,
     /// The entry of the type this one is nested in.
     pub outer: Option<usize>,
 }
@@ -45,7 +47,7 @@ pub(crate) struct Definition<'p> {
     pub owner: &'p [String],
     pub member: &'p Member,
     pub namespace: Id,
-    pub imports: Vec<&'p Import>,
+    pub imports: Rc<[&'p Import]>,
 }
 
 /// Where a name is resolved: in a type (its entry) and maybe in one of its operations.
@@ -80,6 +82,11 @@ pub(crate) struct Importer<'p> {
     pub expanding: Vec<&'p str>,
     /// Members defined outside their type, until the types are known.
     pub definitions: Vec<Definition<'p>>,
+    /// `Rules::implicit_imports` as paths, made once.
+    pub implicit_imports: Rc<[Vec<String>]>,
+    /// Types this import created, so that one declared in parts or forward first counts once as
+    /// created.
+    pub created: HashSet<Id>,
 }
 
 impl<'p> Importer<'p> {
@@ -98,6 +105,12 @@ impl<'p> Importer<'p> {
             importing: Vec::new(),
             aliases: HashMap::new(),
             expanding: Vec::new(),
+            created: HashSet::new(),
+            implicit_imports: rules
+                .implicit_imports
+                .iter()
+                .map(|p| p.iter().map(|s| s.to_string()).collect())
+                .collect(),
         }
     }
 
@@ -109,8 +122,9 @@ impl<'p> Importer<'p> {
         namespace: Id,
         imports: &[&'p Import],
     ) -> Result<()> {
-        let mut imports = imports.to_vec();
-        imports.extend(&scope.imports);
+        let mut all = imports.to_vec();
+        all.extend(&scope.imports);
+        let imports: Rc<[&'p Import]> = all.into();
         for item in &scope.items {
             match item {
                 Item::Namespace { path, scope } => {
@@ -150,7 +164,7 @@ impl<'p> Importer<'p> {
         decl: &'p TypeDecl,
         owner: Id,
         namespace: Id,
-        imports: &[&'p Import],
+        imports: &Rc<[&'p Import]>,
         outer: Option<usize>,
     ) -> Result<()> {
         let existing = child_type(tx.model(), owner, &decl.name);
@@ -158,6 +172,9 @@ impl<'p> Importer<'p> {
         // keeps the kind of its first declaration in this import, so that a new import of the
         // same files gives the same element.
         let declared = |id| self.entries.iter().any(|e| e.id == id && !e.decl.is_forward);
+        // Counted once per type: a second part (C# partial classes) is neither created nor
+        // updated again.
+        let counted = existing.is_some_and(declared);
         let id = match existing {
             Some(id) if decl.is_forward || declared(id) => id,
             Some(id) => {
@@ -171,19 +188,21 @@ impl<'p> Importer<'p> {
             }
             None => {
                 let kind = type_kind(decl.kind, ClassifierProps::default());
-                tx.create(owner, ElementData::new(decl.name.clone(), kind))?
+                let id = tx.create(owner, ElementData::new(decl.name.clone(), kind))?;
+                self.created.insert(id);
+                id
             }
         };
-        if !decl.is_forward {
-            if existing.is_some() {
-                self.report.updated += 1;
-            } else {
+        if !decl.is_forward && !counted {
+            if self.created.contains(&id) {
                 self.report.created += 1;
+            } else {
+                self.report.updated += 1;
             }
         }
         self.placeholders.remove(&id);
         let index = self.entries.len();
-        self.entries.push(Entry { decl, id, namespace, imports: imports.to_vec(), outer });
+        self.entries.push(Entry { decl, id, namespace, imports: imports.clone(), outer });
         for member in &decl.members {
             match member {
                 Member::Type(nested) => {
@@ -264,7 +283,7 @@ impl<'p> Importer<'p> {
         let mut resolved: HashSet<&'p [String]> = HashSet::new();
         for index in 0..self.entries.len() {
             let imports = self.entries[index].imports.clone();
-            for import in imports {
+            for &import in imports.iter() {
                 let used = import.visible_name().is_some_and(|name| used.contains(name));
                 if import.wildcard || import.is_static || !used || !resolved.insert(&import.path) {
                     continue;
@@ -305,8 +324,10 @@ impl<'p> Importer<'p> {
             let current = current.remove(id).unwrap_or_default();
             self.supertypes(tx, *id, entries, current)?;
         }
-        // Definitions belong to a type the sources declare; the owner is only looked up.
-        let mut defined: HashMap<Id, Vec<&'p Member>> = HashMap::new();
+        // Definitions belong to a type the sources declare; the owner is only looked up. Each
+        // resolves its types in an entry of its own: the type's scope with the definition's own
+        // imports added (`using namespace lib; void A::f(Str s) {}`).
+        let mut defined: HashMap<Id, Vec<(&'p Member, usize)>> = HashMap::new();
         for d in std::mem::take(&mut self.definitions) {
             let model = tx.model();
             let owner = self
@@ -319,7 +340,19 @@ impl<'p> Importer<'p> {
                 Skip::UnknownOwner
             };
             match owner {
-                Some(id) => defined.entry(id).or_default().push(d.member),
+                Some(id) => {
+                    let first = by_type[position[&id]].1[0];
+                    let owner = &self.entries[first];
+                    let mut imports = owner.imports.to_vec();
+                    imports.extend(
+                        d.imports
+                            .iter()
+                            .filter(|i| !owner.imports.iter().any(|o| std::ptr::eq(*o, **i))),
+                    );
+                    let entry = Entry { imports: imports.into(), ..*owner };
+                    self.entries.push(entry);
+                    defined.entry(id).or_default().push((d.member, self.entries.len() - 1));
+                }
                 None => *self.report.skipped.entry(skip).or_default() += 1,
             }
         }
@@ -505,7 +538,7 @@ impl<'p> Importer<'p> {
         tx: &mut Tx<'_>,
         id: Id,
         entries: &[usize],
-        defined: &[&'p Member],
+        defined: &[(&'p Member, usize)],
     ) -> Result<()> {
         let mut fields: Vec<(&'p Field, usize)> = Vec::new();
         let mut operations: Vec<(&'p Operation, usize)> = Vec::new();
@@ -523,18 +556,18 @@ impl<'p> Importer<'p> {
         let mut field_definitions: Vec<&'p Field> = Vec::new();
         let mut definitions: Vec<Option<&'p Operation>> = vec![None; operations.len()];
         let model = tx.model();
-        for &member in defined {
+        for &(member, entry) in defined {
             match member {
                 Member::Field(f) => field_definitions.push(f),
                 Member::Operation(o) => {
-                    let key = self.signature(model, entries[0], o);
+                    let key = self.signature(model, entry, o);
                     let declared = |(d, e): &(&Operation, usize)| self.signature(model, *e, d);
                     match operations.iter().position(|d| declared(d) == key) {
                         Some(i) => {
                             definitions[i].get_or_insert(o);
                         }
                         None => {
-                            operations.push((o, entries[0]));
+                            operations.push((o, entry));
                             definitions.push(None);
                         }
                     }

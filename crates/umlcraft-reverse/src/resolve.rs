@@ -414,14 +414,13 @@ impl<'p> Importer<'p> {
             return Ok(t);
         }
         // 5. On-demand imports, then 6. the implicit ones.
-        let on_demand =
-            imports.iter().filter(|i| i.wildcard && !i.is_static).map(|i| i.path.clone()).chain(
-                self.rules
-                    .implicit_imports
-                    .iter()
-                    .map(|p| p.iter().map(|s| s.to_string()).collect()),
-            );
-        let on_demand: Vec<Vec<String>> = on_demand.collect();
+        let implicit = self.implicit_imports.clone();
+        let on_demand: Vec<&[String]> = imports
+            .iter()
+            .filter(|i| i.wildcard && !i.is_static)
+            .map(|i| i.path.as_slice())
+            .chain(implicit.iter().map(Vec::as_slice))
+            .collect();
         // Library types are left to the library's turn: whether their placeholder exists yet
         // depends on the order of the files.
         for package in &on_demand {

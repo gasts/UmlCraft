@@ -15,6 +15,11 @@ int shop::Order::count = 0;
 // Not declared in the class: added.
 void shop::Order::extra() {}
 
+// Through the definitions' own using: the declared one, and one added.
+using namespace lib;
+void shop::Order::label(Str text) {}
+void shop::Order::note(Str text) {}
+
 // Of a class nobody declares.
 void Gone::f() {}
 

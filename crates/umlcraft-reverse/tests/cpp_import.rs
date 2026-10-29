@@ -140,7 +140,8 @@ fn definitions_join_their_declarations() {
     let documentation =
         |path: &str| model.get(at(model, path)).unwrap().data().documentation.clone();
     assert_eq!(documentation("shop.Order.ship"), "Ships it.");
-    assert_eq!(operations(model, "shop.Order").len(), 4);
+    // `label` joins its declaration through the definition's own `using`; `note` is added.
+    assert_eq!(operations(model, "shop.Order").len(), 6);
     assert_eq!(skipped(&report, Skip::UnknownOwner), 1);
     // `shop::helper` and `main`.
     assert_eq!(skipped(&report, Skip::FreeMember), 2);

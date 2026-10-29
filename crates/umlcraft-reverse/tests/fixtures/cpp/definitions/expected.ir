@@ -1,4 +1,5 @@
 == order.cpp
+import lib.*
 namespace shop
   definition in Order
     public operation constructor Order(number : int)
@@ -12,6 +13,10 @@ definition in shop::Order
   public field count : int = 0
 definition in shop::Order
   public operation extra() : void
+definition in shop::Order
+  public operation label(text : Str) : void
+definition in shop::Order
+  public operation note(text : Str) : void
 definition in Gone
   public operation f() : void
 definition in shop
@@ -19,9 +24,12 @@ definition in shop
 free
   public operation main() : int
 == order.hpp
+namespace lib
+  public class Str (line 2)
 namespace shop
-  public class Order (line 2)
+  public class Order (line 6)
     public operation constructor Order( : int)
+    public operation label( : lib.Str) : void
     public operation ship( : int,  : bool) : void
     public operation query total() : int
     public field static count : int

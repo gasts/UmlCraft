@@ -3,7 +3,11 @@ package shop
     attribute + count : int = 0 {static}
     operation + Order(number : int)
       doc "Makes an order."
+    operation + label(text : Str) : void
     operation + ship(days : int, express : bool) : void
       doc "Ships it."
     operation + total() : int {query}
     operation + extra() : void
+    operation + note(text : Str) : void
+package lib
+  class Str Public

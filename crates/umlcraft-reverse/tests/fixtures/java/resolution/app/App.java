@@ -2,7 +2,7 @@ package app;
 
 import java.util.*;
 import java.io.File;
-import lib.Helper;
+import lib /* the.library */ .Helper;
 import lib.missing.Gone;
 import static java.lang.Math.max;
 
