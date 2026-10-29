@@ -1461,6 +1461,501 @@ mod tests {
         }
     }
 
+    /// An instance of `class` named `name`.
+    fn named(b: &mut Builder, class: &str, name: &str) -> ObjId {
+        let id = b.instance(class);
+        let name = b.string(name);
+        b.set(id, "name", name);
+        id
+    }
+
+    /// The kinds of the root's children, by name.
+    fn kinds(model: &Model) -> BTreeMap<String, &'static str> {
+        model
+            .children(model.root())
+            .iter()
+            .filter_map(|&c| model.get(c))
+            .map(|e| (e.name().to_owned(), e.kind().type_name()))
+            .collect()
+    }
+
+    #[test]
+    fn classifiers_map_by_their_astah_class() {
+        let mut b = Builder::default();
+        let model = named(&mut b, "UModelImp", "Model");
+        let children = [
+            named(&mut b, "UClassifierImp", "Order"),
+            named(&mut b, "UInterfaceImp", "Shape"),
+            named(&mut b, "UActorImp", "User"),
+            named(&mut b, "UUseCaseImp", "Buy"),
+            named(&mut b, "UComponentImp", "Shop"),
+            named(&mut b, "UArtifactImp", "shop.jar"),
+            named(&mut b, "UNodeImp", "Server"),
+            named(&mut b, "UPackageImp", "orders"),
+        ];
+        b.own(model, &children);
+        let imported = import(&b.0).unwrap();
+        let m = &imported.model;
+        m.check().unwrap();
+        let kinds = kinds(m);
+        let expected = [
+            ("Order", ElementKind::Class(ClassifierProps::default())),
+            ("Shape", ElementKind::Interface(ClassifierProps::default())),
+            ("User", ElementKind::Actor(ClassifierProps::default())),
+            ("Buy", ElementKind::UseCase(ClassifierProps::default())),
+            ("Shop", ElementKind::Component(ClassifierProps::default())),
+            ("shop.jar", ElementKind::Artifact(ClassifierProps::default())),
+            ("Server", ElementKind::Node(ClassifierProps::default())),
+            ("orders", ElementKind::Package),
+        ];
+        for (name, kind) in expected {
+            assert_eq!(kinds.get(name).copied(), Some(kind.type_name()), "{name}");
+        }
+        assert!(imported.skipped.is_empty(), "{:?}", imported.skipped);
+    }
+
+    #[test]
+    fn features_keep_their_order_scope_and_parameters() {
+        let mut b = Builder::default();
+        let model = named(&mut b, "UModelImp", "Model");
+        let class = named(&mut b, "UClassifierImp", "Order");
+        b.own(model, &[class]);
+        let count = named(&mut b, "UAttributeImp", "count");
+        let scope = b.string("classifier");
+        b.set(count, "ownerScope", scope);
+        let total = named(&mut b, "UAttributeImp", "total");
+        let ship = named(&mut b, "UOperationImp", "ship");
+        let days = named(&mut b, "UParameterImp", "days");
+        let kind = b.string("in");
+        b.set(days, "kind", kind);
+        let parameters = b.list(&[days]);
+        b.set(ship, "parameter", parameters);
+        // Astah's display order, not the order of ownership.
+        let structural = b.list(&[total, count]);
+        b.set(class, "structuralFeature", structural);
+        let behavioral = b.list(&[ship]);
+        b.set(class, "behavioralFeature", behavioral);
+        let imported = import(&b.0).unwrap();
+        let m = &imported.model;
+        m.check().unwrap();
+        let order = m.children(m.root())[0];
+        let features: Vec<(&str, &str)> = m
+            .children(order)
+            .iter()
+            .filter_map(|&c| m.get(c))
+            .map(|e| (e.name(), e.kind().type_name()))
+            .collect();
+        assert_eq!(
+            features,
+            [("total", "attribute"), ("count", "attribute"), ("ship", "operation")]
+        );
+        let count = m.children(order)[1];
+        assert!(matches!(m.get(count).unwrap().kind(), ElementKind::Attribute(p) if p.is_static));
+        let ship = m.children(order)[2];
+        let parameters: Vec<&str> = m
+            .children(ship)
+            .iter()
+            .filter_map(|&c| m.get(c))
+            .filter(|e| matches!(e.kind(), ElementKind::Parameter(_)))
+            .map(|e| e.name())
+            .collect();
+        assert_eq!(parameters, ["days"]);
+    }
+
+    #[test]
+    fn relationships_connect_what_astah_names() {
+        let mut b = Builder::default();
+        let model = named(&mut b, "UModelImp", "Model");
+        let (order, item) =
+            (named(&mut b, "UClassifierImp", "Order"), named(&mut b, "UClassifierImp", "Item"));
+        let (buy, pay) = (named(&mut b, "UUseCaseImp", "Buy"), named(&mut b, "UUseCaseImp", "Pay"));
+        let generalization = b.instance("UGeneralizationImp");
+        b.set(generalization, "subtype", Value::Object(order));
+        b.set(generalization, "supertype", Value::Object(item));
+        let dependency = b.instance("UDependencyImp");
+        let (client, supplier) = (b.list(&[order]), b.list(&[item]));
+        b.set(dependency, "client", client);
+        b.set(dependency, "supplier", supplier);
+        let ends: Vec<ObjId> = [
+            (order, "buyer", "navigableType", "navigable"),
+            (item, "items", "aggregation", "composite"),
+        ]
+        .into_iter()
+        .map(|(ty, role, field, value)| {
+            let end = named(&mut b, "UAssociationEndImp", role);
+            b.set(end, "type", Value::Object(ty));
+            let value = b.string(value);
+            b.set(end, field, value);
+            end
+        })
+        .collect();
+        let association = b.instance("UAssociationImp");
+        let connection = b.list(&ends);
+        b.set(association, "connection", connection);
+        // Astah's fields are swapped against UML: `addition` is the including use case.
+        let include = b.instance("UIncludeImp");
+        b.set(include, "addition", Value::Object(buy));
+        b.set(include, "base", Value::Object(pay));
+        b.own(model, &[order, item, buy, pay, generalization, dependency, association, include]);
+
+        let imported = import(&b.0).unwrap();
+        let m = &imported.model;
+        m.check().unwrap();
+        assert!(imported.skipped.is_empty(), "{:?}", imported.skipped);
+        let id = |name: &str| {
+            m.children(m.root())
+                .iter()
+                .copied()
+                .find(|&c| m.get(c).unwrap().name() == name)
+                .unwrap()
+        };
+        let (order, item, buy, pay) = (id("Order"), id("Item"), id("Buy"), id("Pay"));
+        let kinds: Vec<&ElementKind> = m.elements().map(|e| e.kind()).collect();
+        assert!(kinds.iter().any(|k| matches!(k, ElementKind::Generalization(p) if p.specific == order && p.general == item)));
+        assert!(kinds.iter().any(
+            |k| matches!(k, ElementKind::Dependency(p) if p.client == order && p.supplier == item)
+        ));
+        assert!(kinds.iter().any(
+            |k| matches!(k, ElementKind::Include(p) if p.including == buy && p.addition == pay)
+        ));
+        let ends = kinds.iter().find_map(|k| match k {
+            ElementKind::Association(p) => Some(&p.ends),
+            _ => None,
+        });
+        let ends = ends.expect("an association");
+        assert_eq!((ends[0].participant, ends[0].role.as_str()), (order, "buyer"));
+        assert_eq!(ends[0].navigability, Navigability::Navigable);
+        assert_eq!((ends[1].participant, ends[1].aggregation), (item, Aggregation::Composite));
+    }
+
+    #[test]
+    fn state_machines_bring_their_states_and_transitions() {
+        let mut b = Builder::default();
+        let model = named(&mut b, "UModelImp", "Model");
+        let order = named(&mut b, "UClassifierImp", "Order");
+        b.own(model, &[order]);
+        let machine = named(&mut b, "UStateMachineImp", "Life");
+        let behaviors = b.list(&[machine]);
+        b.set(order, "behavior", behaviors);
+        let start = named(&mut b, "UPseudostateImp", "InitialPseudostate0");
+        let kind = b.string("initial");
+        b.set(start, "kind", kind);
+        let open = named(&mut b, "UStateImp", "Open");
+        let entry = named(&mut b, "UActionImp", "count");
+        b.set(open, "entry", Value::Object(entry));
+        let done = named(&mut b, "UFinalStateImp", "FinalState0");
+        let top = b.instance("UCompositeStateImp");
+        let vertices = b.list(&[start, open, done]);
+        b.set(top, "subvertex", vertices);
+        b.set(machine, "top", Value::Object(top));
+        let transition = |b: &mut Builder, from: ObjId, to: ObjId, trigger: Option<&str>| {
+            let t = b.instance("UTransitionImp");
+            b.set(t, "source", Value::Object(from));
+            b.set(t, "target", Value::Object(to));
+            if let Some(trigger) = trigger {
+                let event = named(b, "UEventImp", trigger);
+                b.set(t, "trigger", Value::Object(event));
+            }
+            t
+        };
+        let first = transition(&mut b, start, open, None);
+        let close = transition(&mut b, open, done, Some("close"));
+        let transitions = b.list(&[first, close]);
+        b.set(machine, "transition", transitions);
+
+        let imported = import(&b.0).unwrap();
+        let m = &imported.model;
+        m.check().unwrap();
+        assert!(imported.skipped.is_empty(), "{:?}", imported.skipped);
+        let order = m.children(m.root())[0];
+        let life = m.children(order).iter().copied().find(|&c| m.get(c).unwrap().name() == "Life");
+        let life = life.expect("the state machine under its class");
+        let children: Vec<&ElementKind> =
+            m.children(life).iter().map(|&c| m.get(c).unwrap().kind()).collect();
+        let pseudostates = children.iter().filter(|k| matches!(k, ElementKind::Pseudostate(_)));
+        assert_eq!(pseudostates.count(), 1);
+        assert!(children.iter().any(|k| matches!(k, ElementKind::FinalState)));
+        let state = children.iter().find_map(|k| match k {
+            ElementKind::State(p) => Some(p),
+            _ => None,
+        });
+        assert_eq!(state.map(|p| p.entry.as_str()), Some("count"));
+        let triggers: Vec<&str> = children
+            .iter()
+            .filter_map(|k| match k {
+                ElementKind::Transition(p) => Some(p.trigger.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(triggers, ["", "close"]);
+        // Astah's default names of pseudostates and final states are not kept.
+        let names: Vec<&str> = m.children(life).iter().map(|&c| m.get(c).unwrap().name()).collect();
+        assert!(
+            !names.contains(&"InitialPseudostate0") && !names.contains(&"FinalState0"),
+            "{names:?}"
+        );
+    }
+
+    #[test]
+    fn activities_bring_their_nodes_and_flows() {
+        let mut b = Builder::default();
+        let model = named(&mut b, "UModelImp", "Model");
+        let order = named(&mut b, "UClassifierImp", "Order");
+        b.own(model, &[order]);
+        let graph = named(&mut b, "UActivityGraphImp", "Ship");
+        let behaviors = b.list(&[graph]);
+        b.set(order, "behavior", behaviors);
+        let pseudostate = |b: &mut Builder, name: &str, kind: &str| {
+            let node = named(b, "UPseudostateImp", name);
+            let kind = b.string(kind);
+            b.set(node, "kind", kind);
+            node
+        };
+        let start = pseudostate(&mut b, "InitialNode0", "initial");
+        let pack = named(&mut b, "UActionStateImp", "Pack");
+        let decide = pseudostate(&mut b, "DecisionNode0", "choice");
+        let done = named(&mut b, "UFinalStateImp", "ActivityFinal0");
+        let top = b.instance("UCompositeStateImp");
+        let vertices = b.list(&[start, pack, decide, done]);
+        b.set(top, "subvertex", vertices);
+        b.set(graph, "top", Value::Object(top));
+        let flow = |b: &mut Builder, from: ObjId, to: ObjId| {
+            let t = b.instance("UTransitionImp");
+            b.set(t, "source", Value::Object(from));
+            b.set(t, "target", Value::Object(to));
+            t
+        };
+        let flows =
+            [flow(&mut b, start, pack), flow(&mut b, pack, decide), flow(&mut b, decide, done)];
+        // Astah names a guarded flow after its label.
+        let guard = named(&mut b, "UGuardImp", "paid");
+        b.set(flows[2], "guard", Value::Object(guard));
+        let label = b.string("[paid]");
+        b.set(flows[2], "name", label);
+        let outgoing = b.list(&flows[2..]);
+        b.set(decide, "outgoing", outgoing);
+        let transitions = b.list(&flows);
+        b.set(graph, "transition", transitions);
+
+        let imported = import(&b.0).unwrap();
+        let m = &imported.model;
+        m.check().unwrap();
+        assert!(imported.skipped.is_empty(), "{:?}", imported.skipped);
+        let order = m.children(m.root())[0];
+        let ship = m.children(order).iter().copied().find(|&c| m.get(c).unwrap().name() == "Ship");
+        let ship = ship.expect("the activity under its class");
+        let nodes: Vec<(ActivityNodeKind, &str)> = m
+            .children(ship)
+            .iter()
+            .filter_map(|&c| m.get(c))
+            .filter_map(|e| match e.kind() {
+                ElementKind::ActivityNode(p) => Some((p.node, e.name())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            nodes,
+            [
+                (ActivityNodeKind::Initial, ""),
+                (ActivityNodeKind::Action, "Pack"),
+                (ActivityNodeKind::Decision, ""),
+                (ActivityNodeKind::ActivityFinal, ""),
+            ]
+        );
+        let flows: Vec<(&str, &str)> = m
+            .children(ship)
+            .iter()
+            .filter_map(|&c| m.get(c))
+            .filter_map(|e| match e.kind() {
+                ElementKind::ActivityEdge(p) => Some((e.name(), p.guard.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(flows, [("", ""), ("", ""), ("", "paid")]);
+    }
+
+    #[test]
+    fn class_diagrams_show_their_classes_where_astah_put_them() {
+        let mut b = Builder::default();
+        let model = named(&mut b, "UModelImp", "Model");
+        let (order, item) =
+            (named(&mut b, "UClassifierImp", "Order"), named(&mut b, "UClassifierImp", "Item"));
+        let diagram = named(&mut b, "UDiagramImp", "Overview");
+        let kind = b.string("Class Diagram");
+        b.set(diagram, "type", kind);
+        b.own(model, &[order, item, diagram]);
+        let node = |b: &mut Builder, element: ObjId, x: f64, y: f64| {
+            let p = b.instance("ClassifierPresentation");
+            b.set(p, "model", Value::Object(element));
+            let at = b.instance("Pnt2d");
+            b.set(at, "x", Value::Double(x));
+            b.set(at, "y", Value::Double(y));
+            b.set(p, "location", Value::Object(at));
+            b.set(p, "width", Value::Double(100.0));
+            b.set(p, "height", Value::Double(60.0));
+            p
+        };
+        // Astah's coordinates may start anywhere; UmlCraft's leave a margin of 20.
+        let shown = [node(&mut b, order, -30.0, 100.0), node(&mut b, item, 200.0, 40.0)];
+        let presentations = b.list(&shown);
+        b.set(diagram, "presentation", presentations);
+
+        let imported = import(&b.0).unwrap();
+        let m = &imported.model;
+        m.check().unwrap();
+        assert!(imported.skipped.is_empty(), "{:?}", imported.skipped);
+        let id = |name: &str| {
+            let found =
+                m.children(m.root()).iter().copied().find(|&c| m.get(c).unwrap().name() == name);
+            found.unwrap()
+        };
+        let (order, item, diagram) = (id("Order"), id("Item"), id("Overview"));
+        assert_eq!(m.get(diagram).unwrap().kind().as_diagram(), Some(DiagramKind::Class));
+        let bounds = |element: Id| {
+            let view = m.view(diagram).unwrap();
+            let p = view.presentations_of(element).next().expect("shown");
+            p.bounds().unwrap()
+        };
+        assert_eq!(bounds(order), Rect::new(20.0, 100.0, 100.0, 60.0));
+        assert_eq!(bounds(item), Rect::new(250.0, 40.0, 100.0, 60.0));
+    }
+
+    /// A point object as Astah stores locations and waypoints.
+    fn point(b: &mut Builder, x: f64, y: f64) -> ObjId {
+        let at = b.instance("Pnt2d");
+        b.set(at, "x", Value::Double(x));
+        b.set(at, "y", Value::Double(y));
+        at
+    }
+
+    #[test]
+    fn edges_run_the_way_their_relationship_does() {
+        let mut b = Builder::default();
+        let model = named(&mut b, "UModelImp", "Model");
+        let (order, item) =
+            (named(&mut b, "UClassifierImp", "Order"), named(&mut b, "UClassifierImp", "Item"));
+        let generalization = b.instance("UGeneralizationImp");
+        b.set(generalization, "subtype", Value::Object(order));
+        b.set(generalization, "supertype", Value::Object(item));
+        let diagram = named(&mut b, "UDiagramImp", "Overview");
+        let kind = b.string("Class Diagram");
+        b.set(diagram, "type", kind);
+        b.own(model, &[order, item, generalization, diagram]);
+        let node = |b: &mut Builder, element: ObjId, x: f64| {
+            let p = b.instance("ClassifierPresentation");
+            b.set(p, "model", Value::Object(element));
+            let at = point(b, x, 40.0);
+            b.set(p, "location", Value::Object(at));
+            b.set(p, "width", Value::Double(100.0));
+            b.set(p, "height", Value::Double(60.0));
+            p
+        };
+        let (order_p, item_p) = (node(&mut b, order, 20.0), node(&mut b, item, 300.0));
+        // Astah's servers run from the general class to the specific one here, and the
+        // waypoints with them.
+        let edge = b.instance("GeneralizationPresentation");
+        b.set(edge, "model", Value::Object(generalization));
+        let servers = b.list(&[item_p, order_p]);
+        b.set(edge, "servers", servers);
+        let waypoints = [point(&mut b, 250.0, 200.0), point(&mut b, 150.0, 200.0)];
+        let all = b.list(&waypoints);
+        b.set(edge, "allPoints", all.clone());
+        b.set(edge, "points", all);
+        let presentations = b.list(&[order_p, item_p, edge]);
+        b.set(diagram, "presentation", presentations);
+
+        let imported = import(&b.0).unwrap();
+        let m = &imported.model;
+        m.check().unwrap();
+        let id = |name: &str| {
+            let children = m.children(m.root()).iter().copied();
+            children.into_iter().find(|&c| m.get(c).unwrap().name() == name).unwrap()
+        };
+        let view = m.view(id("Overview")).unwrap();
+        let shown = |element: Id| view.presentations_of(element).next().expect("shown").id;
+        let generalization =
+            m.elements().find(|e| matches!(e.kind(), ElementKind::Generalization(_))).unwrap().id();
+        let edge = view.presentations_of(generalization).next().expect("an edge");
+        let Shape::Edge { source, target, waypoints, .. } = &edge.shape else { panic!() };
+        assert_eq!((*source, *target), (shown(id("Order")), shown(id("Item"))));
+        assert_eq!(*waypoints, [Point::new(150.0, 200.0), Point::new(250.0, 200.0)]);
+    }
+
+    #[test]
+    fn sequence_diagrams_bring_lifelines_and_messages_in_drawing_order() {
+        let mut b = Builder::default();
+        let model = named(&mut b, "UModelImp", "Model");
+        let order = named(&mut b, "UClassifierImp", "Order");
+        let diagram = named(&mut b, "USequenceDiagramImp", "Place order");
+        b.own(model, &[order, diagram]);
+        let collaboration = b.instance("UCollaborationImp");
+        b.set(diagram, "collaboration", Value::Object(collaboration));
+        let (shop, store) = (
+            named(&mut b, "UClassifierRoleImp", "shop"),
+            named(&mut b, "UClassifierRoleImp", "store"),
+        );
+        b.set(store, "base", Value::Object(order));
+        b.own(collaboration, &[shop, store]);
+        // A message at height `y`; `action_type` 2 makes it a reply.
+        let message = |b: &mut Builder, name: &str, from, to, y: f64, action_type: Option<i64>| {
+            let m = named(b, "UMessageImp", name);
+            b.set(m, "sender", Value::Object(from));
+            b.set(m, "receiver", Value::Object(to));
+            let p = b.instance("MessagePresentation");
+            let at = point(b, 0.0, y);
+            let points = b.list(&[at]);
+            b.set(p, "allPoints", points);
+            let presentations = b.list(&[p]);
+            b.set(m, "presentation", presentations);
+            if let Some(t) = action_type {
+                let action = b.instance("UActionImp");
+                b.set(action, "actionType", Value::Long(t));
+                b.set(m, "action", Value::Object(action));
+            }
+            m
+        };
+        let call = message(&mut b, "check", shop, store, 100.0, None);
+        let answer = b.string("ok");
+        b.set(call, "returnValue", answer);
+        let reply = message(&mut b, "", store, shop, 200.0, Some(REPLY));
+        b.set(reply, "activator", Value::Object(call));
+        let interaction = b.instance("UInteractionImp");
+        // Listed bottom up: the drawing decides the order.
+        let messages = b.list(&[reply, call]);
+        b.set(interaction, "message", messages);
+        let interactions = b.list(&[interaction]);
+        b.set(collaboration, "interactions", interactions);
+
+        let imported = import(&b.0).unwrap();
+        let m = &imported.model;
+        m.check().unwrap();
+        let interaction = m
+            .elements()
+            .find(|e| matches!(e.kind(), ElementKind::Interaction))
+            .expect("an interaction");
+        assert_eq!(interaction.name(), "Place order");
+        let items: Vec<&umlcraft_model::Element> =
+            interaction.children().iter().filter_map(|&c| m.get(c)).collect();
+        let lifelines: Vec<(&str, Option<Id>)> = items
+            .iter()
+            .filter_map(|e| match e.kind() {
+                ElementKind::Lifeline(p) => Some((e.name(), p.represents)),
+                _ => None,
+            })
+            .collect();
+        let order = m.children(m.root())[0];
+        assert_eq!(lifelines, [("shop", None), ("store", Some(order))]);
+        let messages: Vec<(MessageSort, &str)> = items
+            .iter()
+            .filter_map(|e| match e.kind() {
+                ElementKind::Message(p) => Some((p.sort, p.return_value.as_str())),
+                _ => None,
+            })
+            .collect();
+        // Astah keeps the return value on the call; UmlCraft shows it on the reply.
+        assert_eq!(messages, [(MessageSort::Synchronous, ""), (MessageSort::Reply, "ok")]);
+    }
+
     #[test]
     fn a_package_that_owns_itself_is_imported_once() {
         let mut b = Builder::default();

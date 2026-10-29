@@ -940,8 +940,7 @@ mod tests {
     }
 
     /// `new java.util.ArrayList<>(List.of("a"))` as written by `ObjectOutputStream`.
-    #[test]
-    fn array_list() {
+    fn array_list_bytes() -> Vec<u8> {
         let mut bytes = vec![0xAC, 0xED, 0x00, 0x05, TC_OBJECT, TC_CLASSDESC];
         let name = b"java.util.ArrayList";
         bytes.extend((name.len() as u16).to_be_bytes());
@@ -957,7 +956,12 @@ mod tests {
         bytes.extend([TC_BLOCKDATA, 4]);
         bytes.extend(1i32.to_be_bytes());
         bytes.extend([TC_STRING, 0, 1, b'a', TC_ENDBLOCKDATA]);
+        bytes
+    }
 
+    #[test]
+    fn array_list() {
+        let bytes = array_list_bytes();
         let graph = parse(&bytes, 0).unwrap();
         let Some(Content::Value(Value::Object(list))) = graph.roots.first() else {
             panic!("no root object");
@@ -980,6 +984,29 @@ mod tests {
         bytes.push(SC_SERIALIZABLE);
         bytes.extend(0u16.to_be_bytes());
         bytes.push(TC_ENDBLOCKDATA);
+    }
+
+    /// Every byte of a stream replaced in turn by type codes, extremes and its neighbors, and
+    /// every prefix of it: the reader returns a graph or an error, never panics, and what it
+    /// returns can be written again. A deterministic stand-in for fuzzing.
+    #[test]
+    fn damaged_streams_are_read_or_refused() {
+        let bytes = array_list_bytes();
+        for len in 0..bytes.len() {
+            let _ = parse(&bytes[..len], 0);
+        }
+        let values = [0x00, 0x01, 0x7F, 0x80, 0xFF, TC_NULL, TC_REFERENCE, TC_CLASSDESC, TC_OBJECT];
+        for at in 0..bytes.len() {
+            let mut variants: Vec<u8> = values.to_vec();
+            variants.extend([bytes[at].wrapping_add(1), bytes[at].wrapping_sub(1)]);
+            for value in variants {
+                let mut damaged = bytes.clone();
+                damaged[at] = value;
+                if let Ok(graph) = parse(&damaged, 0) {
+                    let _ = write(&graph, &[]);
+                }
+            }
+        }
     }
 
     /// The class of the stream's first object.

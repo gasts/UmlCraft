@@ -291,3 +291,62 @@ fn a_byte_order_mark_and_a_missing_empty_view_are_fine() {
     let model = from_str(&value.to_string()).unwrap();
     assert!(model.view(d).is_some_and(|v| v.presentations().is_empty()));
 }
+
+/// Every leaf of the sample project, replaced in turn by a few wrong values (another element's
+/// id, a negative or huge number, null, an empty string): the file either loads into a
+/// consistent model or is refused, and never panics. A deterministic stand-in for fuzzing.
+#[test]
+fn damaged_files_load_consistently_or_are_refused() {
+    let (doc, ids) = order_system();
+    let original: serde_json::Value = serde_json::from_str(&to_string(doc.model())).unwrap();
+    let other = serde_json::Value::String(ids.order.to_string());
+    let wrong = [
+        other,
+        serde_json::json!(-1),
+        serde_json::json!(1e30),
+        serde_json::Value::Null,
+        serde_json::json!(""),
+    ];
+    // Paths to every leaf.
+    fn leaves(value: &serde_json::Value, path: &mut Vec<String>, out: &mut Vec<Vec<String>>) {
+        match value {
+            serde_json::Value::Object(map) => {
+                for (key, v) in map {
+                    path.push(key.clone());
+                    leaves(v, path, out);
+                    path.pop();
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for (i, v) in items.iter().enumerate() {
+                    path.push(i.to_string());
+                    leaves(v, path, out);
+                    path.pop();
+                }
+            }
+            _ => out.push(path.clone()),
+        }
+    }
+    let mut paths = Vec::new();
+    leaves(&original, &mut Vec::new(), &mut paths);
+    assert!(paths.len() > 500, "{} leaves", paths.len());
+    let (mut loaded, mut refused) = (0, 0);
+    for path in &paths {
+        for value in &wrong {
+            let mut damaged = original.clone();
+            let pointer: String = path
+                .iter()
+                .map(|p| format!("/{}", p.replace('~', "~0").replace('/', "~1")))
+                .collect();
+            *damaged.pointer_mut(&pointer).unwrap() = value.clone();
+            match from_str(&damaged.to_string()) {
+                Ok(model) => {
+                    model.check().unwrap_or_else(|e| panic!("{pointer} = {value}: {e}"));
+                    loaded += 1;
+                }
+                Err(_) => refused += 1,
+            }
+        }
+    }
+    assert!(loaded > 0 && refused > 0, "{loaded} loaded, {refused} refused");
+}
