@@ -1,0 +1,416 @@
+== 01-empty.nsd 80x110
+[] 20 57 40 33
+== 02-instruction.nsd 119x110
+[] 20 57 79 33
+  Instruction 20 57 79 33 Plain { rotated: false }
+== 03-instruction-lines.nsd 197x136
+[] 20 57 157 59
+  Instruction 20 57 157 59 Plain { rotated: false }
+== 04-sequence.nsd 197x176
+[] 20 57 157 99
+  Instruction 20 57 157 33 Plain { rotated: false }
+  Instruction 20 90 157 33 Plain { rotated: false }
+  Instruction 20 123 157 33 Plain { rotated: false }
+== 05-long-line.nsd 770x110
+[] 20 57 730 33
+  Instruction 20 57 730 33 Plain { rotated: false }
+== 06-special-characters.nsd 181x308
+[] 20 57 141 231
+  Instruction 20 57 141 33 Plain { rotated: false }
+  Instruction 20 90 141 33 Plain { rotated: false }
+  Instruction 20 123 141 33 Plain { rotated: false }
+  Instruction 20 156 141 33 Plain { rotated: false }
+  Instruction 20 189 141 33 Plain { rotated: false }
+  Instruction 20 222 141 33 Plain { rotated: false }
+  Instruction 20 255 141 33 Plain { rotated: false }
+== 07-empty-text.nsd 63x97
+[] 20 57 23 20
+  Instruction 20 57 23 20 Plain { rotated: false }
+== 08-root-sub.nsd 179x143
+[] 20 57 139 66
+  Instruction 20 57 139 33 Plain { rotated: false }
+  Jump 20 90 139 33 Plain { rotated: false }
+== 09-root-includable.nsd 168x110
+[] 20 57 128 33
+  Instruction 20 57 128 33 Plain { rotated: false }
+== 10-root-lines.nsd 139x127
+[] 20 74 99 33
+  Jump 20 74 99 33 Plain { rotated: false }
+== 11-root-header.nsd 140x153
+[] 20 100 100 33
+  Instruction 20 100 100 33 Plain { rotated: false }
+== 12-alt-gui.nsd 170x162
+[] 20 57 130 85
+  Alternative 20 57 130 85 Alternative { head: 52, split: 70 }
+    [] 20 109 50 33
+      Instruction 20 109 50 33 Plain { rotated: false }
+    [] 70 109 80 33
+      Instruction 70 109 80 33 Plain { rotated: false }
+== 12-alt.nsd 170x162
+[] 20 57 130 85
+  Alternative 20 57 130 85 Alternative { head: 52, split: 70 }
+    [] 20 109 50 33
+      Instruction 20 109 50 33 Plain { rotated: false }
+    [] 70 109 80 33
+      Instruction 70 109 80 33 Plain { rotated: false }
+== 13-alt-empty.nsd 120x162
+[] 20 57 80 85
+  Alternative 20 57 80 85 Alternative { head: 52, split: 59 }
+    [] 20 109 39 33
+    [] 59 109 41 33
+== 14-alt-uneven.nsd 248x261
+[] 20 57 208 184
+  Alternative 20 57 208 184 Alternative { head: 52, split: 70 }
+    [] 20 109 50 132
+      Instruction 20 109 50 132 Plain { rotated: false }
+    [] 70 109 158 132
+      Instruction 70 109 158 33 Plain { rotated: false }
+      Instruction 70 142 158 33 Plain { rotated: false }
+      Instruction 70 175 158 33 Plain { rotated: false }
+      Instruction 70 208 158 33 Plain { rotated: false }
+== 15-alt-wide.nsd 548x162
+[] 20 57 508 85
+  Alternative 20 57 508 85 Alternative { head: 52, split: 476 }
+    [] 20 109 456 33
+      Instruction 20 109 456 33 Plain { rotated: false }
+    [] 476 109 52 33
+      Instruction 476 109 52 33 Plain { rotated: false }
+== 16-alt-lines.nsd 170x175
+[] 20 57 130 98
+  Alternative 20 57 130 98 Alternative { head: 65, split: 70 }
+    [] 20 122 50 33
+      Instruction 20 122 50 33 Plain { rotated: false }
+    [] 70 122 80 33
+      Instruction 70 122 80 33 Plain { rotated: false }
+== 17-alt-narrow.nsd 354x162
+[] 20 57 314 85
+  Alternative 20 57 314 85 Alternative { head: 52, split: 176 }
+    [] 20 109 156 33
+      Instruction 20 109 156 33 Plain { rotated: false }
+    [] 176 109 158 33
+      Instruction 176 109 158 33 Plain { rotated: false }
+== 18-case-2.nsd 327x176
+[] 20 57 287 99
+  Case 20 57 287 99 Case { head: 66, columns: [20, 71, 150], apex: 150, default: true }
+    [] 20 123 51 33
+      Instruction 20 123 51 33 Plain { rotated: false }
+    [] 71 123 79 33
+      Instruction 71 123 79 33 Plain { rotated: false }
+    [] 150 123 157 33
+      Instruction 150 123 157 33 Plain { rotated: false }
+== 19-case-5.nsd 614x176
+[] 20 57 574 99
+  Case 20 57 574 99 Case { head: 66, columns: [20, 71, 150, 307, 358, 437], apex: 437, default: true }
+    [] 20 123 51 33
+      Instruction 20 123 51 33 Plain { rotated: false }
+    [] 71 123 79 33
+      Instruction 71 123 79 33 Plain { rotated: false }
+    [] 150 123 157 33
+      Instruction 150 123 157 33 Plain { rotated: false }
+    [] 307 123 51 33
+      Instruction 307 123 51 33 Plain { rotated: false }
+    [] 358 123 79 33
+      Instruction 358 123 79 33 Plain { rotated: false }
+    [] 437 123 157 33
+      Instruction 437 123 157 33 Plain { rotated: false }
+== 20-case-no-default.nsd 170x176
+[] 20 57 130 99
+  Case 20 57 130 99 Case { head: 66, columns: [20, 71], apex: 150, default: false }
+    [] 20 123 51 33
+      Instruction 20 123 51 33 Plain { rotated: false }
+    [] 71 123 79 33
+      Instruction 71 123 79 33 Plain { rotated: false }
+== 21-case-several-values.nsd 303x176
+[] 20 57 263 99
+  Case 20 57 263 99 Case { head: 66, columns: [20, 129, 206], apex: 206, default: true }
+    [] 20 123 109 33
+      Instruction 20 123 109 33 Plain { rotated: false }
+    [] 129 123 77 33
+      Instruction 129 123 77 33 Plain { rotated: false }
+    [] 206 123 77 33
+      Instruction 206 123 77 33 Plain { rotated: false }
+== 22-case-deep.nsd 378x242
+[] 20 57 338 165
+  Case 20 57 338 165 Case { head: 66, columns: [20, 71, 228], apex: 228, default: true }
+    [] 20 123 51 99
+      Instruction 20 123 51 99 Plain { rotated: false }
+    [] 71 123 157 99
+      Instruction 71 123 157 33 Plain { rotated: false }
+      Instruction 71 156 157 33 Plain { rotated: false }
+      Instruction 71 189 157 33 Plain { rotated: false }
+    [] 228 123 130 99
+      Alternative 228 123 130 99 Alternative { head: 52, split: 278 }
+        [] 228 175 50 47
+          Instruction 228 175 50 47 Plain { rotated: false }
+        [] 278 175 80 47
+          Instruction 278 175 80 47 Plain { rotated: false }
+== 23-for.nsd 139x143
+[] 20 57 99 66
+  For 20 57 99 66 Head { head: 32 }
+    [] 39 89 80 34
+      Instruction 39 89 80 34 Plain { rotated: false }
+== 24-for-step.nsd 170x143
+[] 20 57 130 66
+  For 20 57 130 66 Head { head: 32 }
+    [] 39 89 111 34
+      Instruction 39 89 111 34 Plain { rotated: false }
+== 25-for-in.nsd 173x143
+[] 20 57 133 66
+  For 20 57 133 66 Head { head: 32 }
+    [] 39 89 114 34
+      Instruction 39 89 114 34 Plain { rotated: false }
+== 26-for-free.nsd 186x143
+[] 20 57 146 66
+  For 20 57 146 66 Head { head: 32 }
+    [] 39 89 127 34
+      Instruction 39 89 127 34 Plain { rotated: false }
+== 27-while.nsd 111x143
+[] 20 57 71 66
+  While 20 57 71 66 Head { head: 32 }
+    [] 39 89 52 34
+      Instruction 39 89 52 34 Plain { rotated: false }
+== 28-repeat.nsd 111x143
+[] 20 57 71 66
+  Repeat 20 57 71 66 Foot { foot: 90 }
+    [] 39 57 52 33
+      Instruction 39 57 52 33 Plain { rotated: false }
+== 29-forever.nsd 111x150
+[] 20 57 71 73
+  Forever 20 57 71 73 Forever
+    [] 39 76 52 34
+      Instruction 39 76 52 34 Plain { rotated: false }
+== 30-loops-empty.nsd 139x348
+[] 20 57 99 271
+  For 20 57 99 66 Head { head: 32 }
+    [] 39 89 80 34
+  While 20 123 99 66 Head { head: 32 }
+    [] 39 155 80 34
+  Repeat 20 189 99 66 Foot { foot: 222 }
+    [] 39 189 80 33
+  Forever 20 255 99 73 Forever
+    [] 39 274 80 34
+== 31-call.nsd 160x156
+[] 20 57 120 79
+  Call 20 57 120 33 Plain { rotated: false }
+  Call 20 90 120 46 Plain { rotated: false }
+== 32-jump.nsd 139x262
+[] 20 57 99 185
+  Jump 20 57 99 33 Plain { rotated: false }
+  Jump 20 90 99 33 Plain { rotated: false }
+  Jump 20 123 99 33 Plain { rotated: false }
+  Jump 20 156 99 33 Plain { rotated: false }
+  Jump 20 189 99 33 Plain { rotated: false }
+  Jump 20 222 99 20 Plain { rotated: false }
+== 33-try.nsd 179x229
+[] 20 57 139 152
+  Try 20 57 139 152 Try { rows: [57, 123], band: 189 }
+    [] 40 90 99 33
+      Instruction 40 90 99 33 Plain { rotated: false }
+    [] 60 156 79 33
+      Instruction 60 156 79 33 Plain { rotated: false }
+== 34-try-finally.nsd 237x295
+[] 20 57 197 218
+  Try 20 57 197 218 Try { rows: [57, 123, 189], band: 255 }
+    [] 40 90 157 33
+      Instruction 40 90 157 33 Plain { rotated: false }
+    [] 60 156 137 33
+      Instruction 60 156 137 33 Plain { rotated: false }
+    [] 40 222 157 33
+      Instruction 40 222 157 33 Plain { rotated: false }
+== 35-parallel-1.nsd 92x150
+[] 20 57 52 73
+  Parallel 20 57 52 73 Parallel { columns: [20] }
+    [] 20 77 52 33
+      Instruction 20 77 52 33 Plain { rotated: false }
+== 36-parallel-4.nsd 379x216
+[] 20 57 339 139
+  Parallel 20 57 339 139 Parallel { columns: [20, 71, 150, 307] }
+    [] 20 77 51 99
+      Instruction 20 77 51 99 Plain { rotated: false }
+    [] 71 77 79 99
+      Instruction 71 77 79 33 Plain { rotated: false }
+      Instruction 71 110 79 66 Plain { rotated: false }
+    [] 150 77 157 99
+      Instruction 150 77 157 99 Plain { rotated: false }
+    [] 307 77 52 99
+      Instruction 307 77 52 33 Plain { rotated: false }
+      Instruction 307 110 52 33 Plain { rotated: false }
+      Instruction 307 143 52 33 Plain { rotated: false }
+== 37-colors.nsd 170x624
+[] 20 57 130 547
+  Instruction 20 57 130 33 Plain { rotated: false }
+  Instruction 20 90 130 33 Plain { rotated: false }
+  Instruction 20 123 130 33 Plain { rotated: false }
+  Instruction 20 156 130 33 Plain { rotated: false }
+  Instruction 20 189 130 33 Plain { rotated: false }
+  Instruction 20 222 130 33 Plain { rotated: false }
+  Instruction 20 255 130 33 Plain { rotated: false }
+  Instruction 20 288 130 33 Plain { rotated: false }
+  Instruction 20 321 130 33 Plain { rotated: false }
+  Alternative 20 354 130 85 Alternative { head: 52, split: 70 }
+    [] 20 406 50 33
+      Instruction 20 406 50 33 Plain { rotated: false }
+    [] 70 406 80 33
+      Instruction 70 406 80 33 Plain { rotated: false }
+  Case 20 439 130 99 Case { head: 66, columns: [20, 71], apex: 71, default: true }
+    [] 20 505 51 33
+      Instruction 20 505 51 33 Plain { rotated: false }
+    [] 71 505 79 33
+      Instruction 71 505 79 33 Plain { rotated: false }
+  While 20 538 130 66 Head { head: 32 }
+    [] 39 570 111 34
+      Instruction 39 570 111 34 Plain { rotated: false }
+== 38-disabled.nsd 170x294
+[] 20 57 130 217
+  Instruction 20 57 130 33 Plain { rotated: false }
+  Alternative 20 90 130 85 Alternative { head: 52, split: 70 }
+    [] 20 142 50 33
+      Instruction 20 142 50 33 Plain { rotated: false }
+    [] 70 142 80 33
+      Instruction 70 142 80 33 Plain { rotated: false }
+  While 20 175 130 66 Head { head: 32 }
+    [] 39 207 111 34
+      Instruction 39 207 111 34 Plain { rotated: false }
+  Instruction 20 241 130 33 Plain { rotated: false }
+== 39-comments.nsd 179x856
+[] 20 57 139 779
+  Instruction 20 57 139 33 Plain { rotated: false }
+  Call 20 90 139 33 Plain { rotated: false }
+  Jump 20 123 139 33 Plain { rotated: false }
+  Alternative 20 156 139 85 Alternative { head: 52, split: 118 }
+    [] 20 208 98 33
+      Instruction 20 208 98 33 Plain { rotated: false }
+    [] 118 208 41 33
+  Case 20 241 139 99 Case { head: 66, columns: [20, 71], apex: 71, default: true }
+    [] 20 307 51 33
+      Instruction 20 307 51 33 Plain { rotated: false }
+    [] 71 307 88 33
+  For 20 340 139 66 Head { head: 32 }
+    [] 39 372 120 34
+      Instruction 39 372 120 34 Plain { rotated: false }
+  While 20 406 139 66 Head { head: 32 }
+    [] 39 438 120 34
+      Instruction 39 438 120 34 Plain { rotated: false }
+  Repeat 20 472 139 66 Foot { foot: 505 }
+    [] 39 472 120 33
+      Instruction 39 472 120 33 Plain { rotated: false }
+  Forever 20 538 139 73 Forever
+    [] 39 557 120 34
+      Instruction 39 557 120 34 Plain { rotated: false }
+  Try 20 611 139 152 Try { rows: [611, 677], band: 743 }
+    [] 40 644 99 33
+      Instruction 40 644 99 33 Plain { rotated: false }
+    [] 60 710 79 33
+      Instruction 60 710 79 33 Plain { rotated: false }
+  Parallel 20 763 139 73 Parallel { columns: [20, 71] }
+    [] 20 783 51 33
+      Instruction 20 783 51 33 Plain { rotated: false }
+    [] 71 783 88 33
+      Instruction 71 783 88 33 Plain { rotated: false }
+== 40-rotated.nsd 482x365
+[] 20 57 442 288
+  Case 20 57 442 156 Case { head: 66, columns: [20, 53, 86, 119, 152, 185, 218, 251, 284, 317, 350, 383], apex: 383, default: true }
+    [] 20 123 33 90
+      Instruction 20 123 33 90 Plain { rotated: true }
+    [] 53 123 33 90
+      Instruction 53 123 33 90 Plain { rotated: true }
+    [] 86 123 33 90
+      Instruction 86 123 33 90 Plain { rotated: true }
+    [] 119 123 33 90
+      Instruction 119 123 33 90 Plain { rotated: true }
+    [] 152 123 33 90
+      Instruction 152 123 33 90 Plain { rotated: true }
+    [] 185 123 33 90
+      Instruction 185 123 33 90 Plain { rotated: true }
+    [] 218 123 33 90
+      Instruction 218 123 33 90 Plain { rotated: true }
+    [] 251 123 33 90
+      Instruction 251 123 33 90 Plain { rotated: true }
+    [] 284 123 33 90
+      Instruction 284 123 33 90 Plain { rotated: true }
+    [] 317 123 33 90
+      Instruction 317 123 33 90 Plain { rotated: true }
+    [] 350 123 33 90
+      Instruction 350 123 33 90 Plain { rotated: true }
+    [] 383 123 79 90
+      Instruction 383 123 79 90 Plain { rotated: true }
+  Case 20 213 442 132 Case { head: 66, columns: [20, 53, 86, 119, 152, 185, 218, 251, 284, 317, 350, 383], apex: 383, default: true }
+    [] 20 279 33 66
+      Instruction 20 279 33 66 Plain { rotated: true }
+    [] 53 279 33 66
+      Instruction 53 279 33 66 Plain { rotated: true }
+    [] 86 279 33 66
+      Instruction 86 279 33 66 Plain { rotated: true }
+    [] 119 279 33 66
+      Instruction 119 279 33 66 Plain { rotated: true }
+    [] 152 279 33 66
+      Instruction 152 279 33 66 Plain { rotated: true }
+    [] 185 279 33 66
+      Instruction 185 279 33 66 Plain { rotated: true }
+    [] 218 279 33 66
+      Instruction 218 279 33 66 Plain { rotated: true }
+    [] 251 279 33 66
+      Instruction 251 279 33 66 Plain { rotated: true }
+    [] 284 279 33 66
+      Instruction 284 279 33 66 Plain { rotated: true }
+    [] 317 279 33 66
+      Instruction 317 279 33 66 Plain { rotated: true }
+    [] 350 279 33 66
+      Instruction 350 279 33 66 Plain { rotated: true }
+    [] 383 279 79 66
+      Instruction 383 279 79 33 Plain { rotated: false }
+      Instruction 383 312 79 33 Plain { rotated: false }
+== 41-style-abbr.nsd 130x188
+[] 0 37 130 151
+  Alternative 0 37 130 85 Alternative { head: 52, split: 50 }
+    [] 0 89 50 33
+      Instruction 0 89 50 33 Plain { rotated: false }
+    [] 50 89 80 33
+      Instruction 50 89 80 33 Plain { rotated: false }
+  While 0 122 130 66 Head { head: 32 }
+    [] 19 154 111 34
+      Instruction 19 154 111 34 Plain { rotated: false }
+== 42-deep.nsd 506x486
+[] 20 57 466 409
+  For 20 57 466 409 Head { head: 32 }
+    [] 39 89 447 377
+      While 39 89 447 377 Head { head: 32 }
+        [] 58 121 428 345
+          Alternative 58 121 428 345 Alternative { head: 52, split: 308 }
+            [] 58 173 250 293
+              Case 58 173 250 293 Case { head: 66, columns: [58, 228], apex: 228, default: true }
+                [] 58 239 170 227
+                  Repeat 58 239 170 227 Foot { foot: 433 }
+                    [] 77 239 151 194
+                      Try 77 239 151 194 Try { rows: [239, 345], band: 411 }
+                        [] 97 272 112 73
+                          Parallel 97 272 112 73 Parallel { columns: [97, 148] }
+                            [] 97 292 51 33
+                              Instruction 97 292 51 33 Plain { rotated: false }
+                            [] 148 292 61 33
+                              Call 148 292 61 33 Plain { rotated: false }
+                        [] 117 378 92 33
+                          Jump 117 378 92 33 Plain { rotated: false }
+                [] 228 239 80 227
+                  Instruction 228 239 80 227 Plain { rotated: false }
+            [] 308 173 178 293
+              Forever 308 173 178 293 Forever
+                [] 327 192 159 254
+                  Instruction 327 192 159 254 Plain { rotated: false }
+== 43-bubblesort.nsd 261x452
+[] 20 57 221 375
+  Instruction 20 57 221 33 Plain { rotated: false }
+  Repeat 20 90 221 276 Foot { foot: 333 }
+    [] 39 90 202 243
+      Instruction 39 90 202 33 Plain { rotated: false }
+      For 39 123 202 177 Head { head: 32 }
+        [] 58 155 183 145
+          Alternative 58 155 183 145 Alternative { head: 52, split: 200 }
+            [] 58 207 142 93
+              Instruction 58 207 142 59 Plain { rotated: false }
+              Instruction 58 266 142 34 Plain { rotated: false }
+            [] 200 207 41 93
+      Instruction 39 300 202 33 Plain { rotated: false }
+  For 20 366 221 66 Head { head: 32 }
+    [] 39 398 202 34
+      Instruction 39 398 202 34 Plain { rotated: false }

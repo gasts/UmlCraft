@@ -63,6 +63,11 @@ impl Metrics {
         lines.iter().map(|l| self.width(l, bold)).max().unwrap_or(0)
     }
 
+    /// The fonts an SVG export names: the one Java draws Dialog with on this platform first.
+    pub fn font_family(&self) -> &'static str {
+        "'DejaVu Sans', Dialog, Arial, sans-serif"
+    }
+
     /// The distance between the lines of an element's text.
     pub fn line(&self) -> i32 {
         self.plain.ascent
