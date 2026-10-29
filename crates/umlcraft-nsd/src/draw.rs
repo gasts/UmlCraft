@@ -343,9 +343,8 @@ impl Drawing<'_> {
                 self.lines_at(&text, r.x + PADDING / 2, foot + PADDING / 2 + self.m.line());
             }
             Shape::Forever => self.outline(r),
-            Shape::Try { rows, band } => {
+            Shape::Try { rows, .. } => {
                 self.outline(r);
-                let _ = band;
                 let variable = text.first().cloned().unwrap_or_default();
                 let labels = [
                     TRY_LABEL.to_owned(),

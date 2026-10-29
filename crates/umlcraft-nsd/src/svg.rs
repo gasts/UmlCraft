@@ -10,7 +10,11 @@ use crate::model::{Color, Diagram};
 
 /// The diagram as a standalone SVG document, one unit per pixel.
 pub fn render(diagram: &Diagram, m: &Metrics) -> String {
-    let layout = Layout::of(diagram, m);
+    render_layout(diagram, &Layout::of(diagram, m), m)
+}
+
+/// The same for a diagram laid out already (with the same metrics).
+pub fn render_layout(diagram: &Diagram, layout: &Layout, m: &Metrics) -> String {
     let (w, h) = layout.size;
     // Lines lie on pixel centres; the image reaches one pixel beyond the frame's right and
     // bottom lines, as Structorizer's PNG export does.
@@ -35,7 +39,7 @@ pub fn render(diagram: &Diagram, m: &Metrics) -> String {
         );
     }
     out.push_str("</pattern></defs>\n");
-    for p in draw(diagram, &layout, m) {
+    for p in draw(diagram, layout, m) {
         match p {
             Primitive::Area { points, ink } => {
                 let points: Vec<String> =
