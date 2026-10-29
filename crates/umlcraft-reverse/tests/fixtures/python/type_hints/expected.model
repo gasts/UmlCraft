@@ -9,10 +9,15 @@ package hints
     attribute + callback : Callable<[int],str>
     operation + apply(x, y : int, z : Line = None) : Hints
     association hints.Hints NonNavigable -- hints.Line Navigable line Public
+      @umlcraft.imported = "true"
     association hints.Hints NonNavigable -- hints.Line Navigable maybe Public [0..1]
+      @umlcraft.imported = "true"
     association hints.Hints NonNavigable -- hints.Line Navigable union Public [0..1]
+      @umlcraft.imported = "true"
     association hints.Hints NonNavigable -- hints.Line Navigable forward Public
+      @umlcraft.imported = "true"
     association hints.Hints NonNavigable -- hints.Line Navigable forward_list Public [*] {ordered}
+      @umlcraft.imported = "true"
 package typing
   class Optional Public
     template T

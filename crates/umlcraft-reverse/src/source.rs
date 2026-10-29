@@ -6,6 +6,13 @@ use std::path::{Path, PathBuf};
 /// The files among `paths` with one of `extensions` (without the dot, compared ignoring case):
 /// files as given, directories searched recursively. Sorted and without duplicates, so imports
 /// run in the same order on every system.
+///
+/// The search leaves out hidden folders (`.git`, `.venv`), virtual environments (folders with a
+/// `pyvenv.cfg`) and the usual folders of build output and fetched dependencies
+/// ([`SKIPPED_FOLDERS`]). A folder below the given ones that cannot be read is listed as it is,
+/// so that reading it fails and is reported with the files that could not be read; the others
+/// are imported anyway. Where a Python module has a stub (`orders.pyi` next to `orders.py`),
+/// only the stub is taken: both declare the same module.
 pub fn collect_sources(paths: &[PathBuf], extensions: &[&str]) -> io::Result<Vec<PathBuf>> {
     let mut found = Vec::new();
     for path in paths {
@@ -17,7 +24,25 @@ pub fn collect_sources(paths: &[PathBuf], extensions: &[&str]) -> io::Result<Vec
     }
     found.sort();
     found.dedup();
+    let stubs: std::collections::HashSet<PathBuf> = found
+        .iter()
+        .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("pyi")))
+        .map(|p| p.with_extension(""))
+        .collect();
+    found.retain(|p| {
+        !(p.extension().is_some_and(|e| e.eq_ignore_ascii_case("py"))
+            && stubs.contains(&p.with_extension("")))
+    });
     Ok(found)
+}
+
+/// Folders of build output, packaging and fetched dependencies, not searched for sources.
+pub const SKIPPED_FOLDERS: &[&str] =
+    &["node_modules", "venv", "site-packages", "__pycache__", "bin", "obj", "build", "_deps"];
+
+fn skipped_folder(dir: &Path) -> bool {
+    let Some(name) = dir.file_name().and_then(|n| n.to_str()) else { return false };
+    name.starts_with('.') || SKIPPED_FOLDERS.contains(&name) || dir.join("pyvenv.cfg").is_file()
 }
 
 fn has_extension(path: &Path, extensions: &[&str]) -> bool {
@@ -28,10 +53,16 @@ fn has_extension(path: &Path, extensions: &[&str]) -> bool {
 
 fn walk(dir: &Path, extensions: &[&str], found: &mut Vec<PathBuf>) -> io::Result<()> {
     for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
+        let Ok(entry) = entry else { continue };
         let path = entry.path();
-        if entry.file_type()?.is_dir() {
-            walk(&path, extensions, found)?;
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
+            if skipped_folder(&path) {
+                continue;
+            }
+            // Reading the folder as a file fails too, with the folder's path in the report.
+            if walk(&path, extensions, found).is_err() {
+                found.push(path);
+            }
         } else if has_extension(&path, extensions) {
             found.push(path);
         }
@@ -125,6 +156,34 @@ mod tests {
             .map(|p| p.strip_prefix(&dir).unwrap().to_string_lossy().replace('\\', "/"))
             .collect();
         assert_eq!(names, ["Top.java", "b/A.JAVA", "b/c/Z.java"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn skips_build_and_vendor_folders_and_prefers_stubs() {
+        let dir = std::env::temp_dir().join(format!("umlcraft-skip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for d in ["shop", ".git", "obj/Debug", "env", "node_modules/x"] {
+            std::fs::create_dir_all(dir.join(d)).unwrap();
+        }
+        for f in [
+            "shop/orders.py",
+            "shop/orders.pyi",
+            "shop/cart.py",
+            ".git/hook.py",
+            "obj/Debug/gen.py",
+            "env/pyvenv.cfg",
+            "env/lib.py",
+            "node_modules/x/y.py",
+        ] {
+            std::fs::write(dir.join(f), "").unwrap();
+        }
+        let found = collect_sources(std::slice::from_ref(&dir), &["py", "pyi"]).unwrap();
+        let names: Vec<String> = found
+            .iter()
+            .map(|p| p.strip_prefix(&dir).unwrap().to_string_lossy().replace('\\', "/"))
+            .collect();
+        assert_eq!(names, ["shop/cart.py", "shop/orders.pyi"]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -44,7 +44,9 @@ impl SourceLanguage {
         match self {
             SourceLanguage::Java => &["java"],
             SourceLanguage::CSharp => &["cs"],
-            SourceLanguage::Cpp => &["h", "hh", "hpp", "hxx", "cpp", "cc", "cxx"],
+            SourceLanguage::Cpp => {
+                &["h", "hh", "hpp", "hxx", "c", "cpp", "cc", "cxx", "inl", "ipp", "tpp"]
+            }
             SourceLanguage::Python => &["py", "pyi"],
         }
     }
@@ -179,11 +181,19 @@ pub fn parse_text(
     Ok(ir::Unit { path: path.to_owned(), scope })
 }
 
+/// Larger files are not read: no source of a model is that large, generated data may be.
+const MAX_FILE_SIZE: u64 = 16 << 20;
+
 /// Reads and parses `files`. Files that cannot be read or parsed are reported in
 /// [`Parsed::failed`]; the others are imported anyway.
 pub fn parse_sources(language: SourceLanguage, files: &[PathBuf]) -> Parsed {
     let mut parsed = Parsed::default();
     for path in files {
+        if std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.len() > MAX_FILE_SIZE) {
+            let problem = Problem::Read(format!("larger than {} MB", MAX_FILE_SIZE >> 20));
+            parsed.failed.push(FileProblem { path: path.clone(), problem });
+            continue;
+        }
         let bytes = match std::fs::read(path) {
             Ok(bytes) => bytes,
             Err(err) => {

@@ -4,16 +4,27 @@ package Shop
     attribute - placed : DateTime
     attribute - count : int
     association Shop.Order NonNavigable -- Shop.Customer Navigable customer Private
+      @umlcraft.imported = "true"
     association Shop.Order NonNavigable -- Shop.Customer Navigable payer Private [0..1]
+      @umlcraft.imported = "true"
     association Shop.Order NonNavigable -- Shop.Line Navigable lines Private [*] {ordered}
+      @umlcraft.imported = "true"
     association Shop.Order NonNavigable -- Shop.Tag Navigable tags Private [*] {unique}
+      @umlcraft.imported = "true"
     association Shop.Order NonNavigable -- Shop.Tag Navigable sorted Private [*] {ordered} {unique}
+      @umlcraft.imported = "true"
     association Shop.Order NonNavigable qualifier key : string -- Shop.Line Navigable byCode Private
+      @umlcraft.imported = "true"
     association Shop.Order NonNavigable -- Shop.Line Navigable history Private [*]
+      @umlcraft.imported = "true"
     association Shop.Order NonNavigable -- Shop.Line Navigable frozen Private [*] {ordered}
+      @umlcraft.imported = "true"
     association Shop.Order NonNavigable -- Shop.Discount Navigable discount Private [0..1]
+      @umlcraft.imported = "true"
     association Shop.Order NonNavigable -- Shop.Customer Navigable Owner Public
+      @umlcraft.imported = "true"
     association Shop.Order NonNavigable -- Shop.Line Navigable Items Public [*] {ordered} {readOnly}
+      @umlcraft.imported = "true"
   class Customer Public
   class Line Public
   class Tag Public

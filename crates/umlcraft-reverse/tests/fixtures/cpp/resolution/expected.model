@@ -3,14 +3,23 @@ package acme
     class Shop Public
       attribute - name : string
       association acme.app.Shop NonNavigable -- acme.lib.Money Navigable price Private
+        @umlcraft.imported = "true"
       association acme.app.Shop NonNavigable -- acme.lib.Customer Navigable buyer Private
+        @umlcraft.imported = "true"
       association acme.app.Shop NonNavigable -- acme.lib.Customer.Address Navigable address Private
+        @umlcraft.imported = "true"
       association acme.app.Shop NonNavigable -- acme.Root Navigable root Private
+        @umlcraft.imported = "true"
       association acme.app.Shop NonNavigable -- acme.lib.Money Navigable second Private
+        @umlcraft.imported = "true"
       association acme.app.Shop NonNavigable -- acme.lib.Money Navigable third Private
+        @umlcraft.imported = "true"
       association acme.app.Shop NonNavigable -- acme.lib.Money Navigable fourth Private
+        @umlcraft.imported = "true"
       association acme.app.Shop NonNavigable -- Missing Navigable missing Private
+        @umlcraft.imported = "true"
       association acme.app.Shop NonNavigable -- other.Widget Navigable widget Private
+        @umlcraft.imported = "true"
   package lib
     class Money Public
     class Customer Public

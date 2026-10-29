@@ -5,9 +5,12 @@ package Model
     operation + Ship(days : int, express : bool) : void
     operation + Ship(days : int) : void
     association Model.Order NonNavigable -- Model.Customer Navigable customer Private
+      @umlcraft.imported = "true"
     association Model.Order NonNavigable -- Model.Customer Navigable backup Private [0..1]
+      @umlcraft.imported = "true"
   class Customer Public
     association Model.Customer NonNavigable -- Model.Missing Navigable missing Private
+      @umlcraft.imported = "true"
   interface Kind Public
   class Missing Public
 class Missing Public

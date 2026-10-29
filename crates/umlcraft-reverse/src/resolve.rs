@@ -57,16 +57,16 @@ pub(crate) fn type_kind(kind: TypeKind, props: ClassifierProps) -> ElementKind {
 
 pub(crate) fn child_type(model: &Model, owner: Id, name: &str) -> Option<Id> {
     model
-        .children(owner)
-        .iter()
-        .copied()
-        .find(|&c| model.get(c).is_some_and(|e| e.name() == name && is_type(e.kind())))
+        .children_named(owner, name)
+        .into_iter()
+        .find(|&c| model.get(c).is_some_and(|e| is_type(e.kind())))
 }
 
 pub(crate) fn child_package(model: &Model, owner: Id, name: &str) -> Option<Id> {
-    model.children(owner).iter().copied().find(|&c| {
-        model.get(c).is_some_and(|e| e.name() == name && matches!(e.kind(), ElementKind::Package))
-    })
+    model
+        .children_named(owner, name)
+        .into_iter()
+        .find(|&c| model.get(c).is_some_and(|e| matches!(e.kind(), ElementKind::Package)))
 }
 
 /// The package or type at `path` from the root.
@@ -385,12 +385,20 @@ impl<'p> Importer<'p> {
         let (namespace, imports) = (entry.namespace, entry.imports.clone());
         // 3. Single-type imports.
         // `import shop` names the module `shop`, no type.
+        // Not again for a name whose import is being followed now: `using A = B; using B = A;`.
         let single = imports.iter().find(|i| {
-            !i.wildcard && !i.is_static && i.visible_name() == Some(name) && i.path != [name]
+            !i.wildcard
+                && !i.is_static
+                && i.visible_name() == Some(name)
+                && i.path != [name]
+                && !self.importing.iter().any(|n| n == name)
         });
         if let Some(import) = single {
             let path = import.path.clone();
-            return self.resolve(tx, ctx, &path, hint);
+            self.importing.push(name.to_owned());
+            let result = self.resolve(tx, ctx, &path, hint);
+            self.importing.pop();
+            return result;
         }
         // 4. The own package, and where the language says so the ones around it.
         let model = tx.model();

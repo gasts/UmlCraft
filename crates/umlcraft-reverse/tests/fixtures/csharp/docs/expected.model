@@ -8,6 +8,7 @@ package Docs
     operation + Ship() : void
       doc "A block comment."
     association Docs.Order NonNavigable -- Docs.State Navigable Current Public
+      @umlcraft.imported = "true"
   enumeration State Public
     literal Open
       doc "Not paid yet."

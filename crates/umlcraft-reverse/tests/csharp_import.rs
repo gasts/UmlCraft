@@ -320,3 +320,10 @@ fn a_new_import_matches_what_is_there() {
     assert!(shown.contains(&at(model, "Model.Kind")));
     check("reimport", model);
 }
+
+/// Aliases naming each other end in a placeholder instead of overflowing the stack.
+#[test]
+fn alias_cycles_end() {
+    let (doc, _) = fresh("alias_cycle");
+    at(doc.model(), "N.C");
+}

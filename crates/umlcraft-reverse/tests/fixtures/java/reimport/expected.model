@@ -6,6 +6,7 @@ package model
     operation + deposit(amount : int) : void
     operation + deposit(amount : long) : void
     association model.Account NonNavigable -- model.Owner Navigable owner Private
+      @umlcraft.imported = "true"
     realization -> model.Missing
   class Base Package
   class Owner Package

@@ -236,3 +236,34 @@ fn a_new_import_matches_what_is_there() {
     assert!(operations.contains(&ship));
     check("reimport", model);
 }
+
+/// A parameter typed by a name imported under another name matches the operation on a new
+/// import, which therefore keeps its id.
+#[test]
+fn parameters_typed_by_import_aliases_keep_their_operation() {
+    let (mut doc, _) = fresh("alias_param");
+    let add = at(doc.model(), "shop.cart.Cart.add");
+    import(&mut doc, "alias_param");
+    assert_eq!(at(doc.model(), "shop.cart.Cart.add"), add);
+}
+
+/// An import used only to qualify names (`nn.Module` after `import torch.nn as nn`) names a
+/// module: `torch.nn` becomes a package, not also a class.
+#[test]
+fn imports_used_as_qualifiers_make_packages_only() {
+    let (doc, _) = fresh("qualifier_import");
+    let model = doc.model();
+    let named = |owner: Id, name: &str| -> Vec<&'static str> {
+        model
+            .children(owner)
+            .iter()
+            .filter_map(|&c| model.get(c))
+            .filter(|e| e.name() == name)
+            .map(|e| e.kind().type_name())
+            .collect()
+    };
+    assert_eq!(named(at(model, "torch"), "nn"), ["package"]);
+    assert_eq!(named(at(model, "django"), "db"), ["package"]);
+    at(model, "torch.nn.Module");
+    at(model, "django.db.models.Model");
+}

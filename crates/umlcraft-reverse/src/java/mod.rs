@@ -428,8 +428,10 @@ impl<'a> Reader<'a> {
     }
 
     /// Counts the classes declared in a method body, local and anonymous; they are left out.
+    /// Walks with a stack of its own: generated code nests expressions thousands deep.
     fn count_nested_classes(&mut self, body: Node) {
-        for child in named_children(body) {
+        let mut stack = named_children(body);
+        while let Some(child) = stack.pop() {
             match child.kind() {
                 "class_declaration"
                 | "record_declaration"
@@ -442,7 +444,7 @@ impl<'a> Reader<'a> {
                 }
                 _ => {}
             }
-            self.count_nested_classes(child);
+            stack.extend(named_children(child));
         }
     }
 

@@ -6,17 +6,29 @@ package shop
     attribute - note : string
     attribute - count : int
     association shop.Order NonNavigable -- shop.Customer Navigable customer Private
+      @umlcraft.imported = "true"
     association shop.Order NonNavigable -- shop.Customer Navigable payer Private [0..1]
+      @umlcraft.imported = "true"
     association shop.Order NonNavigable -- shop.Customer Navigable reader Private [0..1]
+      @umlcraft.imported = "true"
     association shop.Order NonNavigable -- shop.Line Navigable lines Private [*] {ordered}
+      @umlcraft.imported = "true"
     association shop.Order NonNavigable -- shop.Line Navigable pointers Private [*] {ordered}
+      @umlcraft.imported = "true"
     association shop.Order NonNavigable -- shop.Line Navigable sorted Private [*] {ordered} {unique}
+      @umlcraft.imported = "true"
     association shop.Order NonNavigable -- shop.Line Navigable tags Private [*] {unique}
+      @umlcraft.imported = "true"
     association shop.Order NonNavigable qualifier key : string -- shop.Line Navigable byName Private
+      @umlcraft.imported = "true"
     association shop.Order NonNavigable -- shop.Customer Navigable account Private [1]
+      @umlcraft.imported = "true"
     association shop.Order NonNavigable -- shop.Customer Navigable shared Private [0..1]
+      @umlcraft.imported = "true"
     association shop.Order NonNavigable -- shop.Customer Navigable maybe Private [0..1]
+      @umlcraft.imported = "true"
     association shop.Order NonNavigable -- shop.Line Navigable extra Private [*]
+      @umlcraft.imported = "true"
 package std
   class vector Public
     template T

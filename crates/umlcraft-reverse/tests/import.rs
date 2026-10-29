@@ -502,3 +502,55 @@ fn unwritten_types_give_no_type_and_no_association() {
     doc.edit("import", |tx| apply(tx, JAVA, &parsed)).unwrap();
     assert_eq!(*doc.model(), after);
 }
+
+/// `class Foo` in one file and `interface Foo` in another make one type, of the kind declared
+/// first, instead of aborting the import.
+#[test]
+fn one_name_declared_with_two_kinds_imports() {
+    let (doc, _) = fresh("two_kinds");
+    let model = doc.model();
+    let foo = at(model, "p.Foo");
+    assert_eq!(model.get(foo).unwrap().kind().type_name(), "class");
+    // A second import keeps the result.
+    let mut doc = doc;
+    import(&mut doc, "two_kinds");
+    assert_eq!(at(doc.model(), "p.Foo"), foo);
+}
+
+/// Generated code nests expressions thousands deep; reading it needs no deep stack.
+#[test]
+fn deeply_nested_method_bodies_parse_on_a_small_stack() {
+    let terms: Vec<String> = (0..10_000).map(|i| format!("\"s{i}\"")).collect();
+    let text = format!("class Table {{ String all() {{ return {}; }} }}", terms.join(" + "));
+    let unit = std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(move || {
+            let path = std::path::Path::new("Table.java");
+            umlcraft_reverse::parse_text(JAVA, path, &text, &mut Default::default()).is_ok()
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    assert!(unit);
+}
+
+/// An association drawn by hand between imported classes survives a new import, even with a
+/// navigable end that has a role, as one made from a field would have.
+#[test]
+fn hand_drawn_associations_survive_a_new_import() {
+    let (mut doc, _) = fresh("associations");
+    let (customer, order) = (at(doc.model(), "shop.Customer"), at(doc.model(), "shop.Order"));
+    let drawn = doc
+        .edit("draw", |tx| {
+            let mut kind = ElementKind::association(customer, order);
+            if let ElementKind::Association(p) = &mut kind {
+                p.ends[1].role = "lastOrder".into();
+                p.ends[1].navigability = Navigability::Navigable;
+            }
+            tx.create(customer, umlcraft_model::ElementData::new("", kind))
+        })
+        .unwrap();
+    import(&mut doc, "associations");
+    let ElementKind::Association(p) = doc.model().get(drawn).unwrap().kind() else { panic!() };
+    assert_eq!(p.ends[1].navigability, Navigability::Navigable);
+}

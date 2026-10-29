@@ -8,6 +8,7 @@ package arrays_varargs
     operation ~ old() : int[]
     operation ~ main(args : String[]) : void
     association arrays_varargs.Arrays NonNavigable -- arrays_varargs.Item Navigable items Package [*]
+      @umlcraft.imported = "true"
   class Item Package
 package java
   package lang

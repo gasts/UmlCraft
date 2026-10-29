@@ -10,3 +10,4 @@ class Node Public
   operation + moved(other : Node&&) : Node&&
   operation + fill(values : int[], count : int,  : ...) : void
   association Node NonNavigable -- Node Navigable next Public [0..1]
+    @umlcraft.imported = "true"

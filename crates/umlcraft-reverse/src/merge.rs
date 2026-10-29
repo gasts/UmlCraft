@@ -8,8 +8,8 @@
 //! updated, new ones created, the rest deleted, so presentations and hand-made relationships of
 //! what stays survive a new import. Members defined outside their type (C++'s
 //! `void A::f() {}`) join the type's own: they fill in what its declaration leaves out, or add
-//! an operation it does not declare. Generalizations and realizations follow the sources;
-//! dependencies are left alone.
+//! an operation it does not declare. Generalizations and realizations follow the sources, so
+//! one drawn by hand between types of the sources is deleted; dependencies are left alone.
 
 use std::collections::{HashMap, HashSet};
 
@@ -72,6 +72,8 @@ pub(crate) struct Importer<'p> {
     pub namespace_imports: HashMap<Id, Vec<&'p Import>>,
     /// The re-exported paths being followed now, against cycles.
     pub reexporting: Vec<Vec<String>>,
+    /// The names whose single imports are being followed now, against cycles.
+    pub importing: Vec<String>,
     /// The aliases (`typedef`) each namespace or type declares, by name.
     pub aliases: HashMap<Id, HashMap<&'p str, &'p ir::TypeExpr>>,
     /// The aliases being replaced by their targets now, against cycles.
@@ -93,6 +95,7 @@ impl<'p> Importer<'p> {
             definitions: Vec::new(),
             namespace_imports: HashMap::new(),
             reexporting: Vec::new(),
+            importing: Vec::new(),
             aliases: HashMap::new(),
             expanding: Vec::new(),
         }
@@ -151,13 +154,17 @@ impl<'p> Importer<'p> {
         outer: Option<usize>,
     ) -> Result<()> {
         let existing = child_type(tx.model(), owner, &decl.name);
+        // A name declared with two kinds (`class Foo` in one file, `interface Foo` in another)
+        // keeps the kind of its first declaration in this import, so that a new import of the
+        // same files gives the same element.
+        let declared = |id| self.entries.iter().any(|e| e.id == id && !e.decl.is_forward);
         let id = match existing {
-            Some(id) if decl.is_forward => id,
+            Some(id) if decl.is_forward || declared(id) => id,
             Some(id) => {
                 let current = tx.model().element(id)?.kind().clone();
                 let wanted = type_kind(decl.kind, classifier_props(&current));
                 if std::mem::discriminant(&current) != std::mem::discriminant(&wanted) {
-                    retype(tx, id, wanted)?
+                    self.retype(tx, id, wanted)?
                 } else {
                     id
                 }
@@ -191,19 +198,51 @@ impl<'p> Importer<'p> {
         Ok(())
     }
 
+    /// Replaces type `old` by a new element of `kind` (see [`retype`]) and makes everything
+    /// this import remembers about `old` refer to the new element: earlier declarations of the
+    /// same name with another kind (`class Foo` in one file, `interface Foo` in another), the
+    /// supertypes found so far, aliases and placeholders.
+    fn retype(&mut self, tx: &mut Tx<'_>, old: Id, kind: ElementKind) -> Result<Id> {
+        let new = retype(tx, old, kind)?;
+        for entry in &mut self.entries {
+            if entry.id == old {
+                entry.id = new;
+            }
+        }
+        if let Some(supertypes) = self.supertypes.remove(&old) {
+            self.supertypes.insert(new, supertypes);
+        }
+        for supertype in self.supertypes.values_mut().flatten() {
+            if *supertype == old {
+                *supertype = new;
+            }
+        }
+        if let Some(aliases) = self.aliases.remove(&old) {
+            self.aliases.insert(new, aliases);
+        }
+        if self.placeholders.remove(&old) {
+            self.placeholders.insert(new);
+        }
+        Ok(new)
+    }
+
     /// Brings the types from the sources up to date: their own properties and template
     /// parameters first, then the supertypes of all of them, then their members, so member types
     /// resolve through supertypes declared anywhere in the import.
     pub(crate) fn merge(&mut self, tx: &mut Tx<'_>) -> Result<()> {
         // Several declarations may make one type (C# partial classes, forward declarations).
         let mut by_type: Vec<(Id, Vec<usize>)> = Vec::new();
+        let mut position: HashMap<Id, usize> = HashMap::new();
         for (index, entry) in self.entries.iter().enumerate() {
             if entry.decl.is_forward {
                 continue;
             }
-            match by_type.iter_mut().find(|(id, _)| *id == entry.id) {
-                Some((_, list)) => list.push(index),
-                None => by_type.push((entry.id, vec![index])),
+            match position.get(&entry.id) {
+                Some(&at) => by_type[at].1.push(index),
+                None => {
+                    position.insert(entry.id, by_type.len());
+                    by_type.push((entry.id, vec![index]));
+                }
             }
         }
         // Qualified names, and single-type imports of names the sources use, before any simple
@@ -212,13 +251,14 @@ impl<'p> Importer<'p> {
         let mut used: HashSet<&'p str> = HashSet::new();
         let mut qualified: Vec<(usize, &'p [String])> = Vec::new();
         for (index, entry) in self.entries.iter().enumerate() {
-            named_types(entry.decl, &mut |path| {
-                if let Some(first) = path.first() {
-                    used.insert(first);
+            // An import used only as a qualifier (`nn.Module` after `import torch.nn as nn`)
+            // names a module or namespace; the qualified name makes the right placeholders.
+            named_types(entry.decl, &mut |path| match path {
+                [] => {}
+                [name] => {
+                    used.insert(name);
                 }
-                if path.len() > 1 {
-                    qualified.push((index, path));
-                }
+                _ => qualified.push((index, path)),
             });
         }
         let mut resolved: HashSet<&'p [String]> = HashSet::new();
@@ -271,7 +311,7 @@ impl<'p> Importer<'p> {
             let model = tx.model();
             let owner = self
                 .definition_owner(model, d.namespace, &d.imports, d.owner)
-                .filter(|id| by_type.iter().any(|(t, _)| t == id));
+                .filter(|id| position.contains_key(id));
             // `void ns::f() {}`: a free function of a namespace.
             let skip = if self.is_namespace(model, d.namespace, d.owner) {
                 Skip::FreeMember
@@ -399,11 +439,8 @@ impl<'p> Importer<'p> {
                     && matches!(tx.model().element(target)?.kind(), ElementKind::Class(_))
                     && self.library_type(tx.model(), target).is_none()
                 {
-                    let new =
-                        retype(tx, target, ElementKind::Interface(ClassifierProps::default()))?;
-                    self.placeholders.remove(&target);
-                    self.placeholders.insert(new);
-                    target = new;
+                    let interface = ElementKind::Interface(ClassifierProps::default());
+                    target = self.retype(tx, target, interface)?;
                 }
                 let relation = if self.rules.base_list_by_target {
                     let to_interface =
@@ -622,15 +659,39 @@ impl<'p> Importer<'p> {
     }
 
     /// The signature of `o`, declared in `entry`, with its aliases replaced as the model has
-    /// them.
+    /// them: typedefs by their targets, and names imported under another name
+    /// (`from shop.orders import Order as O`, `using O = Shop.Order;`) by what they import.
     fn signature(&self, model: &Model, entry: usize, o: &Operation) -> Signature {
         let ctx = Ctx { entry, operation: None };
         let types = o
             .parameters
             .iter()
-            .map(|p| simple_text(&self.without_aliases(model, ctx, &p.ty)))
+            .map(|p| {
+                let t = self.without_aliases(model, ctx, &p.ty);
+                simple_text(&self.through_imports(entry, t))
+            })
             .collect();
         ((o.name.clone(), types), o.is_query)
+    }
+
+    /// `t` with each simple name that a single import of `entry` makes visible under another
+    /// name replaced by the imported path.
+    fn through_imports(&self, entry: usize, mut t: ir::TypeExpr) -> ir::TypeExpr {
+        if let TypeName::Named(path) = &t.base
+            && let [name] = &path[..]
+        {
+            let import = self.entries[entry].imports.iter().find(|i| {
+                !i.wildcard
+                    && !i.is_static
+                    && i.visible_name() == Some(name.as_str())
+                    && i.path.last() != Some(name)
+            });
+            if let Some(import) = import {
+                t.base = TypeName::Named(import.path.clone());
+            }
+        }
+        t.arguments = t.arguments.into_iter().map(|a| self.through_imports(entry, a)).collect();
+        t
     }
 
     /// Brings operation `op` up to date with `o`, and with its `definition` outside the type

@@ -9,15 +9,25 @@ package app
     operation + first<E>(list : List<E>) : E
       template E
     association app.App NonNavigable -- app.App.Inner Navigable inner Private
+      @umlcraft.imported = "true"
     association app.App NonNavigable -- app.Base.Shared Navigable shared Private
+      @umlcraft.imported = "true"
     association app.App NonNavigable -- lib.Helper Navigable helper Private
+      @umlcraft.imported = "true"
     association app.App NonNavigable -- lib.missing.Gone Navigable gone Private
+      @umlcraft.imported = "true"
     association app.App NonNavigable -- app.Base Navigable base Private
+      @umlcraft.imported = "true"
     association app.App NonNavigable -- java.util.Date Navigable date Private
+      @umlcraft.imported = "true"
     association app.App NonNavigable -- java.io.File Navigable file Private
+      @umlcraft.imported = "true"
     association app.App NonNavigable -- lib.Helper Navigable qualified Private
+      @umlcraft.imported = "true"
     association app.App NonNavigable -- com.acme.Thing Navigable thing Private
+      @umlcraft.imported = "true"
     association app.App NonNavigable -- Unknown Navigable unknown Private
+      @umlcraft.imported = "true"
   class Base Package
     class Shared Package
 package lib

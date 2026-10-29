@@ -54,7 +54,7 @@ impl Frontend for Cpp {
         parser
             .set_language(&tree_sitter_cpp::LANGUAGE.into())
             .expect("the C++ grammar matches the tree-sitter version");
-        let (text, branches) = preprocessor::first_branches(text);
+        let (text, branches) = preprocessor::first_branches(text, preprocessor::Dialect::Cpp);
         let tree = parser.parse(&text, None).expect("parsing without a timeout always finishes");
         let root = tree.root_node();
         if let Some(error) = first_error(root, &text) {
@@ -125,6 +125,21 @@ fn is_type_specifier(kind: &str) -> bool {
 /// Text with its whitespace runs made single blanks: `unsigned  long` is `unsigned long`.
 fn squeeze(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// An operator's name as one spelling: `operator ==` and `operator ( )` as `operator==` and
+/// `operator()`, `operator new []` as `operator new[]`. Other names stay as they are.
+fn operator_name(name: &str) -> String {
+    let Some(rest) = name.strip_prefix("operator") else { return name.to_owned() };
+    // `operatorX` is an ordinary name.
+    if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+        return name.to_owned();
+    }
+    let symbol = rest.trim_start();
+    let word = symbol.find(|c: char| !c.is_alphanumeric() && c != '_').unwrap_or(symbol.len());
+    let (word, tail) = symbol.split_at(word);
+    let tail: String = tail.split_whitespace().collect();
+    if word.is_empty() { format!("operator{tail}") } else { format!("operator {word}{tail}") }
 }
 
 /// Whether `t` is just the name `name` (`typedef struct Node Node;`).
@@ -278,6 +293,7 @@ impl<'a> Reader<'a> {
             .collect();
         let mut out = Vec::new();
         let mut declared = None;
+        let mut base = None;
         if is_type_specifier(ty.kind()) && ty.child_by_field_name("body").is_some() {
             let anonymous = ty.child_by_field_name("name").is_none();
             let named = declarators
@@ -288,12 +304,14 @@ impl<'a> Reader<'a> {
                 (true, Some(d)) => {
                     let name = self.text(d.name.expect("filtered"));
                     declared = self.type_decl_named(ty, node, Vec::new(), Visibility::Public, name);
+                    // The other declarators refer to it by that name (`*PointPtr`).
+                    base = Some(TypeExpr::named(vec![name.to_owned()]));
                 }
                 (true, None) => self.count(Skip::AnonymousClass),
                 (false, _) => declared = self.type_decl(ty, node, Vec::new(), Visibility::Public),
             }
         }
-        let base = self.type_expr(ty);
+        let base = base.or_else(|| self.type_expr(ty));
         for d in declarators {
             let d = self.declarator(d);
             let Some(name) = d.name else { continue };
@@ -395,6 +413,13 @@ impl<'a> Reader<'a> {
                 _ => continue,
             };
             params.push(param);
+        }
+        // An unnamed parameter (`template <typename>`) still takes its place; it is named by
+        // its position, as the model needs a name.
+        for (i, p) in params.iter_mut().enumerate() {
+            if p.name.is_empty() {
+                p.name = format!("_{}", i + 1);
+            }
         }
         params
     }
@@ -832,7 +857,7 @@ impl<'a> Reader<'a> {
                 self.count(Skip::Specialization);
                 return None;
             }
-            _ => (squeeze(self.text(name)), None),
+            _ => (operator_name(&squeeze(self.text(name))), None),
         };
         let trailing = named_children(function)
             .into_iter()
@@ -1029,6 +1054,30 @@ mod tests {
             "namespace shop.orders\n  public class abstract Order<T, int N = 4> extends public Base extends protected virtual Other<T> (line 4)\n    doc \"An order.\"\n    private field x : int\n    private field y : int*[4]\n    public operation constructor Order(a : int)\n    public operation ~Order()\n    public operation abstract query ship(l : const Line&,  : int = 0) : void\n    public field static readonly max : const int = 3\n    public operation query get() : int\n"
         );
         assert_eq!(skipped.get(&Skip::MethodBody), Some(&1));
+    }
+
+    #[test]
+    fn spells_operators_once_and_names_what_is_unnamed() {
+        let (dump, _) = parse(
+            "template <typename, class U> class A {
+  bool operator ==(const A&);
+  bool operator==(int);
+  void* operator new [] (unsigned long);
+};
+typedef struct { int x; } Point, *PointPtr;
+",
+        );
+        pretty_assertions::assert_eq!(
+            dump,
+            "public class A<_1, U> (line 1)
+  private operation operator==( : const A&) : bool
+  private operation operator==( : int) : bool
+  private operation operator new[]( : unsigned long) : void*
+public struct Point (line 6)
+  public field x : int
+alias PointPtr = Point*
+"
+        );
     }
 
     #[test]

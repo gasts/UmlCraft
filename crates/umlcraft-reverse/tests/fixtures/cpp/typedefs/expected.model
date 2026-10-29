@@ -7,10 +7,15 @@ class Size Public
 class Store Public
   attribute + id : unsigned long
   association Store NonNavigable -- Item Navigable items Public [*] {ordered}
+    @umlcraft.imported = "true"
   association Store NonNavigable -- Item Navigable best Public [1]
+    @umlcraft.imported = "true"
   association Store NonNavigable -- Item Navigable raw Public [0..1]
+    @umlcraft.imported = "true"
   association Store NonNavigable -- Point Navigable origin Public
+    @umlcraft.imported = "true"
   association Store NonNavigable -- Size Navigable size Public
+    @umlcraft.imported = "true"
 package std
   class vector Public
     template T

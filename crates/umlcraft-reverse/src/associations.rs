@@ -13,19 +13,32 @@
 //! class, without a multiplicity. The attribute is deleted.
 //!
 //! On a new import an association with the same role between the same classes is reused.
-//! Navigable ends from a type of the sources whose field is gone are made non-navigable, and an
-//! association left without any navigable end is deleted.
+//! Associations the import made or reused carry the tagged value [`IMPORTED_TAG`]; of those,
+//! navigable ends from a type of the sources whose field is gone are made non-navigable, and an
+//! association left without any navigable end is deleted. Associations drawn by hand are left
+//! alone.
 
 use std::collections::{HashMap, HashSet};
 
 use umlcraft_model::{
     AssociationEnd, AssociationProps, ElementData, ElementKind, Id, Model, Multiplicity,
-    Navigability, Qualifier, Result, Tx, TypeRef, Visibility,
+    Navigability, Qualifier, Result, TaggedValue, Tx, TypeRef, Visibility,
 };
 
 use crate::lang::Container;
 use crate::merge::Importer;
 use crate::resolve::is_type;
+
+/// Marks associations made from fields, which a new import may change or delete.
+pub const IMPORTED_TAG: &str = "umlcraft.imported";
+
+fn imported_tag() -> TaggedValue {
+    TaggedValue { key: IMPORTED_TAG.to_owned(), value: "true".to_owned() }
+}
+
+fn is_imported(data: &ElementData) -> bool {
+    data.tagged_values.iter().any(|t| t.key == IMPORTED_TAG)
+}
 
 /// What an attribute's type makes of the far end.
 struct Target {
@@ -90,6 +103,9 @@ impl Importer<'_> {
             let association = match existing {
                 Some((id, far_index)) => {
                     tx.update(id, |d| {
+                        if !is_imported(d) {
+                            d.tagged_values.push(imported_tag());
+                        }
                         if let ElementKind::Association(p) = &mut d.kind {
                             let near_index = 1 - far_index;
                             let keep_near = &p.ends[near_index];
@@ -110,7 +126,9 @@ impl Importer<'_> {
                 None => {
                     let kind = ElementKind::Association(AssociationProps { ends: [near, far] });
                     self.report.associations += 1;
-                    tx.create(owner, ElementData::new("", kind))?
+                    let mut data = ElementData::new("", kind);
+                    data.tagged_values.push(imported_tag());
+                    tx.create(owner, data)?
                 }
             };
             used.insert(association);
@@ -121,7 +139,7 @@ impl Importer<'_> {
         let model = tx.model();
         let stale: Vec<Id> = model
             .elements()
-            .filter(|e| !used.contains(&e.id()))
+            .filter(|e| !used.contains(&e.id()) && is_imported(e.data()))
             .filter_map(|e| match e.kind() {
                 ElementKind::Association(p) => p
                     .ends

@@ -4,12 +4,19 @@ package app
   package views
     class View Public
       association app.views.View NonNavigable -- shop.orders.Order Navigable order Public
+        @umlcraft.imported = "true"
       association app.views.View NonNavigable -- shop.lines.Line Navigable line Public
+        @umlcraft.imported = "true"
       association app.views.View NonNavigable -- shop.orders.Order Navigable aliased Public
+        @umlcraft.imported = "true"
       association app.views.View NonNavigable -- shop.orders.Order Navigable qualified Public
+        @umlcraft.imported = "true"
       association app.views.View NonNavigable -- shop.lines.Line Navigable checked Public
+        @umlcraft.imported = "true"
       association app.views.View NonNavigable -- app.helpers.Helper Navigable helper Public
+        @umlcraft.imported = "true"
       association app.views.View NonNavigable -- Missing Navigable missing Public
+        @umlcraft.imported = "true"
 package shop
   package lines
     class Line Public

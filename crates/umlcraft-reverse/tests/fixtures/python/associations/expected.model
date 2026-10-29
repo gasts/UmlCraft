@@ -8,14 +8,23 @@ package associations
     attribute + unannotated = Customer()
     operation + __init__()
     association associations.Order NonNavigable -- associations.Customer Navigable customer Public
+      @umlcraft.imported = "true"
     association associations.Order NonNavigable -- associations.Customer Navigable payer Public [0..1]
+      @umlcraft.imported = "true"
     association associations.Order NonNavigable -- associations.Customer Navigable reader Public [0..1]
+      @umlcraft.imported = "true"
     association associations.Order NonNavigable -- associations.Line Navigable lines Public [*] {ordered}
+      @umlcraft.imported = "true"
     association associations.Order NonNavigable -- associations.Line Navigable legacy Public [*] {ordered}
+      @umlcraft.imported = "true"
     association associations.Order NonNavigable -- associations.Line Navigable queue Public [*] {ordered}
+      @umlcraft.imported = "true"
     association associations.Order NonNavigable -- associations.Line Navigable tags Public [*] {unique}
+      @umlcraft.imported = "true"
     association associations.Order NonNavigable qualifier key : str -- associations.Line Navigable by_name Public
+      @umlcraft.imported = "true"
     association associations.Order NonNavigable qualifier key : str -- associations.Line Navigable old_map Public
+      @umlcraft.imported = "true"
 package collections
   class deque Public
     template T

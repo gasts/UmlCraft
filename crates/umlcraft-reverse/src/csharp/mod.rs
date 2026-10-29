@@ -50,7 +50,7 @@ impl Frontend for CSharp {
         parser
             .set_language(&tree_sitter_c_sharp::LANGUAGE.into())
             .expect("the C# grammar matches the tree-sitter version");
-        let (text, branches) = preprocessor::first_branches(text);
+        let (text, branches) = preprocessor::first_branches(text, preprocessor::Dialect::CSharp);
         let tree = parser.parse(&text, None).expect("parsing without a timeout always finishes");
         let root = tree.root_node();
         if let Some(error) = first_error(root, &text) {

@@ -3,17 +3,27 @@ package Acme
     class Shop Public
       attribute - opened : DateTime
       association Acme.App.Shop NonNavigable -- Acme.Lib.Money Navigable price Private
+        @umlcraft.imported = "true"
       association Acme.App.Shop NonNavigable -- Acme.Lib.Text.Formatter Navigable formatter Private
+        @umlcraft.imported = "true"
       association Acme.App.Shop NonNavigable -- Acme.Lib.Text.Formatter Navigable aliased Private
+        @umlcraft.imported = "true"
       association Acme.App.Shop NonNavigable -- Acme.Lib.Customer.Address Navigable address Private
+        @umlcraft.imported = "true"
       association Acme.App.Shop NonNavigable -- Acme.Lib.Text.Formatter Navigable second Private
+        @umlcraft.imported = "true"
       association Acme.App.Shop NonNavigable -- Acme.Lib.Money Navigable third Private
+        @umlcraft.imported = "true"
       association Acme.App.Shop NonNavigable -- Acme.Lib.Money Navigable prices Private [*] {ordered}
+        @umlcraft.imported = "true"
       association Acme.App.Shop NonNavigable -- Missing Navigable missing Private
+        @umlcraft.imported = "true"
       association Acme.App.Shop NonNavigable -- Other.Things.Widget Navigable widget Private
+        @umlcraft.imported = "true"
     package Inner
       class Clerk Public
         association Acme.App.Inner.Clerk NonNavigable -- Acme.App.Shop Navigable shop Private
+          @umlcraft.imported = "true"
   package Lib
     class Money Public
     class Customer Public

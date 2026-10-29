@@ -2,11 +2,14 @@ package Shop
   package Delivery
     class Parcel Public
       association Shop.Delivery.Parcel NonNavigable -- Shop.Catalog Navigable catalog Private
+        @umlcraft.imported = "true"
   class Catalog Public
   package Orders
     class Order Public
       association Shop.Orders.Order NonNavigable -- Shop.Catalog Navigable catalog Private
+        @umlcraft.imported = "true"
   package Billing
     class Invoice Public
       association Shop.Billing.Invoice NonNavigable -- Shop.Orders.Order Navigable order Private
+        @umlcraft.imported = "true"
 class Global Public

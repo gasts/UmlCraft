@@ -11,7 +11,9 @@ package Arrays
     operation + Fill(inout start : int, out end : int, step : int, items : Item[]) : void
     operation + Defaults(count : int = 1, name : string = "x") : void
     association Arrays.Grid NonNavigable -- Arrays.Item Navigable jagged Private [*]
+      @umlcraft.imported = "true"
     association Arrays.Grid NonNavigable -- Arrays.Item Navigable next Private [0..1]
+      @umlcraft.imported = "true"
   class Item Public
 package System
   class String Public
