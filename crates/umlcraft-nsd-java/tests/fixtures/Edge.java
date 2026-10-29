@@ -64,6 +64,41 @@ public class Edge {
         return x;
     }
 
+    /**/
+    void braced(int a) {
+        switch (a) {
+            case 1: {
+                value = 1;
+                break;
+            }
+            case 2:
+                value = 2;
+                break;
+        }
+    }
+
+    void onlyDefault(int a) {
+        switch (a) {
+            default:
+                value = a;
+        }
+        switch (a) {
+        }
+        value = switch (a) {
+            default -> 3;
+        };
+    }
+
+    void unions(java.io.Reader r) {
+        try {
+            r.read();
+        } catch (java.io.IOException|IllegalStateException e) {
+            reset();
+        } catch (RuntimeException e) {
+            reset();
+        }
+    }
+
     static class Nested {
         enum Mode {
             ON, OFF;

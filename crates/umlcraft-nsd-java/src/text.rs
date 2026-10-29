@@ -54,9 +54,9 @@ pub fn comment(node: Node, src: &str) -> Vec<String> {
 /// A `/* … */` or `/** … */` comment's lines without the delimiters, the stars at line starts
 /// and blank lines at either end.
 pub fn block_comment(text: &str) -> Vec<String> {
-    let inner = text.strip_prefix("/*").unwrap_or(text);
+    let inner = text.strip_suffix("*/").unwrap_or(text);
+    let inner = inner.strip_prefix("/*").unwrap_or(inner);
     let inner = inner.strip_prefix('*').unwrap_or(inner);
-    let inner = inner.strip_suffix("*/").unwrap_or(inner);
     let lines: Vec<String> = inner
         .split('\n')
         .map(|l| l.trim_start().trim_start_matches('*').trim_start_matches([' ', '\t']).trim_end())
@@ -98,6 +98,8 @@ mod tests {
             ["Creates.", "", "@param a x"]
         );
         assert_eq!(block_comment("/* one */"), ["one"]);
+        assert!(block_comment("/**/").is_empty());
+        assert!(block_comment("/***/").is_empty());
     }
 
     #[test]

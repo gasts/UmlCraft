@@ -144,13 +144,13 @@ impl Builder<'_> {
                 if let Some((name, switch)) = declared_switch(node, src) {
                     let declaration = format!("{} {name};", type_text(node, src));
                     out.push(self.element(ElementKind::Instruction, &[declaration]));
-                    out.push(self.switch(switch, Some(Sink::Assign(name))));
+                    out.extend(self.switch(switch, Some(Sink::Assign(name))));
                 } else {
                     out.push(self.instruction(node));
                 }
             }
-            "expression_statement" => out.push(self.expression_statement(node)),
-            "switch_expression" => out.push(self.switch(node, None)),
+            "expression_statement" => out.extend(self.expression_statement(node)),
+            "switch_expression" => out.extend(self.switch(node, None)),
             "if_statement" => out.push(self.if_statement(node)),
             "for_statement" => self.for_statement(node, out),
             "enhanced_for_statement" => {
@@ -187,7 +187,7 @@ impl Builder<'_> {
                 if node.named_child(0).is_some_and(|v| v.kind() == "switch_expression") =>
             {
                 let switch = node.named_child(0).expect("checked above");
-                out.push(self.switch(switch, Some(Sink::Return)));
+                out.extend(self.switch(switch, Some(Sink::Return)));
             }
             "return_statement" | "throw_statement" | "break_statement" => {
                 out.push(self.element(ElementKind::Jump, &without_semicolon(lines(node, src))));
@@ -233,15 +233,15 @@ impl Builder<'_> {
 
     /// Calls of the class's own methods (`f(x);`, `this.f(x);`) become call elements; a
     /// `switch` assigned to a variable becomes a case element.
-    fn expression_statement(&mut self, node: Node) -> Element {
+    fn expression_statement(&mut self, node: Node) -> Vec<Element> {
         let src = self.src;
-        let Some(expr) = node.named_child(0) else { return self.instruction(node) };
+        let Some(expr) = node.named_child(0) else { return vec![self.instruction(node)] };
         match expr.kind() {
             "method_invocation" => {
                 let object = expr.child_by_field_name("object");
                 let own = object.is_none_or(|o| o.kind() == "this");
                 if own {
-                    return self.element(ElementKind::Call, &lines(node, src));
+                    return vec![self.element(ElementKind::Call, &lines(node, src))];
                 }
             }
             "assignment_expression" => {
@@ -259,9 +259,9 @@ impl Builder<'_> {
         }
         if node.has_error() {
             self.note(node, NoteKind::SyntaxError);
-            return self.stand_in(node);
+            return vec![self.stand_in(node)];
         }
-        self.instruction(node)
+        vec![self.instruction(node)]
     }
 
     fn if_statement(&mut self, node: Node) -> Element {
@@ -353,8 +353,9 @@ impl Builder<'_> {
 
     /// A switch statement or expression as a case element: one branch per case (labels of a
     /// shared body joined with `, `), the default last (`%` when there is none). A case that
-    /// runs on gets the following cases' statements copied, as Structorizer does.
-    fn switch(&mut self, node: Node, sink: Option<Sink>) -> Element {
+    /// runs on gets the following cases' statements copied, as Structorizer does. A switch
+    /// without cases is just its default's statements (or nothing).
+    fn switch(&mut self, node: Node, sink: Option<Sink>) -> Vec<Element> {
         let src = self.src;
         let discriminator = node
             .child_by_field_name("condition")
@@ -381,6 +382,9 @@ impl Builder<'_> {
                 labels.extend(g.labels);
                 g.labels = labels;
                 g.default |= c.default;
+            }
+            if !g.rule {
+                g.statements = unbraced(g.statements);
             }
             if g.statements.is_empty() && !g.rule {
                 carried = Some(g);
@@ -415,6 +419,21 @@ impl Builder<'_> {
         }
         let default = merged.iter().position(|g| g.default);
         let mut order: Vec<usize> = (0..merged.len()).filter(|&i| Some(i) != default).collect();
+        if order.is_empty() {
+            let Some(i) = default else { return Vec::new() };
+            if let Some(sink) = sink.clone() {
+                self.sinks.push(sink);
+            }
+            let elements = if merged[i].rule && sink.is_some() {
+                self.rule_value(&bodies[i])
+            } else {
+                self.statements(&bodies[i])
+            };
+            if sink.is_some() {
+                self.sinks.pop();
+            }
+            return elements;
+        }
         let mut text = vec![discriminator];
         text.extend(order.iter().map(|&i| merged[i].labels.join(", ")));
         match default {
@@ -439,7 +458,7 @@ impl Builder<'_> {
         if sink.is_some() {
             self.sinks.pop();
         }
-        e
+        vec![e]
     }
 
     /// The body of a `case … ->` in a switch expression: a value, a block or a throw.
@@ -489,7 +508,7 @@ impl Builder<'_> {
                 let name = catch_name(*only, src);
                 let text = vec![
                     format!("{name} instanceof"),
-                    catch_type(*only, src).replace(" | ", ", ").replace('|', ", "),
+                    union_labels(&catch_type(*only, src)),
                     "%".to_owned(),
                 ];
                 let mut case = self.element(ElementKind::Case, &text);
@@ -500,7 +519,7 @@ impl Builder<'_> {
                 // Several catches: one case on the exception's type, each branch naming the
                 // exception as its catch does.
                 let mut text = vec!["exception instanceof".to_owned()];
-                text.extend(several.iter().map(|c| catch_type(*c, src).replace(" | ", ", ")));
+                text.extend(several.iter().map(|c| union_labels(&catch_type(*c, src))));
                 text.push("%".to_owned());
                 let mut case = self.element(ElementKind::Case, &text);
                 for (i, c) in several.iter().enumerate() {
@@ -557,6 +576,27 @@ impl<'t> Group<'t> {
         }
         Group { node, labels, default, rule: node.kind() == "switch_rule", statements }
     }
+}
+
+/// A case's statements with a closing block opened up (`case 1: { f(); break; }`), so that
+/// its `break` ends the case like an unbraced one.
+fn unbraced(mut statements: Vec<Node>) -> Vec<Node> {
+    let last =
+        statements.iter().rposition(|s| !matches!(s.kind(), "line_comment" | "block_comment"));
+    if let Some(at) = last
+        && statements[at].kind() == "block"
+    {
+        let block = statements.remove(at);
+        let mut cursor = block.walk();
+        let inner: Vec<Node> = block.named_children(&mut cursor).collect();
+        statements.splice(at..at, unbraced(inner));
+    }
+    statements
+}
+
+/// `A | B` (spaced or not) as case labels `A, B`.
+fn union_labels(types: &str) -> String {
+    types.split('|').map(str::trim).collect::<Vec<_>>().join(", ")
 }
 
 /// Whether the statements leave the case (comments aside).
