@@ -1307,6 +1307,26 @@ fn layout_activity_node(
 
 /// Depth of a deployment node's cube.
 const CUBE_DEPTH: f32 = 4.0;
+/// Astah's boxes (classes, objects, components, nodes): at least 10 beside the widest text, 4
+/// above and below the content of each compartment.
+const BOX_PAD_X: f32 = 10.0;
+const BOX_PAD_Y: f32 = 4.0;
+/// The smallest box Astah draws for these.
+const BOX_MIN_WIDTH: f32 = 40.0;
+const BOX_MIN_HEIGHT: f32 = 30.0;
+
+/// The stereotype rows of a box's header: one per non-empty set, such as an element's own and
+/// then its classifier's.
+fn stereotype_lines<'a>(
+    sets: impl IntoIterator<Item = &'a Vec<String>>,
+    size: f32,
+    id: Id,
+) -> Vec<Line> {
+    sets.into_iter()
+        .filter(|s| !s.is_empty())
+        .map(|s| Line::new(stereotype_text(s), size, RowRole::Stereotype, Some(id)))
+        .collect()
+}
 
 /// Components, artifacts, nodes and instances as Astah draws them: a box (or cube) with
 /// stereotypes and the name at the top. `instance_of` is set for instances, which show
@@ -1325,23 +1345,11 @@ fn layout_box(
     bounds: Rect,
     measure: &dyn TextMeasure,
 ) -> (Rect, Figure, Vec<Row>) {
-    // Astah's boxes leave at least 10 beside the widest text.
-    const MIN_PAD_X: f32 = 10.0;
-    const PAD_Y: f32 = 4.0;
     let id = e.id();
     let classifier = instance_of.flatten().and_then(|c| model.get(c));
-    let mut lines = Vec::new();
     let own = Some(&e.data().stereotypes);
-    for stereotypes in [own, classifier.map(|c| &c.data().stereotypes)].into_iter().flatten() {
-        if !stereotypes.is_empty() {
-            lines.push(Line::new(
-                stereotype_text(stereotypes),
-                FONT_SIZE,
-                RowRole::Stereotype,
-                Some(id),
-            ));
-        }
-    }
+    let base = classifier.map(|c| &c.data().stereotypes);
+    let mut lines = stereotype_lines([own, base].into_iter().flatten(), FONT_SIZE, id);
     let mut name = match instance_of {
         Some(classifier) => {
             let (text, _) = instance_text(model, e, classifier, style);
@@ -1372,15 +1380,15 @@ fn layout_box(
     let r = Rect::new(
         bounds.x,
         bounds.y,
-        bounds.width.max(widest + 2.0 * MIN_PAD_X + icon_room).max(40.0),
-        bounds.height.max(text_h + 2.0 * PAD_Y).max(30.0),
+        bounds.width.max(widest + 2.0 * BOX_PAD_X + icon_room).max(BOX_MIN_WIDTH),
+        bounds.height.max(text_h + 2.0 * BOX_PAD_Y).max(BOX_MIN_HEIGHT),
     );
     let front = r;
     let rows = lines
         .into_iter()
         .enumerate()
         .map(|(i, line)| {
-            let y = front.y + PAD_Y + h * i as f32;
+            let y = front.y + BOX_PAD_Y + h * i as f32;
             line.place(Rect::new(front.x, y, front.width - icon_room, h), LabelAlign::Center)
         })
         .collect();
@@ -1430,23 +1438,13 @@ fn layout_object(
     bounds: Rect,
     measure: &dyn TextMeasure,
 ) -> (Rect, Figure, Vec<Row>) {
-    const PAD_X: f32 = 10.0;
-    const PAD_Y: f32 = 4.0;
+    const PAD_X: f32 = BOX_PAD_X;
+    const PAD_Y: f32 = BOX_PAD_Y;
     let id = e.id();
-    let mut header = Vec::new();
     // Its own stereotypes, then its class's, as Astah shows them.
     let own = Some(&e.data().stereotypes);
     let base = classifier.and_then(|c| model.get(c)).map(|c| &c.data().stereotypes);
-    for stereotypes in [own, base].into_iter().flatten() {
-        if !stereotypes.is_empty() {
-            header.push(Line::new(
-                stereotype_text(stereotypes),
-                FONT_SIZE,
-                RowRole::Stereotype,
-                Some(id),
-            ));
-        }
-    }
+    let mut header = stereotype_lines([own, base].into_iter().flatten(), FONT_SIZE, id);
     let (text, colon_first) = instance_text(model, e, classifier, style);
     let mut name = Line::new(text, FONT_SIZE, RowRole::Name, Some(id));
     name.underline = true;
@@ -1484,14 +1482,14 @@ fn layout_object(
             .chain(&slots)
             .map(|l| l.width(measure).max(l.width_of(&l.text, measure, true)))
             .fold(0.0, f32::max);
-        let width = (widest + 2.0 * PAD_X).max(40.0);
+        let width = (widest + 2.0 * PAD_X).max(BOX_MIN_WIDTH);
         Rect::new(bounds.center().x - width / 2.0, bounds.y, width, bounds.height.max(content_h))
     } else {
         let widest = header.iter().chain(&slots).map(|l| l.width(measure)).fold(0.0, f32::max);
         Rect::new(
             bounds.x,
             bounds.y,
-            bounds.width.max(widest + 2.0 * PAD_X).max(40.0),
+            bounds.width.max(widest + 2.0 * PAD_X).max(BOX_MIN_WIDTH),
             bounds.height.max(content_h),
         )
     };
@@ -1569,8 +1567,8 @@ fn layout_state(
     let r = Rect::new(
         bounds.x,
         bounds.y,
-        bounds.width.max(widest + 2.0 * PAD_X).max(40.0).max(min_width),
-        bounds.height.max(header + body + min_height).max(30.0),
+        bounds.width.max(widest + 2.0 * PAD_X).max(BOX_MIN_WIDTH).max(min_width),
+        bounds.height.max(header + body + min_height).max(BOX_MIN_HEIGHT),
     );
     // As in Astah, the name heads every state, above a line.
     let mut rows = vec![name.place(Rect::new(r.x, r.y + PAD_Y, r.width, h), LabelAlign::Center)];
@@ -1882,10 +1880,9 @@ fn layout_classifier(
     fit: bool,
     measure: &dyn TextMeasure,
 ) -> (Rect, Figure, Vec<Row>) {
-    // Astah's metrics: 10 px left and right of the texts, 4 px above and below the content of
-    // each compartment; an empty compartment is 8 px high.
-    const PAD_X: f32 = 10.0;
-    const PAD_Y: f32 = 4.0;
+    // An empty compartment is 2 × `BOX_PAD_Y` high.
+    const PAD_X: f32 = BOX_PAD_X;
+    const PAD_Y: f32 = BOX_PAD_Y;
     let id = e.id();
     let kind = e.kind();
     let size = style.font_size.unwrap_or(FONT_SIZE);
@@ -1897,10 +1894,7 @@ fn layout_classifier(
         _ => Vec::new(),
     };
     stereotypes.extend(e.data().stereotypes.iter().cloned());
-    let mut header = Vec::new();
-    if !stereotypes.is_empty() {
-        header.push(Line::new(stereotype_text(&stereotypes), size, RowRole::Stereotype, Some(id)));
-    }
+    let mut header = stereotype_lines([&stereotypes], size, id);
     let mut name = Line::new(crate::member::display_name(model, id), size, RowRole::Name, Some(id));
     name.bold = true;
     name.italic = matches!(kind, ElementKind::Class(p) if p.is_abstract);
@@ -3808,7 +3802,7 @@ mod tests {
         };
         let (open, submitted) = (named(doc.model(), "Open"), named(doc.model(), "Submitted"));
         doc.edit("regions", |tx| {
-            crate::state_edit::add_region(tx, open, false)?;
+            crate::state_edit::add_region(tx, open, false, None)?;
             crate::state_edit::add_internal_transition(tx, submitted, "retry")?;
             tx.update(submitted, |d| d.name = "Submitted".into())
         })

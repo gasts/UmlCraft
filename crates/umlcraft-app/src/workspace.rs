@@ -404,7 +404,8 @@ impl Workspace {
     /// if `vertical`) and selects the new region.
     pub fn add_region(&mut self, state: Id, vertical: bool) {
         let label = t!("edit.create").to_string();
-        let result = self.edit(label, |tx| state_edit::add_region(tx, state, vertical));
+        let diagram = self.active_diagram;
+        let result = self.edit(label, |tx| state_edit::add_region(tx, state, vertical, diagram));
         if let Some(region) = self.report(result) {
             self.selected_element = Some(region);
         }

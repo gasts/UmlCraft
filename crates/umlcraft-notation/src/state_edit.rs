@@ -82,8 +82,10 @@ pub fn reparent_vertices(tx: &mut Tx<'_>, diagram: Id, presentations: &[Id]) -> 
 
 /// Divides `state` into one more region and returns it. A state without regions gets two, laid
 /// out as `vertical` says (side by side) on every diagram that shows it, and its substates go
-/// into the one they are drawn in. Further regions take half of the last one.
-pub fn add_region(tx: &mut Tx<'_>, state: Id, vertical: bool) -> Result<Id> {
+/// into the one they are drawn in on `diagram`, the one the user divides it on (else the first
+/// diagram that shows it): a substate is in one region, however other diagrams draw it.
+/// Further regions take half of the last one.
+pub fn add_region(tx: &mut Tx<'_>, state: Id, vertical: bool, diagram: Option<Id>) -> Result<Id> {
     let model = tx.model();
     let existing = regions_of(model, state);
     let shown = model.shown_on(state);
@@ -129,7 +131,10 @@ pub fn add_region(tx: &mut Tx<'_>, state: Id, vertical: bool) -> Result<Id> {
         set_layout(tx, diagram, presentation, layout)?;
     }
     if existing.is_empty() {
-        for (diagram, _) in shown {
+        let decides = diagram
+            .filter(|d| shown.iter().any(|(s, _)| s == d))
+            .or(shown.first().map(|(d, _)| *d));
+        if let Some(diagram) = decides {
             redistribute(tx, diagram, state)?;
         }
     }
@@ -307,7 +312,7 @@ mod tests {
             (named(model, "Open"), named(model, "Empty"), named(model, "Filled"));
         let (diagram, node) = node_of(model, open);
         // Side by side: the line halves the state, between "Empty" and "Filled".
-        let second = doc.edit("divide", |tx| add_region(tx, open, true)).unwrap();
+        let second = doc.edit("divide", |tx| add_region(tx, open, true, None)).unwrap();
         let model = doc.model();
         model.check().unwrap();
         let regions = regions_of(model, open);
@@ -328,7 +333,7 @@ mod tests {
         assert_eq!(p.regions().unwrap().separators, vec![250.0]);
 
         // A third region halves the last one.
-        let third = doc.edit("third", |tx| add_region(tx, open, false)).unwrap();
+        let third = doc.edit("third", |tx| add_region(tx, open, false, None)).unwrap();
         let model = doc.model();
         let p = model.view(diagram).unwrap().get(node).unwrap();
         assert_eq!(p.regions().unwrap().separators, vec![250.0, 275.0]);
@@ -349,10 +354,46 @@ mod tests {
     }
 
     #[test]
+    fn the_diagram_divided_on_decides_where_substates_go() {
+        let (mut doc, ids) = order_system();
+        let model = doc.model();
+        let (open, empty, filled) =
+            (named(model, "Open"), named(model, "Empty"), named(model, "Filled"));
+        let machine = model.get(ids.state_diagram).unwrap().owner().unwrap();
+        // A second diagram draws "Empty" and "Filled" the other way round.
+        let second = doc
+            .edit("second", |tx| {
+                let kind = ElementKind::diagram(umlcraft_model::DiagramKind::StateMachine);
+                let d = tx.create(machine, ElementData::new("other", kind))?;
+                tx.add_node(d, Some(open), Rect::new(100.0, 60.0, 300.0, 170.0))?;
+                tx.add_node(d, Some(empty), Rect::new(290.0, 120.0, 80.0, 40.0))?;
+                tx.add_node(d, Some(filled), Rect::new(160.0, 120.0, 80.0, 40.0))?;
+                Ok(d)
+            })
+            .unwrap();
+        // Divided on the first one: its drawing counts, not the one shown last.
+        let first = ids.state_diagram;
+        assert_eq!(doc.model().shown_on(open).last().map(|(d, _)| *d), Some(second));
+        doc.edit("divide", |tx| add_region(tx, open, true, Some(first))).unwrap();
+        let model = doc.model();
+        model.check().unwrap();
+        let regions = regions_of(model, open);
+        assert_eq!(model.get(empty).unwrap().owner(), Some(regions[0]));
+        assert_eq!(model.get(filled).unwrap().owner(), Some(regions[1]));
+        // Undone and divided on the second one, it is the other way round.
+        doc.undo();
+        doc.edit("divide", |tx| add_region(tx, open, true, Some(second))).unwrap();
+        let model = doc.model();
+        let regions = regions_of(model, open);
+        assert_eq!(model.get(filled).unwrap().owner(), Some(regions[0]));
+        assert_eq!(model.get(empty).unwrap().owner(), Some(regions[1]));
+    }
+
+    #[test]
     fn new_states_land_in_the_region_clicked() {
         let (mut doc, ids) = order_system();
         let open = named(doc.model(), "Open");
-        doc.edit("divide", |tx| add_region(tx, open, false)).unwrap();
+        doc.edit("divide", |tx| add_region(tx, open, false, None)).unwrap();
         let regions = regions_of(doc.model(), open);
         // One below the other: the line lies halfway below the name, at about 156.
         let d = ids.state_diagram;
@@ -389,7 +430,7 @@ mod tests {
         doc.edit("small", |tx| {
             tx.set_bounds(diagram, node, Rect::new(680.0, 60.0, 100.0, 40.0))?;
             for _ in 0..4 {
-                add_region(tx, shipped, false)?;
+                add_region(tx, shipped, false, None)?;
             }
             Ok(())
         })

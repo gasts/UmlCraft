@@ -261,7 +261,7 @@ fn sample() -> Document {
         let labeling = tx.create(packing, state("Labeling"))?;
         tx.add_node(d, Some(wrapping), Rect::new(500.0, 320.0, 80.0, 40.0))?;
         tx.add_node(d, Some(labeling), Rect::new(660.0, 320.0, 80.0, 40.0))?;
-        umlcraft_notation::state_edit::add_region(tx, packing, true)?;
+        umlcraft_notation::state_edit::add_region(tx, packing, true, None)?;
         umlcraft_notation::state_edit::move_region_line(tx, d, n_packing, 0, 150.0)?;
         let submitted = tx.model().elements().find(|e| e.name() == "Submitted").unwrap().id();
         let retry = umlcraft_notation::state_edit::add_internal_transition(tx, submitted, "retry")?;
