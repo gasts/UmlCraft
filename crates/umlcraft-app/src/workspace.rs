@@ -972,8 +972,18 @@ impl Workspace {
     /// Changes an element's data as one undo step, e.g. from the properties panel.
     pub fn update_element(&mut self, id: Id, f: impl FnOnce(&mut ElementData)) {
         let label = t!("edit.properties").to_string();
+        let covered = |model: &umlcraft_model::Model| match model.get(id).map(|e| e.kind()) {
+            Some(ElementKind::CombinedFragment(p)) => Some(p.covered.clone()),
+            Some(ElementKind::InteractionUse(p)) => Some(p.covered.clone()),
+            _ => None,
+        };
+        let before = covered(self.doc.model());
         let result = self.edit(label, |tx| {
             tx.update(id, f)?;
+            // Frames span the lifelines they cover once the user changes them.
+            if covered(tx.model()) != before {
+                umlcraft_notation::sequence_edit::cover(tx, id)?;
+            }
             // A message's sort decides how bars are fitted around it.
             let sequence = |d: &Id| {
                 tx.model().get(*d).and_then(|e| e.kind().as_diagram())

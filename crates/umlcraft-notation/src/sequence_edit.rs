@@ -422,6 +422,47 @@ pub fn add_fragment(
     Ok(id)
 }
 
+/// The lifelines a combined fragment or interaction use covers, by its `covered` list.
+fn covered_of(model: &Model, element: Id) -> Vec<Id> {
+    match model.get(element).map(|e| e.kind()) {
+        Some(ElementKind::CombinedFragment(p)) => p.covered.clone(),
+        Some(ElementKind::InteractionUse(p)) => p.covered.clone(),
+        _ => Vec::new(),
+    }
+}
+
+/// Spans the frames of the combined fragment or interaction use `element` across the lifelines
+/// it now covers (all of them when it names none), on every diagram that shows it. Called when
+/// the user changes what it covers; imported frames otherwise keep their width.
+pub fn cover(tx: &mut Tx<'_>, element: Id) -> Result<()> {
+    let model = tx.model();
+    let covered = covered_of(model, element);
+    let mut spans = Vec::new();
+    for (diagram, view) in model.views() {
+        let Some(p) = view.presentations_of(element).next() else { continue };
+        let g = Geometry::read(model, diagram)?;
+        let mut lanes: Vec<&Lane> =
+            covered.iter().filter_map(|&l| lane_of(view, l)).filter_map(|l| g.lane(l)).collect();
+        if lanes.is_empty() {
+            lanes = g.lanes.iter().collect();
+        }
+        let left = lanes.iter().map(|l| l.head.x).reduce(f32::min);
+        let right = lanes.iter().map(|l| l.head.right()).reduce(f32::max);
+        if let (Some(left), Some(right)) = (left, right) {
+            spans.push((diagram, p.id, left - FRAGMENT_MARGIN, right + FRAGMENT_MARGIN));
+        }
+    }
+    for (diagram, id, left, right) in spans {
+        tx.update_presentation(diagram, id, |p| {
+            if let Shape::Fragment { bounds, .. } | Shape::Node { bounds, .. } = &mut p.shape {
+                (bounds.x, bounds.width) = (left, right - left);
+            }
+        })?;
+        tidy(tx, diagram)?;
+    }
+    Ok(())
+}
+
 /// Makes room for a new last operand in the frames of `fragment`.
 pub fn add_operand_space(tx: &mut Tx<'_>, fragment: Id) -> Result<()> {
     let shown: Vec<(Id, Id)> = tx
@@ -1402,6 +1443,40 @@ mod tests {
         doc.edit("last", |tx| super::delete_operand(tx, operands[2]).and(super::tidy_all(tx)))
             .unwrap();
         assert!(!doc.model().contains(fragment));
+        doc.model().check().unwrap();
+    }
+
+    #[test]
+    fn frames_follow_what_they_cover() {
+        let (mut doc, d, a, b) = two_lifelines();
+        let call = draw(&mut doc, d, EdgeTool::Message, a, b, 120.0);
+        let (fragment, node) =
+            doc.edit("wrap", |tx| palette::wrap_in_fragment(tx, d, &[call])).unwrap();
+        let lifeline = |p: Id| doc.model().view(d).unwrap().get(p).unwrap().element.unwrap();
+        let (la, lb) = (lifeline(a), lifeline(b));
+        let frame =
+            |doc: &Document| doc.model().view(d).unwrap().get(node).unwrap().bounds().unwrap();
+        let head = |doc: &Document, p: Id| match doc.model().view(d).unwrap().get(p).unwrap().shape
+        {
+            Shape::Lifeline { head, .. } => head,
+            ref other => panic!("{other:?}"),
+        };
+        let set = |doc: &mut Document, covered: Vec<Id>| {
+            doc.edit("cover", |tx| {
+                tx.update(fragment, |data| {
+                    if let ElementKind::CombinedFragment(p) = &mut data.kind {
+                        p.covered = covered;
+                    }
+                })?;
+                super::cover(tx, fragment)
+            })
+            .unwrap();
+        };
+        set(&mut doc, vec![lb]);
+        assert_eq!(frame(&doc).x, head(&doc, b).x - super::FRAGMENT_MARGIN);
+        set(&mut doc, vec![la, lb]);
+        assert_eq!(frame(&doc).x, head(&doc, a).x - super::FRAGMENT_MARGIN);
+        assert_eq!(frame(&doc).right(), head(&doc, b).right() + super::FRAGMENT_MARGIN);
         doc.model().check().unwrap();
     }
 
