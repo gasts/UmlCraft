@@ -45,6 +45,7 @@ menu:
   file: Datei
   new: Neues Projekt
   open: Öffnen …
+  new_structogram: Neues Struktogramm
   open_structogram: Struktogramm öffnen …
   import_astah: .asta-Projekt importieren …
   export: Exportieren
@@ -554,3 +555,52 @@ error:
   not_a_project: Die Datei ist kein UmlCraft-Projekt.
   too_new: "Die Datei stammt von einem neueren UmlCraft (Formatversion %{found}; diese Version liest bis %{supported})."
   migration: "Die Datei ließ sich nicht von Formatversion %{from} umstellen: %{reason}"
+nsd:
+  untitled: Unbenannt.nsd
+  untitled_stem: Unbenannt
+  unsaved: "%{name} hat ungespeicherte Änderungen."
+  save_failed: Das Struktogramm konnte nicht gespeichert werden.
+  edit: Bearbeiten …
+  edit_diagram: Diagramm
+  signature: Name oder Signatur
+  text: Text
+  comment: Kommentar
+  disabled: Deaktiviert
+  branches: Anzahl der Zweige
+  exception: Name der gefangenen Ausnahme
+  case_hint: "Erste Zeile: was geprüft wird; dann je Fall eine Zeile; letzte Zeile: der Sonst-Fall (% für keinen)."
+  for_hint: "for i <- 1 to 10 by 2 zählt, foreach x in liste geht eine Liste durch; alles andere bleibt freier Text."
+  root_program: Programm
+  root_sub: Unterprogramm
+  root_includable: Includable
+  insert_after: Einfügen danach
+  insert_before: Einfügen davor
+  insert_tooltip: "Fügt nach der Auswahl ein; mit Umschalt davor"
+  paste: Einfügen
+  delete: Löschen
+  move_up: Nach oben
+  move_down: Nach unten
+  color: Farbe
+  add_branch: Zweig hinzufügen
+  remove_branch: Zweig entfernen
+  kind_instruction: Anweisung
+  kind_call: Aufruf
+  kind_jump: Ausstieg
+  kind_alternative: Verzweigung
+  kind_case: Fallauswahl
+  kind_for: Zählschleife
+  kind_while: Kopfschleife
+  kind_repeat: Fußschleife
+  kind_forever: Endlosschleife
+  kind_try: Try
+  kind_parallel: Parallel
+  color_0: Weiß (keine)
+  color_1: Rot
+  color_2: Gelb
+  color_3: Grün
+  color_4: Cyan
+  color_5: Blau
+  color_6: Rosa
+  color_7: Grau
+  color_8: Orange
+  color_9: Violett
