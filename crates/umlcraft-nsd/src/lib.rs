@@ -9,19 +9,23 @@
 
 pub mod create;
 pub mod draw;
+pub mod edit;
 pub mod layout;
 pub mod metrics;
 pub mod model;
+pub mod path;
 pub mod read;
 pub mod svg;
 pub mod text;
 pub mod write;
 
 pub use create::{ForLoop, Provenance, STRUCTORIZER_VERSION, lines};
+pub use edit::EditError;
 pub use metrics::Metrics;
 pub use model::{
     Attr, Attrs, Branches, Color, Diagram, Element, ElementKind, Lines, RootKind, RootStyle,
     Sequence,
 };
+pub use path::{Selection, Slot, Span};
 pub use read::{ReadError, read};
 pub use write::write;

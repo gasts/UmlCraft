@@ -265,7 +265,7 @@ impl Element {
     /// Forever loops have no text; setting one there is ignored.
     pub fn set_text(&mut self, lines: &[String]) {
         if self.kind != ElementKind::Forever {
-            self.attrs.set("text", text::encode_lines(lines), self.kind.order());
+            self.attrs.set("text", text_value(lines), self.kind.order());
         }
     }
 
@@ -313,6 +313,15 @@ impl Element {
 
     pub fn set_attr(&mut self, name: &str, value: impl Into<String>) {
         self.attrs.set(name, value, self.kind.order());
+    }
+}
+
+/// An element's `text` attribute: Structorizer's editor writes a single empty line as no
+/// text at all (`text=""`), unlike comments.
+pub(crate) fn text_value(lines: &[String]) -> String {
+    match lines {
+        [line] if line.is_empty() => String::new(),
+        _ => text::encode_lines(lines),
     }
 }
 

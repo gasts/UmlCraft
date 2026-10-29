@@ -1,0 +1,198 @@
+//! Addresses in a diagram. A path alternates element and branch indices from the diagram's
+//! children (see [`layout::Path`](crate::layout::Path)): odd lengths name elements, even ones
+//! sequences, `[]` the diagram's body and `[2, 1]` the second branch of its third element.
+
+use crate::model::{Diagram, Element, Sequence};
+
+pub use crate::layout::Path;
+
+/// The sequence at `seq` (an even-length path).
+pub fn sequence<'a>(d: &'a Diagram, seq: &[usize]) -> Option<&'a Sequence> {
+    let mut s = &d.children;
+    for pair in seq.chunks(2) {
+        let [e, b] = pair else { return None };
+        s = s.elements.get(*e)?.branches.get(*b)?;
+    }
+    Some(s)
+}
+
+pub fn sequence_mut<'a>(d: &'a mut Diagram, seq: &[usize]) -> Option<&'a mut Sequence> {
+    let mut s = &mut d.children;
+    for pair in seq.chunks(2) {
+        let [e, b] = pair else { return None };
+        s = s.elements.get_mut(*e)?.branches.get_mut(*b)?;
+    }
+    Some(s)
+}
+
+/// The element at `path` (an odd-length path).
+pub fn element<'a>(d: &'a Diagram, path: &[usize]) -> Option<&'a Element> {
+    let (last, seq) = path.split_last()?;
+    sequence(d, seq)?.elements.get(*last)
+}
+
+pub fn element_mut<'a>(d: &'a mut Diagram, path: &[usize]) -> Option<&'a mut Element> {
+    let (last, seq) = path.split_last()?;
+    sequence_mut(d, seq)?.elements.get_mut(*last)
+}
+
+/// A place between two elements of a sequence: before the element `index`, or at the end.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Slot {
+    pub seq: Path,
+    pub index: usize,
+}
+
+/// Consecutive elements `start..end` of one sequence, at least one.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Span {
+    pub seq: Path,
+    pub start: usize,
+    pub end: usize,
+}
+
+impl Span {
+    pub fn one(path: &[usize]) -> Option<Span> {
+        let (last, seq) = path.split_last()?;
+        Some(Span { seq: seq.to_vec(), start: *last, end: last + 1 })
+    }
+
+    /// The path of the span's first element.
+    pub fn first(&self) -> Path {
+        self.element(self.start)
+    }
+
+    pub fn element(&self, index: usize) -> Path {
+        let mut p = self.seq.clone();
+        p.push(index);
+        p
+    }
+
+    pub fn len(&self) -> usize {
+        self.end - self.start
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.end <= self.start
+    }
+
+    /// Whether `path` (element or sequence) is one of the span's elements or inside one.
+    pub fn covers(&self, path: &[usize]) -> bool {
+        path.len() > self.seq.len()
+            && path.starts_with(&self.seq)
+            && (self.start..self.end).contains(&path[self.seq.len()])
+    }
+
+    /// The span from `self.start` stretched to the element `to` of the same sequence.
+    pub fn to(&self, to: usize) -> Span {
+        Span { seq: self.seq.clone(), start: self.start.min(to), end: (self.start + 1).max(to + 1) }
+    }
+}
+
+/// What is selected in a diagram.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Selection {
+    #[default]
+    Nothing,
+    /// The diagram as a whole (its frame and title).
+    Root,
+    Elements(Span),
+    /// An empty sequence (an `∅` branch or an empty diagram's body).
+    Empty(Path),
+}
+
+impl Selection {
+    pub fn element(path: &[usize]) -> Selection {
+        Span::one(path).map_or(Selection::Nothing, Selection::Elements)
+    }
+
+    pub fn span(&self) -> Option<&Span> {
+        match self {
+            Selection::Elements(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// The single selected element.
+    pub fn single(&self) -> Option<Path> {
+        self.span().filter(|s| s.len() == 1).map(Span::first)
+    }
+
+    /// Where something inserted before (`after` false) or after the selection goes.
+    pub fn slot(&self, after: bool) -> Option<Slot> {
+        match self {
+            Selection::Elements(s) => {
+                Some(Slot { seq: s.seq.clone(), index: if after { s.end } else { s.start } })
+            }
+            Selection::Empty(seq) => Some(Slot { seq: seq.clone(), index: 0 }),
+            Selection::Root => Some(Slot { seq: Vec::new(), index: 0 }),
+            Selection::Nothing => None,
+        }
+    }
+
+    /// Whether the selection still names something in `d`.
+    pub fn is_valid(&self, d: &Diagram) -> bool {
+        match self {
+            Selection::Nothing | Selection::Root => true,
+            Selection::Elements(s) => {
+                !s.is_empty() && sequence(d, &s.seq).is_some_and(|q| s.end <= q.elements.len())
+            }
+            Selection::Empty(seq) => sequence(d, seq).is_some_and(|q| q.elements.is_empty()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Element, Provenance, RootKind, lines};
+
+    fn sample() -> Diagram {
+        let made = Provenance { author: "t", date: "2026-10-29", origin: "test" };
+        let mut d = Diagram::new(RootKind::Program, &lines(&["demo"]), &made);
+        let mut alt = Element::alternative(&lines(&["a > b"]));
+        alt.branches[0] = Sequence::new(vec![Element::instruction(&lines(&["x"]))]);
+        d.children = Sequence::new(vec![
+            Element::instruction(&lines(&["a"])),
+            alt,
+            Element::instruction(&lines(&["b"])),
+        ]);
+        d
+    }
+
+    #[test]
+    fn paths_reach_elements_and_sequences() {
+        let d = sample();
+        assert_eq!(element(&d, &[0]).unwrap().text(), ["a"]);
+        assert_eq!(element(&d, &[1, 0, 0]).unwrap().text(), ["x"]);
+        assert!(sequence(&d, &[1, 1]).unwrap().elements.is_empty());
+        assert!(element(&d, &[1, 1, 0]).is_none());
+        assert!(sequence(&d, &[0, 0]).is_none());
+        assert!(element(&d, &[]).is_none());
+    }
+
+    #[test]
+    fn spans_cover_their_insides() {
+        let s = Span { seq: vec![], start: 1, end: 2 };
+        assert!(s.covers(&[1]));
+        assert!(s.covers(&[1, 0, 0]));
+        assert!(!s.covers(&[2]));
+        assert!(!s.covers(&[]));
+        assert_eq!(s.to(0), Span { seq: vec![], start: 0, end: 2 });
+        assert_eq!(s.to(2), Span { seq: vec![], start: 1, end: 3 });
+    }
+
+    #[test]
+    fn selections_give_their_slots() {
+        let d = sample();
+        let sel = Selection::element(&[1, 0, 0]);
+        assert!(sel.is_valid(&d));
+        assert_eq!(sel.slot(true), Some(Slot { seq: vec![1, 0], index: 1 }));
+        assert_eq!(
+            Selection::Empty(vec![1, 1]).slot(false),
+            Some(Slot { seq: vec![1, 1], index: 0 })
+        );
+        assert!(!Selection::Empty(vec![1, 0]).is_valid(&d));
+        assert!(!Selection::element(&[5]).is_valid(&d));
+    }
+}
