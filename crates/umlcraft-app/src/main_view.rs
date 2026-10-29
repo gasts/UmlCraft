@@ -132,9 +132,9 @@ impl MainView {
                 let quit = quit.clone();
                 handle
                     .update(cx, |_, window, cx| {
-                        quit.update(cx, |this, cx| this.quit(&Quit, window, cx)).ok();
+                        quit.update(cx, |this, cx| this.quit(&Quit, window, cx)).is_ok()
                     })
-                    .ok();
+                    .unwrap_or(false)
             },
         );
 
@@ -1712,7 +1712,7 @@ fn start_directory(project: Option<&Path>) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-fn documents_dir() -> Option<PathBuf> {
+pub(crate) fn documents_dir() -> Option<PathBuf> {
     let home = PathBuf::from(std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?);
     let documents = home.join("Documents");
     Some(if documents.is_dir() { documents } else { home })
