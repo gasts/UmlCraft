@@ -1029,9 +1029,10 @@ fn layout_text(
     bounds: Rect,
     measure: &dyn TextMeasure,
 ) -> (Rect, Figure, Vec<Row>) {
+    const FIRST_BASELINE: f32 = 17.0;
     let size = style.font_size.unwrap_or(FONT_SIZE);
     let height = line_height(size);
-    let top = bounds.y + 17.0 - crate::draw::baseline(size);
+    let top = bounds.y + FIRST_BASELINE - crate::draw::baseline(size);
     let rows: Vec<Row> = text
         .split('\n')
         .enumerate()
@@ -2418,18 +2419,33 @@ fn association_name(text: String, middle: Point, measure: &dyn TextMeasure) -> E
 /// `width` wide): it points along the line `a`–`b`, horizontally or vertically, whichever is
 /// closer, and sits 4 to the right or left of the box, or below or above it.
 fn name_arrow(at: Point, width: f32, (a, b): (Point, Point)) -> [Point; 3] {
+    // The triangle is 10 long and 10 wide; beside the box its middle is 7.5 below the box's
+    // top, below the box its base 15.5 below the top, above it 3.5 above.
+    const GAP: f32 = 4.0;
+    const LENGTH: f32 = 10.0;
+    const HALF: f32 = 5.0;
+    const BESIDE_MIDDLE: f32 = 7.5;
+    const BELOW_BASE: f32 = 15.5;
+    const ABOVE_BASE: f32 = 3.5;
     let (dx, dy) = (b.x - a.x, b.y - a.y);
     let (left, top, right) = (at.x, at.y, at.x + width);
     let cx = at.x + width / 2.0;
     let p = Point::new;
     if dx.abs() >= dy.abs() {
-        let (base, tip) =
-            if dx >= 0.0 { (right + 4.0, right + 14.0) } else { (left - 4.0, left - 14.0) };
-        [p(base, top + 2.5), p(base, top + 12.5), p(tip, top + 7.5)]
+        let (base, tip) = if dx >= 0.0 {
+            (right + GAP, right + GAP + LENGTH)
+        } else {
+            (left - GAP, left - GAP - LENGTH)
+        };
+        let middle = top + BESIDE_MIDDLE;
+        [p(base, middle - HALF), p(base, middle + HALF), p(tip, middle)]
     } else {
-        let (base, tip) =
-            if dy >= 0.0 { (top + 15.5, top + 25.5) } else { (top - 3.5, top - 13.5) };
-        [p(cx - 5.0, base), p(cx + 5.0, base), p(cx, tip)]
+        let (base, tip) = if dy >= 0.0 {
+            (top + BELOW_BASE, top + BELOW_BASE + LENGTH)
+        } else {
+            (top - ABOVE_BASE, top - ABOVE_BASE - LENGTH)
+        };
+        [p(cx - HALF, base), p(cx + HALF, base), p(cx, tip)]
     }
 }
 
