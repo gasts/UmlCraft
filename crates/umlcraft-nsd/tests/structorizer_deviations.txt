@@ -1,0 +1,3 @@
+# Reference drawings whose lines differ from Structorizer's, with the reason (one per line:
+# set/name, then why). The drawing test fails when one of them matches again.
+korpus-kanonisch/38-deaktiviert texts of disabled elements: where glyphs meet the hatching Structorizer's anti-aliasing joins them into vertical runs
