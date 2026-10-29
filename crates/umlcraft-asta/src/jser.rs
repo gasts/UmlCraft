@@ -12,6 +12,7 @@
 //! chunks of block data, the identity of objects and stream resets.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use thiserror::Error;
 
@@ -147,7 +148,8 @@ impl FieldType {
 
 #[derive(Clone, Debug)]
 pub struct ClassDesc {
-    pub name: String,
+    /// Shared with the [`ClassData`] of every instance, which names its class by it.
+    pub name: Arc<str>,
     pub serial_version_uid: i64,
     /// `SC_*` flags.
     pub flags: u8,
@@ -161,9 +163,9 @@ pub struct ClassDesc {
 
 impl ClassDesc {
     /// A description without fields, annotation or superclass.
-    pub fn new(name: String, serial_version_uid: i64, flags: u8) -> Self {
+    pub fn new(name: impl Into<Arc<str>>, serial_version_uid: i64, flags: u8) -> Self {
         Self {
-            name,
+            name: name.into(),
             serial_version_uid,
             flags,
             fields: Vec::new(),
@@ -177,7 +179,8 @@ impl ClassDesc {
 /// A serialized field of a class description.
 #[derive(Clone, Debug)]
 pub struct FieldDesc {
-    pub name: String,
+    /// Shared with every instance's [`ClassData`], which names its values by it.
+    pub name: Arc<str>,
     /// `B`, `C`, `D`, `F`, `I`, `J`, `S`, `Z`, or `L` and `[` for objects and arrays.
     pub code: u8,
     /// The field's type in JVM notation (`Ljava/lang/String;`), a string object; `None` for
@@ -200,8 +203,8 @@ pub const SC_ENUM: u8 = 0x10;
 /// The serialized state one class of an object's hierarchy contributed.
 #[derive(Clone, Debug, Default)]
 pub struct ClassData {
-    pub class: String,
-    pub fields: Vec<(String, Value)>,
+    pub class: Arc<str>,
+    pub fields: Vec<(Arc<str>, Value)>,
     /// What a custom `writeObject` wrote after the default fields.
     pub annotation: Vec<Content>,
 }
@@ -274,7 +277,7 @@ impl Graph {
     /// Whether the instance's class or one of its superclasses is called `name`.
     pub fn is_a(&self, id: ObjId, name: &str) -> bool {
         match self.object(id) {
-            Object::Instance { data, .. } => data.iter().any(|d| d.class == name),
+            Object::Instance { data, .. } => data.iter().any(|d| *d.class == *name),
             _ => self.class_name(id) == Some(name),
         }
     }
@@ -287,7 +290,7 @@ impl Graph {
                 .iter()
                 .rev()
                 .flat_map(|d| d.fields.iter())
-                .find(|(n, _)| n == name)
+                .find(|(n, _)| **n == *name)
                 .map(|(_, v)| v),
             _ => None,
         }
@@ -308,7 +311,7 @@ impl Graph {
         data.iter()
             .rev()
             .flat_map(|d| d.fields.iter())
-            .filter(move |(n, _)| n == name)
+            .filter(move |(n, _)| **n == *name)
             .map(|(_, v)| v)
     }
 
@@ -316,7 +319,7 @@ impl Graph {
     pub fn annotation(&self, id: ObjId, class: &str) -> Option<&[Content]> {
         match self.object(id) {
             Object::Instance { data, .. } => {
-                data.iter().find(|d| d.class == class).map(|d| d.annotation.as_slice())
+                data.iter().find(|d| *d.class == *class).map(|d| d.annotation.as_slice())
             }
             _ => None,
         }
@@ -340,7 +343,7 @@ impl Graph {
 
     /// The first class description called `name`.
     pub fn class_named(&self, name: &str) -> Option<ClassId> {
-        self.classes.iter().position(|c| c.name == name).map(ClassId)
+        self.classes.iter().position(|c| *c.name == *name).map(ClassId)
     }
 
     /// A field of an instance for changing, looked up like [`Graph::field`].
@@ -350,7 +353,7 @@ impl Graph {
                 .iter_mut()
                 .rev()
                 .flat_map(|d| d.fields.iter_mut())
-                .find(|(n, _)| n == name)
+                .find(|(n, _)| **n == *name)
                 .map(|(_, v)| v),
             _ => None,
         }
@@ -365,7 +368,7 @@ impl Graph {
     /// an unused one of the same name too; `false` if there is none.
     pub fn set_top_field(&mut self, id: ObjId, name: &str, value: Value) -> bool {
         let Object::Instance { data, .. } = &mut self.objects[id.0] else { return false };
-        let field = data.iter_mut().flat_map(|d| d.fields.iter_mut()).find(|(n, _)| n == name);
+        let field = data.iter_mut().flat_map(|d| d.fields.iter_mut()).find(|(n, _)| **n == *name);
         field.map(|(_, v)| *v = value).is_some()
     }
 
@@ -373,7 +376,7 @@ impl Graph {
     pub fn annotation_mut(&mut self, id: ObjId, class: &str) -> Option<&mut Vec<Content>> {
         match &mut self.objects[id.0] {
             Object::Instance { data, .. } => {
-                data.iter_mut().find(|d| d.class == class).map(|d| &mut d.annotation)
+                data.iter_mut().find(|d| *d.class == *class).map(|d| &mut d.annotation)
             }
             _ => None,
         }
@@ -489,7 +492,7 @@ impl Graph {
             "java.util.TreeSet",
         ];
         data.iter()
-            .filter(|d| COLLECTIONS.contains(&d.class.as_str()))
+            .filter(|d| COLLECTIONS.contains(&&*d.class))
             .flat_map(|d| &d.annotation)
             .filter_map(|c| match c {
                 Content::Value(v) => Some(v),
@@ -789,19 +792,24 @@ impl<'a> Reader<'a> {
         }
         let mut data = Vec::with_capacity(hierarchy.len());
         for &c in hierarchy.iter().rev() {
-            let desc = self.graph.class(c).clone();
+            // Names are shared with the description, not copied into every instance.
+            let desc = self.graph.class(c);
+            let flags = desc.flags;
             let mut class_data = ClassData { class: desc.name.clone(), ..Default::default() };
-            if desc.flags & SC_EXTERNALIZABLE != 0 {
-                if desc.flags & SC_BLOCK_DATA == 0 {
-                    return Err(StreamError::Externalizable(desc.name));
+            if flags & SC_EXTERNALIZABLE != 0 {
+                if flags & SC_BLOCK_DATA == 0 {
+                    return Err(StreamError::Externalizable(class_data.class.to_string()));
                 }
                 class_data.annotation = self.annotation()?;
-            } else if desc.flags & SC_SERIALIZABLE != 0 {
-                for field in &desc.fields {
-                    let value = self.typed(field.ty())?;
-                    class_data.fields.push((field.name.clone(), value));
+            } else if flags & SC_SERIALIZABLE != 0 {
+                class_data.fields.reserve(desc.fields.len());
+                for i in 0..self.graph.class(c).fields.len() {
+                    let field = &self.graph.class(c).fields[i];
+                    let (name, ty) = (field.name.clone(), field.ty());
+                    let value = self.typed(ty)?;
+                    class_data.fields.push((name, value));
                 }
-                if desc.flags & SC_WRITE_METHOD != 0 {
+                if flags & SC_WRITE_METHOD != 0 {
                     class_data.annotation = self.annotation()?;
                 }
             }
@@ -831,11 +839,11 @@ impl<'a> Reader<'a> {
         while let Some(c) = current {
             let name = || self.graph.class(id).name.clone();
             if c == id {
-                return Err(StreamError::ClassCycle(name()));
+                return Err(StreamError::ClassCycle(name().to_string()));
             }
             length += 1;
             if length > MAX_CLASS_CHAIN {
-                return Err(StreamError::ClassChainTooLong(name()));
+                return Err(StreamError::ClassChainTooLong(name().to_string()));
             }
             current = self.graph.class(c).super_class;
         }
@@ -865,7 +873,7 @@ impl<'a> Reader<'a> {
                     let name = self.utf()?;
                     let type_name =
                         if ty == FieldType::Object { Some(self.value()?) } else { None };
-                    fields.push(FieldDesc { name, code, type_name });
+                    fields.push(FieldDesc { name: name.into(), code, type_name });
                 }
                 let annotation = self.annotation()?;
                 let super_class = self.class_desc()?;
@@ -877,7 +885,7 @@ impl<'a> Reader<'a> {
                 Ok(Some(id))
             }
             TC_PROXYCLASSDESC => {
-                let id = self.new_class(ClassDesc::new("$Proxy".into(), 0, SC_SERIALIZABLE));
+                let id = self.new_class(ClassDesc::new("$Proxy", 0, SC_SERIALIZABLE));
                 let count = self.i32()?;
                 let mut interfaces = Vec::new();
                 for _ in 0..count {
@@ -974,6 +982,57 @@ mod tests {
         bytes.push(TC_ENDBLOCKDATA);
     }
 
+    /// The class of the stream's first object.
+    fn root_class(graph: &Graph) -> &ClassDesc {
+        let Some(Content::Value(Value::Object(id))) = graph.roots.first() else {
+            panic!("no root object");
+        };
+        let Object::Instance { class, .. } = &graph.objects[id.0] else { panic!("no instance") };
+        graph.class(*class)
+    }
+
+    #[test]
+    fn proxy_classes_keep_their_interfaces() {
+        let mut bytes = vec![0xAC, 0xED, 0x00, 0x05, TC_OBJECT, TC_PROXYCLASSDESC];
+        bytes.extend(2i32.to_be_bytes());
+        for name in [&b"a.I"[..], b"a.J"] {
+            bytes.extend((name.len() as u16).to_be_bytes());
+            bytes.extend(name);
+        }
+        bytes.extend([TC_ENDBLOCKDATA, TC_NULL]);
+        let graph = parse(&bytes, 0).unwrap();
+        let class = root_class(&graph);
+        assert_eq!(&*class.name, "$Proxy");
+        assert_eq!(class.interfaces.as_deref(), Some(&["a.I".to_owned(), "a.J".to_owned()][..]));
+        assert_eq!(write(&graph, &[]).unwrap(), bytes);
+    }
+
+    /// An object of an externalizable class `E` that writes its data in blocks, as protocol 2
+    /// does, followed by `block`.
+    fn externalizable(flags: u8, block: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![0xAC, 0xED, 0x00, 0x05, TC_OBJECT, TC_CLASSDESC, 0, 1, b'E'];
+        bytes.extend(1u64.to_be_bytes());
+        bytes.push(flags);
+        bytes.extend(0u16.to_be_bytes());
+        bytes.extend([TC_ENDBLOCKDATA, TC_NULL]);
+        bytes.extend(block);
+        bytes
+    }
+
+    #[test]
+    fn externalizable_objects_keep_their_block_data() {
+        let flags = SC_EXTERNALIZABLE | SC_BLOCK_DATA;
+        let bytes = externalizable(flags, &[TC_BLOCKDATA, 2, 7, 9, TC_ENDBLOCKDATA]);
+        let graph = parse(&bytes, 0).unwrap();
+        let Some(Content::Value(Value::Object(id))) = graph.roots.first() else { panic!() };
+        let annotation = graph.annotation(*id, "E").unwrap();
+        assert!(matches!(annotation, [Content::Block(b)] if b == &[7, 9]), "{annotation:?}");
+        assert_eq!(write(&graph, &[]).unwrap(), bytes);
+        // Protocol 1 writes the data raw, of a length only the class knows: not readable.
+        let raw = externalizable(SC_EXTERNALIZABLE, &[7, 9]);
+        assert!(matches!(parse(&raw, 0), Err(StreamError::Externalizable(name)) if name == "E"));
+    }
+
     #[test]
     fn a_class_that_is_its_own_superclass_is_rejected() {
         let mut bytes = vec![0xAC, 0xED, 0x00, 0x05, TC_OBJECT];
@@ -1059,7 +1118,7 @@ mod tests {
         assert!(matches!(root(&graph, 0), Object::String(s) if s == "xyz"));
         assert!(matches!(graph.roots[1], Content::Reset));
         let Object::Class(class) = root(&graph, 2) else { panic!() };
-        assert_eq!(graph.classes[class.0].name, "[I");
+        assert_eq!(&*graph.classes[class.0].name, "[I");
         let Object::Array { items, .. } = root(&graph, 3) else { panic!() };
         assert_eq!(items, &[Value::Int(7), Value::Int(-1)]);
         let Object::Enum { constant, .. } = root(&graph, 4) else { panic!() };

@@ -205,7 +205,7 @@ impl Writer<'_> {
     fn class_data(&mut self, desc: &ClassDesc, data: &ClassData) -> Result<()> {
         if desc.flags & SC_EXTERNALIZABLE != 0 {
             if desc.flags & SC_BLOCK_DATA == 0 {
-                return Err(StreamError::Externalizable(desc.name.clone()));
+                return Err(StreamError::Externalizable(desc.name.to_string()));
             }
             return self.annotation(&data.annotation);
         }

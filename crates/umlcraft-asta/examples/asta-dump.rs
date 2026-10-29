@@ -118,7 +118,7 @@ fn tree(
         {
             for class_data in data {
                 for (name, value) in &class_data.fields {
-                    if NOISE.contains(&name.as_str())
+                    if NOISE.contains(&&**name)
                         || matches!(inline(graph, value).as_deref(), Some("null" | "[]"))
                     {
                         continue;

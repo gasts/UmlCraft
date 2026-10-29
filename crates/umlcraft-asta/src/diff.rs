@@ -126,7 +126,7 @@ impl Diff<'_> {
                 let class = short(class).to_owned();
                 for (ca, cb) in da.iter().zip(db) {
                     for ((name, va), (_, vb)) in ca.fields.iter().zip(&cb.fields) {
-                        if !NOISE.contains(&name.as_str()) {
+                        if !NOISE.contains(&&**name) {
                             self.value(&format!("{path}.{name}"), va, vb);
                         }
                     }
