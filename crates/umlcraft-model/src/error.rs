@@ -34,6 +34,14 @@ pub enum ModelError {
     EdgesAttached(Id),
     #[error("presentation {0} cannot change between node and edge")]
     ShapeChanged(Id),
+    #[error("edge {0} would end on itself through other edges")]
+    EdgeCycle(Id),
+    #[error("relationship {0} would connect itself through other relationships")]
+    ReferenceCycle(Id),
+    #[error("presentation {0} has a position or size that is not a finite number")]
+    NotFinite(Id),
+    #[error("a type of {0} is nested more than {max} levels deep", max = crate::MAX_TYPE_DEPTH)]
+    TypeTooDeep(Id),
     #[error("invalid model: {0}")]
     Invalid(String),
 }

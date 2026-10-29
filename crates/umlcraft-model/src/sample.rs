@@ -1,5 +1,5 @@
 //! A small example project with one diagram of each supported kind.
-//! Used by tests, the format round trip and as the app's start document.
+//! Used by tests, the format round trip and the app's "open sample" command.
 
 use crate::diagram::{DiagramKind, Presentation};
 use crate::document::Document;
@@ -129,6 +129,11 @@ pub fn order_system() -> (Document, OrderSystem) {
                     ElementKind::Lifeline(LifelineProps { represents: Some(order) }),
                 ),
             )?;
+            // The diagram comes first: what it does not show stays before what it shows.
+            let sequence_diagram = tx.create(
+                interaction,
+                ElementData::new("Place order", ElementKind::diagram(DiagramKind::Sequence)),
+            )?;
             // Messages and fragments in the order they happen.
             let items = tx.create(
                 interaction,
@@ -179,12 +184,9 @@ pub fn order_system() -> (Document, OrderSystem) {
                 }
                 ElementData::new("", kind)
             })?;
-            let sequence_diagram = tx.create(
-                interaction,
-                ElementData::new("Place order", ElementKind::diagram(DiagramKind::Sequence)),
-            )?;
             // Laid out as Astah would: the frame, lifeline heads 110 × 30, the loop around the
-            // first call, bars of 25 for the calls, the reply at the end of the second one.
+            // first call, bars of 25 for the calls, the reply at the end of the second one. Each
+            // call has its own bar on the customer too: a bar started inside the loop ends there.
             let d = sequence_diagram;
             tx.add_node(d, Some(d), Rect::new(35.0, 5.0, 360.0, 330.0))?;
             tx.add_presentation(
@@ -203,7 +205,8 @@ pub fn order_system() -> (Document, OrderSystem) {
                 d,
                 Presentation::lifeline(order_lifeline, Rect::new(260.0, 50.0, 110.0, 30.0), 240.0),
             )?;
-            tx.add_presentation(d, Presentation::activation(n_customer, 150.0, 115.0))?;
+            tx.add_presentation(d, Presentation::activation(n_customer, 150.0, 25.0))?;
+            tx.add_presentation(d, Presentation::activation(n_customer, 220.0, 45.0))?;
             tx.add_presentation(d, Presentation::activation(n_order, 150.0, 25.0))?;
             tx.add_presentation(d, Presentation::activation(n_order, 220.0, 25.0))?;
             for (message, from, to, y) in [

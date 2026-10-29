@@ -197,6 +197,17 @@ pub struct TypeExpr {
 }
 
 impl TypeRef {
+    /// Levels of nesting: 1 for an element or a text, one more for each expression around it.
+    pub fn depth(&self) -> usize {
+        match self {
+            Self::Element(_) | Self::Text(_) => 1,
+            Self::Expr(e) => {
+                let arguments = e.arguments.iter().map(TypeRef::depth).max().unwrap_or(0);
+                1 + e.base.depth().max(arguments)
+            }
+        }
+    }
+
     /// The referenced elements: the base first, then the arguments in order.
     pub fn ids(&self) -> Vec<Id> {
         let mut ids = Vec::new();
@@ -1222,6 +1233,34 @@ impl ElementKind {
         refs
     }
 
+    /// Calls `f` for every type reference: of attributes, parameters, return types, template
+    /// parameters, bindings, object nodes and qualifiers.
+    pub fn visit_type_refs(&self, f: &mut dyn FnMut(&TypeRef)) {
+        match self {
+            Self::Class(p)
+            | Self::Interface(p)
+            | Self::Enumeration(p)
+            | Self::DataType(p)
+            | Self::Actor(p)
+            | Self::UseCase(p)
+            | Self::Component(p)
+            | Self::Artifact(p)
+            | Self::Node(p) => p.binding.iter().for_each(f),
+            Self::Attribute(p) => p.type_ref.iter().for_each(f),
+            Self::Operation(p) => p.return_type.iter().for_each(f),
+            Self::Parameter(p) => p.type_ref.iter().for_each(f),
+            Self::TemplateParameter(p) => {
+                p.type_ref.iter().chain(&p.bounds).chain(&p.default).for_each(f);
+            }
+            Self::ActivityNode(p) => p.type_ref.iter().for_each(f),
+            Self::Association(p) => {
+                let qualifiers = p.ends.iter().flat_map(|end| &end.qualifiers);
+                qualifiers.filter_map(|q| q.type_ref.as_ref()).for_each(f);
+            }
+            _ => {}
+        }
+    }
+
     /// Calls `f` for every reference to another element, with its role, in the order of
     /// [`ElementKind::references`], without collecting them first.
     pub fn visit_references(&self, f: &mut dyn FnMut(Id, RefRole)) {
@@ -1229,7 +1268,15 @@ impl ElementKind {
             t.for_each_id(&mut |id| f(id, RefRole::Type));
         };
         match self {
-            Self::Class(p) => p.binding.iter().for_each(|t| types(t, f)),
+            Self::Class(p)
+            | Self::Interface(p)
+            | Self::Enumeration(p)
+            | Self::DataType(p)
+            | Self::Actor(p)
+            | Self::UseCase(p)
+            | Self::Component(p)
+            | Self::Artifact(p)
+            | Self::Node(p) => p.binding.iter().for_each(|t| types(t, f)),
             Self::Attribute(p) => p.type_ref.iter().for_each(|t| types(t, f)),
             Self::Operation(p) => p.return_type.iter().for_each(|t| types(t, f)),
             Self::Parameter(p) => p.type_ref.iter().for_each(|t| types(t, f)),
@@ -1296,7 +1343,15 @@ impl ElementKind {
             t.iter_mut().for_each(|t| t.for_each_id_mut(f));
         };
         match self {
-            Self::Class(p) => type_ref(&mut p.binding, &mut f),
+            Self::Class(p)
+            | Self::Interface(p)
+            | Self::Enumeration(p)
+            | Self::DataType(p)
+            | Self::Actor(p)
+            | Self::UseCase(p)
+            | Self::Component(p)
+            | Self::Artifact(p)
+            | Self::Node(p) => type_ref(&mut p.binding, &mut f),
             Self::Attribute(p) => type_ref(&mut p.type_ref, &mut f),
             Self::Operation(p) => type_ref(&mut p.return_type, &mut f),
             Self::Parameter(p) => type_ref(&mut p.type_ref, &mut f),
@@ -1393,7 +1448,15 @@ impl ElementKind {
             }
         };
         match self {
-            Self::Class(p) => unlink_type(&mut p.binding),
+            Self::Class(p)
+            | Self::Interface(p)
+            | Self::Enumeration(p)
+            | Self::DataType(p)
+            | Self::Actor(p)
+            | Self::UseCase(p)
+            | Self::Component(p)
+            | Self::Artifact(p)
+            | Self::Node(p) => unlink_type(&mut p.binding),
             Self::Attribute(p) => unlink_type(&mut p.type_ref),
             Self::Operation(p) => unlink_type(&mut p.return_type),
             Self::Parameter(p) => unlink_type(&mut p.type_ref),

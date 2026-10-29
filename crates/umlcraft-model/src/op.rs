@@ -34,7 +34,7 @@ pub enum Op {
         index: usize,
         presentation: Presentation,
     },
-    /// Removes a presentation that no edge is attached to.
+    /// Removes a presentation that no edge, message or activation is attached to.
     RemovePresentation {
         diagram: Id,
         id: Id,

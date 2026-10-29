@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::discriminant;
 
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 
 use crate::diagram::{Presentation, Shape, View};
@@ -76,6 +76,12 @@ pub struct Model {
     root: Id,
     elements: IndexMap<Id, Element>,
     views: IndexMap<Id, View>,
+    /// specific → the generalizations leading from it, so that checking a new generalization
+    /// for a cycle does not scan the model.
+    generalizations: HashMap<Id, IndexSet<Id>>,
+    /// owner → name → the children of that name, so that finding a child by name does not scan
+    /// all children (large flat packages of an imported code base).
+    names: HashMap<Id, HashMap<String, IndexSet<Id>>>,
 }
 
 impl Model {
@@ -94,7 +100,71 @@ impl Model {
                 data: ElementData::new(name, ElementKind::Model),
             },
         );
-        Self { root, elements, views: IndexMap::new() }
+        Self {
+            root,
+            elements,
+            views: IndexMap::new(),
+            generalizations: HashMap::new(),
+            names: HashMap::new(),
+        }
+    }
+
+    /// The children of `owner` named `name`, in the owner's order.
+    pub fn children_named(&self, owner: Id, name: &str) -> Vec<Id> {
+        let Some(set) = self.names.get(&owner).and_then(|n| n.get(name)) else {
+            return Vec::new();
+        };
+        let mut found: Vec<Id> = set.iter().copied().collect();
+        if found.len() > 1 {
+            let children = self.children(owner);
+            found.sort_by_key(|c| children.iter().position(|x| x == c));
+        }
+        found
+    }
+
+    fn index_name(&mut self, owner: Id, name: &str, id: Id, add: bool) {
+        if add {
+            self.names.entry(owner).or_default().entry(name.to_owned()).or_default().insert(id);
+        } else if let Some(names) = self.names.get_mut(&owner) {
+            if let Some(set) = names.get_mut(name) {
+                set.shift_remove(&id);
+                if set.is_empty() {
+                    names.remove(name);
+                }
+            }
+            if names.is_empty() {
+                self.names.remove(&owner);
+            }
+        }
+    }
+
+    /// The name index built from scratch.
+    fn name_index(&self) -> HashMap<Id, HashMap<String, IndexSet<Id>>> {
+        let mut index: HashMap<Id, HashMap<String, IndexSet<Id>>> = HashMap::new();
+        for e in self.elements.values() {
+            if let Some(owner) = e.owner {
+                index
+                    .entry(owner)
+                    .or_default()
+                    .entry(e.data.name.clone())
+                    .or_default()
+                    .insert(e.id);
+            }
+        }
+        index
+    }
+
+    /// Adds `id` to the generalization index, or takes it out, if `kind` is a generalization.
+    fn index_generalization(&mut self, id: Id, kind: &ElementKind, add: bool) {
+        let Some(g) = kind.as_generalization() else { return };
+        if add {
+            self.generalizations.entry(g.specific).or_default().insert(id);
+        } else if let Some(set) = self.generalizations.get_mut(&g.specific) {
+            set.shift_remove(&id);
+            if set.is_empty() {
+                self.generalizations.remove(&g.specific);
+            }
+        }
     }
 
     pub fn root(&self) -> Id {
@@ -117,9 +187,21 @@ impl Model {
         self.elements.len()
     }
 
+    /// Never: the root always exists. (Kept beside [`Model::len`].)
     pub fn is_empty(&self) -> bool {
-        // The root always exists.
         false
+    }
+
+    /// The generals of `specific`, through its generalizations in the order they were created
+    /// (ids are time-ordered), so the order does not change with undo.
+    pub fn generals_of(&self, specific: Id) -> Vec<Id> {
+        let mut generalizations: Vec<Id> =
+            self.generalizations.get(&specific).into_iter().flatten().copied().collect();
+        generalizations.sort();
+        generalizations
+            .into_iter()
+            .filter_map(|g| self.get(g)?.data.kind.as_generalization().map(|g| g.general))
+            .collect()
     }
 
     /// All elements, in no particular order.
@@ -256,6 +338,8 @@ impl Model {
         if data.kind.as_diagram().is_some() {
             self.views.insert(id, View::default());
         }
+        self.index_generalization(id, &data.kind, true);
+        self.index_name(owner, &data.name, id, true);
         self.elements.insert(id, Element { id, owner: Some(owner), children: Vec::new(), data });
         self.elements[&owner].children.insert(index, id);
         Ok(Op::RemoveElement { id })
@@ -293,8 +377,10 @@ impl Model {
         }
 
         let element = self.elements.swap_remove(&id).expect("checked above");
+        self.index_generalization(id, &element.data.kind, false);
         self.views.swap_remove(&id);
         let owner = element.owner.expect("non-root elements have an owner");
+        self.index_name(owner, &element.data.name, id, false);
         let siblings = &mut self.elements[&owner].children;
         let index = siblings.iter().position(|&c| c == id).expect("owner lists its children");
         siblings.remove(index);
@@ -310,7 +396,17 @@ impl Model {
             return Err(ModelError::KindChanged(id));
         }
         self.check_references(id, &data.kind)?;
+        let specific = data.kind.as_generalization().map(|g| g.specific);
+        let new_name = (self.elements[&id].data.name != data.name).then(|| data.name.clone());
         let old = std::mem::replace(&mut self.elements[&id].data, data);
+        if let (Some(name), Some(owner)) = (new_name, self.elements[&id].owner) {
+            self.index_name(owner, &old.name, id, false);
+            self.index_name(owner, &name, id, true);
+        }
+        self.index_generalization(id, &old.kind, false);
+        if let Some(specific) = specific {
+            self.generalizations.entry(specific).or_default().insert(id);
+        }
         Ok(Op::UpdateElement { id, data: old })
     }
 
@@ -342,6 +438,11 @@ impl Model {
         siblings.remove(old_index);
         self.elements[&owner].children.insert(index, id);
         self.elements[&id].owner = Some(owner);
+        if old_owner != owner {
+            let name = self.elements[&id].data.name.clone();
+            self.index_name(old_owner, &name, id, false);
+            self.index_name(owner, &name, id, true);
+        }
         Ok(Op::MoveElement { id, owner: old_owner, index: old_index })
     }
 
@@ -354,6 +455,9 @@ impl Model {
     }
 
     fn check_presentation(&self, view: &View, presentation: &Presentation) -> Result<()> {
+        if !presentation.is_finite() {
+            return Err(ModelError::NotFinite(presentation.id));
+        }
         let invalid = |to| ModelError::InvalidReference { from: presentation.id, to };
         if let Some(element) = presentation.element
             && !self.get(element).is_some_and(|e| !matches!(e.data.kind, ElementKind::Model))
@@ -366,11 +470,35 @@ impl Model {
                     return Err(invalid(end));
                 }
             }
+            // Edges may end on edges (note anchors on lines), but not around in a circle: the
+            // edges could not be removed one after the other.
+            let mut stack = vec![source, target];
+            let mut seen = HashSet::new();
+            while let Some(end) = stack.pop() {
+                if end == presentation.id {
+                    return Err(ModelError::EdgeCycle(presentation.id));
+                }
+                if seen.insert(end)
+                    && let Some((s, t)) = view.get(end).and_then(Presentation::endpoints)
+                {
+                    stack.extend([s, t]);
+                }
+            }
         }
+        let is_lifeline =
+            |id| view.get(id).is_some_and(|l| matches!(l.shape, Shape::Lifeline { .. }));
         if let Shape::Activation { lifeline, .. } = presentation.shape
-            && !view.get(lifeline).is_some_and(|l| matches!(l.shape, Shape::Lifeline { .. }))
+            && !is_lifeline(lifeline)
         {
             return Err(invalid(lifeline));
+        }
+        // Messages connect lifelines.
+        if let Shape::Message { source, target, .. } = presentation.shape {
+            for end in [source, target] {
+                if !is_lifeline(end) {
+                    return Err(invalid(end));
+                }
+            }
         }
         Ok(())
     }
@@ -430,14 +558,15 @@ impl Model {
     /// References must point to existing elements of a suitable metaclass, and generalizations
     /// must not form cycles.
     fn check_references(&self, id: Id, kind: &ElementKind) -> Result<()> {
+        check_type_depth(id, kind)?;
         for (target, role) in kind.references() {
             if !self.get(target).is_some_and(|t| role.accepts(&t.data.kind)) {
                 return Err(ModelError::InvalidReference { from: id, to: target });
             }
         }
+        self.check_strong_cycle(id, kind)?;
         if let Some(g) = kind.as_generalization() {
             // Adding specific → general closes a cycle if general already reaches specific.
-            let parents = self.generalization_parents(Some(id));
             let mut stack = vec![g.general];
             let mut seen = HashSet::new();
             while let Some(current) = stack.pop() {
@@ -445,24 +574,61 @@ impl Model {
                     return Err(ModelError::GeneralizationCycle(id));
                 }
                 if seen.insert(current) {
-                    stack.extend(parents.get(&current).into_iter().flatten());
+                    let generals = self.generalizations.get(&current).into_iter().flatten();
+                    stack.extend(
+                        generals
+                            .filter(|&&other| other != id)
+                            .filter_map(|&other| self.get(other))
+                            .filter_map(|e| e.data.kind.as_generalization())
+                            .map(|g| g.general),
+                    );
                 }
             }
         }
         Ok(())
     }
 
-    /// specific → generals, over all generalizations except `excluding`.
-    fn generalization_parents(&self, excluding: Option<Id>) -> HashMap<Id, Vec<Id>> {
+    /// Strong references (a relationship's ends) must not lead back to `id`, as a dependency
+    /// naming itself or two naming each other: deleting one would need the other gone first.
+    fn check_strong_cycle(&self, id: Id, kind: &ElementKind) -> Result<()> {
+        let strong = |k: &ElementKind| -> Vec<Id> {
+            k.references().into_iter().filter(|(_, r)| r.is_strong()).map(|(t, _)| t).collect()
+        };
+        let mut stack = strong(kind);
+        let mut seen = HashSet::new();
+        while let Some(current) = stack.pop() {
+            if current == id {
+                return Err(ModelError::ReferenceCycle(id));
+            }
+            if seen.insert(current)
+                && let Some(e) = self.get(current)
+            {
+                stack.extend(strong(&e.data.kind));
+            }
+        }
+        Ok(())
+    }
+
+    /// specific → generals, over all generalizations.
+    fn generalization_parents(&self) -> HashMap<Id, Vec<Id>> {
         let mut parents: HashMap<Id, Vec<Id>> = HashMap::new();
         for e in self.elements.values() {
-            if Some(e.id) != excluding
-                && let Some(g) = e.data.kind.as_generalization()
-            {
+            if let Some(g) = e.data.kind.as_generalization() {
                 parents.entry(g.specific).or_default().push(g.general);
             }
         }
         parents
+    }
+
+    /// specific → generalizations, as [`Model::generalizations`] keeps it.
+    fn generalization_parents_index(&self) -> HashMap<Id, IndexSet<Id>> {
+        let mut index: HashMap<Id, IndexSet<Id>> = HashMap::new();
+        for e in self.elements.values() {
+            if let Some(g) = e.data.kind.as_generalization() {
+                index.entry(g.specific).or_default().insert(e.id);
+            }
+        }
+        index
     }
 
     /// Verifies all structural invariants. Used after loading and in tests.
@@ -505,6 +671,8 @@ impl Model {
             return invalid("some elements are not reachable from the root".into());
         }
         for e in self.elements.values() {
+            check_type_depth(e.id, &e.data.kind)?;
+            self.check_strong_cycle(e.id, &e.data.kind)?;
             for (target, role) in e.data.kind.references() {
                 if !self.get(target).is_some_and(|t| role.accepts(&t.data.kind)) {
                     return Err(ModelError::InvalidReference { from: e.id, to: target });
@@ -519,8 +687,11 @@ impl Model {
             .filter(|e| e.data.kind.as_diagram().is_some())
             .map(|e| e.id)
             .collect();
-        if diagrams.len() != self.views.len() || !self.views.keys().all(|d| diagrams.contains(d)) {
-            return invalid("diagram elements and views do not match".into());
+        if let Some(d) = diagrams.iter().find(|&&d| !self.views.contains_key(&d)) {
+            return invalid(format!("diagram {d} has no view"));
+        }
+        if let Some(v) = self.views.keys().find(|v| !diagrams.contains(v)) {
+            return invalid(format!("view {v} belongs to no diagram"));
         }
         for view in self.views.values() {
             let mut ids = HashSet::new();
@@ -535,7 +706,13 @@ impl Model {
     }
 
     fn check_generalizations_acyclic(&self) -> Result<()> {
-        let parents = self.generalization_parents(None);
+        if self.generalizations != self.generalization_parents_index() {
+            return Err(ModelError::Invalid("the generalization index is out of date".into()));
+        }
+        if self.names != self.name_index() {
+            return Err(ModelError::Invalid("the name index is out of date".into()));
+        }
+        let parents = self.generalization_parents();
         // Iterative DFS with colors: 1 = on stack, 2 = done.
         let mut color: HashMap<Id, u8> = HashMap::new();
         for &start in parents.keys() {
@@ -600,13 +777,35 @@ impl Model {
                 return Err(ModelError::Invalid(format!("{child} is owned more than once")));
             }
         }
-        let views = records
+        let mut views: IndexMap<Id, View> = records
             .views
             .into_iter()
             .map(|(id, presentations)| (id, View { presentations }))
             .collect();
-        let model = Self { root: records.root, elements, views };
+        // A diagram with nothing on it may lack its entry, as after a merge in Git.
+        for e in elements.values() {
+            if e.data.kind.as_diagram().is_some() && !views.contains_key(&e.id) {
+                views.insert(e.id, View::default());
+            }
+        }
+        let mut model = Self {
+            root: records.root,
+            elements,
+            views,
+            generalizations: HashMap::new(),
+            names: HashMap::new(),
+        };
+        model.generalizations = model.generalization_parents_index();
+        model.names = model.name_index();
         model.check()?;
         Ok(model)
     }
+}
+
+/// Types of `kind` must stay within [`crate::MAX_TYPE_DEPTH`] levels, so the project file can be
+/// read back.
+fn check_type_depth(id: Id, kind: &ElementKind) -> Result<()> {
+    let mut deep = false;
+    kind.visit_type_refs(&mut |t| deep |= t.depth() > crate::MAX_TYPE_DEPTH);
+    if deep { Err(ModelError::TypeTooDeep(id)) } else { Ok(()) }
 }

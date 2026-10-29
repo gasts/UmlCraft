@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use indexmap::IndexSet;
 
@@ -57,6 +57,13 @@ impl Document {
 
     pub fn mark_saved(&mut self) {
         self.saved_seq = self.undo.last().map(|t| t.seq);
+    }
+
+    /// Marks the document as never saved, e.g. after an import: it stays dirty until saved,
+    /// whatever is undone or redone.
+    pub fn mark_unsaved(&mut self) {
+        // Sequence numbers start at 1, so no history state ever matches 0.
+        self.saved_seq = Some(0);
     }
 
     /// Forgets undo and redo history, e.g. after generating a start document.
@@ -160,6 +167,19 @@ impl Tx<'_> {
         Ok(())
     }
 
+    /// Runs `f` as a part of this transaction that is taken back on its own when it fails: the
+    /// error is returned and the model is as it was before, while the rest of the transaction
+    /// goes on.
+    pub fn attempt<R>(&mut self, f: impl FnOnce(&mut Tx<'_>) -> Result<R>) -> Result<R> {
+        let mark = self.inverse.len();
+        let result = f(self);
+        if result.is_err() {
+            let tail = self.inverse.split_off(mark);
+            revert(self.model, tail);
+        }
+        result
+    }
+
     /// Creates an element as the last child of `owner`.
     pub fn create(&mut self, owner: Id, data: ElementData) -> Result<Id> {
         let index = self.model.element(owner)?.children().len();
@@ -236,7 +256,11 @@ impl Tx<'_> {
             .model
             .elements()
             .filter(|e| !doomed.contains(&e.id()))
-            .filter(|e| e.kind().references().iter().any(|(t, _)| doomed.contains(t)))
+            .filter(|e| {
+                let mut hit = false;
+                e.kind().visit_references(&mut |t, _| hit |= doomed.contains(&t));
+                hit
+            })
             .map(|e| e.id())
             .collect();
         for survivor in survivors_to_unlink {
@@ -289,42 +313,65 @@ impl Tx<'_> {
 
     /// The subtrees of `ids` plus, transitively, everything strongly referring into the set.
     fn deletion_closure(&self, ids: &[Id]) -> IndexSet<Id> {
+        // target → the elements referring to it strongly, gathered in one pass.
+        let mut strong: HashMap<Id, Vec<Id>> = HashMap::new();
+        for e in self.model.elements() {
+            e.kind().visit_references(&mut |t, role| {
+                if role.is_strong() {
+                    strong.entry(t).or_default().push(e.id());
+                }
+            });
+        }
         let mut doomed: IndexSet<Id> = IndexSet::new();
         for &id in ids {
             if !doomed.contains(&id) {
                 doomed.extend(self.model.subtree(id));
             }
         }
-        loop {
-            let extra: Vec<Id> = self
-                .model
-                .elements()
-                .filter(|e| !doomed.contains(&e.id()))
-                .filter(|e| {
-                    e.kind()
-                        .references()
-                        .iter()
-                        .any(|&(t, role)| role.is_strong() && doomed.contains(&t))
-                })
-                .flat_map(|e| self.model.subtree(e.id()))
-                .collect();
-            if extra.is_empty() {
-                return doomed;
+        let mut i = 0;
+        while i < doomed.len() {
+            for &referrer in strong.get(&doomed[i]).into_iter().flatten() {
+                if !doomed.contains(&referrer) {
+                    doomed.extend(self.model.subtree(referrer));
+                }
             }
-            doomed.extend(extra);
+            i += 1;
         }
+        doomed
     }
 
+    /// Unlinks the weak references of `element` to any of `targets`.
     fn unlink_all(&mut self, element: Id, targets: &IndexSet<Id>) -> Result<()> {
-        let names: Vec<(Id, String)> = targets
-            .iter()
-            .filter_map(|&t| self.model.get(t).map(|e| (t, e.name().to_owned())))
+        let mut hit = Vec::new();
+        if let Some(e) = self.model.get(element) {
+            e.kind().visit_references(&mut |t, _| {
+                if targets.contains(&t) && !hit.contains(&t) {
+                    hit.push(t);
+                }
+            });
+        }
+        if hit.is_empty() {
+            return Ok(());
+        }
+        let names: Vec<(Id, String)> = hit
+            .into_iter()
+            .filter_map(|t| self.model.get(t).map(|e| (t, e.name().to_owned())))
             .collect();
         self.update(element, |data| {
             for (target, name) in &names {
                 data.kind.unlink(*target, name);
             }
         })
+    }
+
+    /// The view of `diagram`: `NotFound` if there is no such element, `NotADiagram` if it is
+    /// one of another kind.
+    fn view_of(&self, diagram: Id) -> Result<&crate::View> {
+        match self.model.view(diagram) {
+            Some(view) => Ok(view),
+            None if self.model.contains(diagram) => Err(ModelError::NotADiagram(diagram)),
+            None => Err(ModelError::NotFound(diagram)),
+        }
     }
 
     /// Adds a node presentation on top of `diagram`.
@@ -345,8 +392,7 @@ impl Tx<'_> {
     }
 
     pub fn add_presentation(&mut self, diagram: Id, presentation: Presentation) -> Result<Id> {
-        let index =
-            self.model.view(diagram).ok_or(ModelError::NotADiagram(diagram))?.presentations().len();
+        let index = self.view_of(diagram)?.presentations().len();
         let id = presentation.id;
         self.apply(Op::InsertPresentation { diagram, index, presentation })?;
         Ok(id)
@@ -358,10 +404,12 @@ impl Tx<'_> {
         id: Id,
         f: impl FnOnce(&mut Presentation),
     ) -> Result<()> {
-        let view = self.model.view(diagram).ok_or(ModelError::NotADiagram(diagram))?;
+        let view = self.view_of(diagram)?;
         let old = view.get(id).ok_or(ModelError::NotFound(id))?;
         let mut presentation = old.clone();
         f(&mut presentation);
+        // The closure changes the presentation, not which one it is.
+        presentation.id = id;
         if presentation != *old {
             self.apply(Op::UpdatePresentation { diagram, presentation })?;
         }
@@ -413,7 +461,7 @@ impl Tx<'_> {
     }
 
     pub fn bring_to_front(&mut self, diagram: Id, id: Id) -> Result<()> {
-        let view = self.model.view(diagram).ok_or(ModelError::NotADiagram(diagram))?;
+        let view = self.view_of(diagram)?;
         let last = view.presentations().len().saturating_sub(1);
         if view.presentations().last().is_some_and(|p| p.id == id) {
             return Ok(());
@@ -429,29 +477,54 @@ impl Tx<'_> {
 
     /// Removes the given presentations and, transitively, all edges attached to them.
     pub fn remove_presentations(&mut self, diagram: Id, ids: IndexSet<Id>) -> Result<()> {
-        let view = self.model.view(diagram).ok_or(ModelError::NotADiagram(diagram))?;
-        let mut gone = ids;
-        loop {
-            let extra: Vec<Id> = view
-                .presentations()
-                .iter()
-                .filter(|p| !gone.contains(&p.id) && gone.iter().any(|&g| p.is_attached_to(g)))
-                .map(|p| p.id)
-                .collect();
-            if extra.is_empty() {
-                break;
+        let view = self.view_of(diagram)?;
+        // What each presentation hangs on: an edge's or message's ends, an activation's lifeline.
+        let holds = |p: &Presentation| -> [Option<Id>; 2] {
+            match p.shape {
+                Shape::Activation { lifeline, .. } => [Some(lifeline), None],
+                _ => match p.endpoints() {
+                    Some((s, t)) if s == t => [Some(s), None],
+                    Some((s, t)) => [Some(s), Some(t)],
+                    None => [None, None],
+                },
             }
-            gone.extend(extra);
+        };
+        let mut hanging: HashMap<Id, Vec<Id>> = HashMap::new();
+        let mut holding: HashMap<Id, [Option<Id>; 2]> = HashMap::new();
+        for p in view.presentations() {
+            let held = holds(p);
+            for &on in held.iter().flatten() {
+                hanging.entry(on).or_default().push(p.id);
+            }
+            holding.insert(p.id, held);
         }
-        while !gone.is_empty() {
-            let view = self.model.view(diagram).expect("checked above");
-            let next = gone
-                .iter()
-                .copied()
-                .find(|&id| view.edges_attached_to(id).next().is_none())
-                .ok_or_else(|| ModelError::Invalid("edges attached in a cycle".into()))?;
+        // Whatever hangs on a removed presentation goes with it.
+        let mut gone = ids;
+        let mut i = 0;
+        while i < gone.len() {
+            let extra = hanging.get(&gone[i]).cloned().unwrap_or_default();
+            gone.extend(extra);
+            i += 1;
+        }
+        // Then remove from the outside in: a presentation once nothing hangs on it any more.
+        let mut attached: HashMap<Id, usize> =
+            gone.iter().map(|&id| (id, hanging.get(&id).map_or(0, Vec::len))).collect();
+        let mut ready: VecDeque<Id> = gone.iter().copied().filter(|id| attached[id] == 0).collect();
+        let mut removed = 0;
+        while let Some(next) = ready.pop_front() {
             self.apply(Op::RemovePresentation { diagram, id: next })?;
-            gone.shift_remove(&next);
+            removed += 1;
+            for &on in holding.get(&next).into_iter().flatten().flatten() {
+                if let Some(count) = attached.get_mut(&on) {
+                    *count -= 1;
+                    if *count == 0 {
+                        ready.push_back(on);
+                    }
+                }
+            }
+        }
+        if removed < gone.len() {
+            return Err(ModelError::Invalid("edges attached in a cycle".into()));
         }
         Ok(())
     }

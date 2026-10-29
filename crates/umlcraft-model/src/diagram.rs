@@ -25,7 +25,8 @@ pub enum DiagramKind {
 #[serde(rename_all = "camelCase")]
 pub struct Presentation {
     pub id: Id,
-    /// The model element shown. `None` for purely graphical items such as note anchors.
+    /// The model element shown. `None` for purely graphical items such as free lines, texts
+    /// and the lines anchoring a note.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub element: Option<Id>,
     #[serde(flatten)]
@@ -172,6 +173,48 @@ impl Presentation {
             Shape::Activation { lifeline, .. } => lifeline == presentation,
             _ => self.endpoints().is_some_and(|(s, t)| s == presentation || t == presentation),
         }
+    }
+
+    /// Whether every coordinate, size and font size is a finite number. JSON has no NaN or
+    /// infinity, so a project with one could be saved but not opened again.
+    pub fn is_finite(&self) -> bool {
+        let rect = |r: &Rect| [r.x, r.y, r.width, r.height].iter().all(|v| v.is_finite());
+        let point = |p: &Point| p.x.is_finite() && p.y.is_finite();
+        let points = |p: &[Option<Point>]| p.iter().flatten().all(point);
+        let numbers = |n: &[Option<f32>]| n.iter().flatten().all(|v| v.is_finite());
+        let labels = |l: &EdgeLabels| {
+            points(&[
+                l.name,
+                l.source_role,
+                l.source_multiplicity,
+                l.target_role,
+                l.target_multiplicity,
+                l.keyword,
+            ])
+        };
+        let shape = match &self.shape {
+            Shape::Node { bounds, regions } => {
+                rect(bounds) && regions.iter().flat_map(|r| &r.separators).all(|v| v.is_finite())
+            }
+            Shape::Edge { waypoints, source_anchor, target_anchor, labels: l, .. } => {
+                waypoints.iter().all(point)
+                    && points(&[*source_anchor, *target_anchor])
+                    && labels(l)
+            }
+            Shape::Lifeline { head, length, .. } => rect(head) && length.is_finite(),
+            Shape::Fragment { bounds, separators, guards } => {
+                rect(bounds) && separators.iter().all(|v| v.is_finite()) && points(guards)
+            }
+            Shape::Activation { top, height, width, .. } => {
+                numbers(&[Some(*top), Some(*height), *width])
+            }
+            Shape::Message { y, end_y, gate_x, loop_x, labels: l, .. } => {
+                numbers(&[Some(*y), *end_y, *gate_x, *loop_x]) && labels(l)
+            }
+            Shape::Text { bounds, .. } => rect(bounds),
+            Shape::Line { from, to, .. } => point(from) && point(to),
+        };
+        shape && numbers(&[self.style.font_size]) && points(&[self.style.name_offset])
     }
 }
 

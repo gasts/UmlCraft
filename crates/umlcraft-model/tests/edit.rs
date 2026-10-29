@@ -43,6 +43,18 @@ fn undo_redo_restores_exact_state() {
 }
 
 #[test]
+fn an_unsaved_document_stays_dirty_until_saved() {
+    let (mut doc, ids) = order_system();
+    doc.mark_unsaved();
+    assert!(doc.is_dirty());
+    doc.edit("a", |tx| tx.rename(ids.customer, "A")).unwrap();
+    doc.undo();
+    assert!(doc.is_dirty());
+    doc.mark_saved();
+    assert!(!doc.is_dirty());
+}
+
+#[test]
 fn dirty_tracking_follows_the_save_point() {
     let (mut doc, ids) = order_system();
     doc.edit("a", |tx| tx.rename(ids.customer, "A")).unwrap();
@@ -244,8 +256,25 @@ fn generalization_cycles_are_rejected() {
         );
     }
     // A second path that is not a cycle is fine.
-    doc.edit("ok", |tx| tx.create(root, ElementData::new("", ElementKind::generalization(a, c))))
+    let ac = doc
+        .edit("ok", |tx| tx.create(root, ElementData::new("", ElementKind::generalization(a, c))))
         .unwrap();
+    doc.model().check().unwrap();
+
+    // Rewiring a generalization is checked like a new one: B → A and C → B close cycles through
+    // A → B and B → C. Deleting, undoing and redoing keep the index in step (`check`).
+    doc.edit("rewire", |tx| tx.update(ac, |d| d.kind = ElementKind::generalization(b, a)))
+        .unwrap_err();
+    doc.edit("delete", |tx| tx.delete(ac)).unwrap();
+    doc.model().check().unwrap();
+    assert!(doc.undo());
+    doc.model().check().unwrap();
+    assert!(doc.redo());
+    doc.model().check().unwrap();
+    assert!(doc.undo());
+    let rewired =
+        doc.edit("rewire", |tx| tx.update(ac, |d| d.kind = ElementKind::generalization(c, b)));
+    assert!(matches!(rewired, Err(ModelError::GeneralizationCycle(_))), "{rewired:?}");
     doc.model().check().unwrap();
 }
 
@@ -344,4 +373,161 @@ fn from_records_rejects_orphans() {
         r.children.retain(|&c| c != ids.premium);
     }
     assert!(Model::from_records(records).is_err());
+}
+
+#[test]
+fn cycles_that_would_block_deleting_are_refused() {
+    let (mut doc, ids) = order_system();
+    // A dependency naming itself.
+    let result = doc.edit("dependency", |tx| {
+        let id = tx.create(ids.domain, class("tmp"))?;
+        let dependency = ElementKind::Dependency(umlcraft_model::DirectedProps {
+            client: id,
+            supplier: ids.order,
+        });
+        let d = tx.create(ids.domain, ElementData::new("", dependency))?;
+        tx.update(d, |data| {
+            if let ElementKind::Dependency(p) = &mut data.kind {
+                p.client = d;
+            }
+        })
+    });
+    assert!(matches!(result, Err(ModelError::ReferenceCycle(_))), "{result:?}");
+
+    // Two edges ending on each other.
+    let d = ids.class_diagram;
+    let association = doc.model().shown_on(ids.order_customer)[0].1;
+    let generalization = doc.model().shown_on(ids.premium_generalization)[0].1;
+    let end_on = |target: Id| {
+        move |p: &mut umlcraft_model::Presentation| {
+            if let umlcraft_model::Shape::Edge { target: t, .. } = &mut p.shape {
+                *t = target;
+            }
+        }
+    };
+    doc.edit("one", |tx| tx.update_presentation(d, association, end_on(generalization))).unwrap();
+    let result =
+        doc.edit("two", |tx| tx.update_presentation(d, generalization, end_on(association)));
+    assert!(matches!(result, Err(ModelError::EdgeCycle(_))), "{result:?}");
+    doc.model().check().unwrap();
+}
+
+#[test]
+fn removing_many_presentations_takes_their_edges_along() {
+    let mut doc = Document::new(Model::new("m"));
+    let root = doc.model().root();
+    let d = doc
+        .edit("setup", |tx| {
+            let d =
+                tx.create(root, ElementData::new("d", ElementKind::diagram(DiagramKind::Class)))?;
+            let nodes: Vec<Id> = (0..1000)
+                .map(|i| tx.add_node(d, None, Rect::new(i as f32 * 10.0, 0.0, 5.0, 5.0)))
+                .collect::<Result<_, _>>()?;
+            for (i, &n) in nodes.iter().enumerate() {
+                let next = nodes[(i + 1) % nodes.len()];
+                let edge = tx.add_presentation(
+                    d,
+                    umlcraft_model::Presentation::edge(None, n, next, Vec::new()),
+                )?;
+                // An edge on an edge, which must go before the edge it hangs on.
+                tx.add_presentation(
+                    d,
+                    umlcraft_model::Presentation::edge(None, edge, nodes[0], Vec::new()),
+                )?;
+            }
+            Ok(d)
+        })
+        .unwrap();
+    let start = std::time::Instant::now();
+    let nodes: indexmap::IndexSet<Id> = doc
+        .model()
+        .view(d)
+        .unwrap()
+        .presentations()
+        .iter()
+        .filter(|p| p.bounds().is_some())
+        .map(|p| p.id)
+        .take(500)
+        .collect();
+    doc.edit("remove", |tx| tx.remove_presentations(d, nodes)).unwrap();
+    let left = doc.model().view(d).unwrap().presentations().len();
+    assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
+    doc.model().check().unwrap();
+    assert!(left < 3000 && left > 0, "{left}");
+    assert!(doc.undo());
+    assert_eq!(doc.model().view(d).unwrap().presentations().len(), 3000);
+}
+
+#[test]
+fn deleting_a_package_of_referenced_classes_unlinks_the_rest() {
+    let mut doc = Document::new(Model::new("m"));
+    let root = doc.model().root();
+    let (package, users) = doc
+        .edit("setup", |tx| {
+            let package = tx.create(root, ElementData::new("p", ElementKind::Package))?;
+            let mut users = Vec::new();
+            for i in 0..2000 {
+                let target = tx.create(package, class(&format!("T{i}")))?;
+                let user = tx.create(root, class(&format!("U{i}")))?;
+                let attribute = ElementKind::attribute(Some(TypeRef::Element(target)));
+                users.push(tx.create(user, ElementData::new("t", attribute))?);
+            }
+            Ok((package, users))
+        })
+        .unwrap();
+    let start = std::time::Instant::now();
+    doc.edit("delete", |tx| tx.delete(package)).unwrap();
+    assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
+    doc.model().check().unwrap();
+    let ElementKind::Attribute(p) = doc.model().get(users[7]).unwrap().kind() else { panic!() };
+    assert_eq!(p.type_ref, Some(TypeRef::Text("T7".into())));
+}
+
+#[test]
+fn children_are_found_by_name_through_renames_moves_and_undo() {
+    let mut doc = Document::new(Model::new("m"));
+    let root = doc.model().root();
+    let (p, a, b) = doc
+        .edit("setup", |tx| {
+            let p = tx.create(root, ElementData::new("p", ElementKind::Package))?;
+            let a = tx.create(root, class("A"))?;
+            let b = tx.create(root, class("A"))?;
+            Ok((p, a, b))
+        })
+        .unwrap();
+    assert_eq!(doc.model().children_named(root, "A"), [a, b], "in the owner's order");
+    doc.edit("rename", |tx| tx.rename(a, "B")).unwrap();
+    doc.edit("move", |tx| tx.move_element(b, p, 0)).unwrap();
+    let model = doc.model();
+    model.check().unwrap();
+    assert_eq!(model.children_named(root, "B"), [a]);
+    assert!(model.children_named(root, "A").is_empty());
+    assert_eq!(model.children_named(p, "A"), [b]);
+    assert!(doc.undo() && doc.undo());
+    doc.model().check().unwrap();
+    assert_eq!(doc.model().children_named(root, "A"), [a, b]);
+}
+
+#[test]
+fn a_failed_attempt_takes_back_only_its_own_part() {
+    let (mut doc, ids) = order_system();
+    let root = doc.model().root();
+    let (kept, dropped) = doc
+        .edit("partly", |tx| {
+            let kept = tx.create(root, class("Kept"))?;
+            let mut dropped = None;
+            let failed = tx.attempt(|tx| {
+                dropped = Some(tx.create(root, class("Dropped"))?);
+                // A package cannot go into one of its own classes.
+                tx.move_element(root, ids.customer, 0)
+            });
+            assert!(failed.is_err());
+            Ok((kept, dropped.unwrap()))
+        })
+        .unwrap();
+    let model = doc.model();
+    assert!(model.get(kept).is_some() && model.get(dropped).is_none());
+    model.check().unwrap();
+    assert!(doc.undo());
+    assert!(doc.model().get(kept).is_none());
 }

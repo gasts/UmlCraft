@@ -35,3 +35,8 @@ pub use geometry::{Point, Rect, Size};
 pub use id::Id;
 pub use model::{Element, ElementRecord, Model, ModelRecords};
 pub use op::Op;
+
+/// Deepest type expression a model holds, e.g. 3 for `Map<String, List<Order>>`. JSON readers
+/// stop at a nesting limit of their own (serde_json: 128, about 40 levels of types), and no real
+/// type comes near either.
+pub const MAX_TYPE_DEPTH: usize = 32;
