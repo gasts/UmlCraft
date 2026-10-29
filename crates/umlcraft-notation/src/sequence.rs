@@ -698,14 +698,13 @@ fn numbers(messages: &[Msg], lanes: &HashMap<Id, LaneState>, flat: bool) -> Hash
             .map(|(i, m)| (m.presentation, (i + 1).to_string()))
             .collect();
     }
-    // The bar each call starts.
-    let started: HashMap<Id, Id> = calls
-        .iter()
-        .filter_map(|m| {
-            let bar = lanes[&m.target].bar_starting(end(m))?;
-            Some((bar.id, m.presentation))
-        })
-        .collect();
+    // The bar each call starts; of two calls arriving at one bar's top, the first in order.
+    let mut started: HashMap<Id, Id> = HashMap::new();
+    for m in &calls {
+        if let Some(bar) = lanes[&m.target].bar_starting(end(m)) {
+            started.entry(bar.id).or_insert(m.presentation);
+        }
+    }
     let mut parent_of: HashMap<Id, Option<Id>> = HashMap::new();
     for m in &calls {
         let parent = if m.gate == MessageGate::Found {
@@ -721,11 +720,13 @@ fn numbers(messages: &[Msg], lanes: &HashMap<Id, LaneState>, flat: bool) -> Hash
     let mut counts: HashMap<Option<Id>, usize> = HashMap::new();
     let mut i = 0;
     while i < calls.len() {
-        // Calls leaving the same point at the same height branch.
+        // Calls leaving the same point at the same height branch; a message to self never does,
+        // whichever of them comes first.
         let first = calls[i];
         let parent = parent_of[&first.presentation];
         let mut j = i + 1;
         while j < calls.len()
+            && first.source != first.target
             && (calls[j].y - first.y).abs() < 0.5
             && calls[j].source == first.source
             && parent_of[&calls[j].presentation] == parent
@@ -1011,4 +1012,64 @@ fn slots(model: &Model, diagram: Id, view: &View) -> Vec<Slot> {
     }
     walk(model, interaction, &top_of, bottom, &mut slots);
     slots
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lane(x: f32, bars: &[(u128, f32, f32)]) -> LaneState {
+        let bars = bars
+            .iter()
+            .map(|&(id, top, bottom)| Bar {
+                id: Id::from_u128(id),
+                top,
+                bottom,
+                left: x - 5.0,
+                width: 10.0,
+                level: 0,
+            })
+            .collect();
+        LaneState { head: Rect::new(x - 40.0, 40.0, 80.0, 40.0), bars }
+    }
+
+    fn msg(id: u128, source: Id, target: Id, y: f32, end_y: Option<f32>) -> Msg {
+        Msg {
+            presentation: Id::from_u128(id),
+            element: None,
+            source,
+            target,
+            y,
+            end_y,
+            gate_x: None,
+            loop_x: None,
+            label: None,
+            style: Style::default(),
+            sort: MessageSort::Synchronous,
+            gate: MessageGate::None,
+        }
+    }
+
+    #[test]
+    fn numbers_take_the_first_call_into_a_bar_and_never_branch_a_message_to_self() {
+        let (a, b, c) = (Id::from_u128(1), Id::from_u128(2), Id::from_u128(3));
+        let lanes = HashMap::from([
+            (a, lane(100.0, &[(10, 100.0, 200.0), (11, 150.0, 175.0)])),
+            (b, lane(300.0, &[(20, 100.0, 200.0)])),
+            (c, lane(500.0, &[(30, 100.0, 150.0)])),
+        ]);
+        let messages = [
+            // Two calls arrive at the top of b's bar; the first numbers what b sends from it.
+            msg(100, a, b, 100.0, None),
+            msg(101, c, b, 100.0, None),
+            msg(102, b, c, 120.0, None),
+            // A message to self beside a call from the same point: no "-A" / "-B".
+            msg(103, a, b, 130.0, None),
+            msg(104, a, a, 130.0, Some(150.0)),
+        ];
+        let numbers = numbers(&messages, &lanes, false);
+        let number = |id: u128| numbers[&Id::from_u128(id)].clone();
+        assert_eq!(number(102), "1.1");
+        assert!(!number(103).contains('-') && !number(104).contains('-'), "{numbers:?}");
+    }
 }

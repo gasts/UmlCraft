@@ -39,6 +39,12 @@ const FRAME_ABOVE_HEADS: f32 = 35.093_75;
 const ICON_NAME: f32 = 15.093_75;
 /// Distance between a new message and the last thing above it.
 const NEXT: f32 = 40.0;
+/// Where lifelines start on a diagram without any.
+const FIRST_LINE_TOP: f32 = 60.0;
+/// The shortest lifeline a new one gets.
+const MIN_LIFELINE: f32 = 60.0;
+/// Left and right of a frame on a diagram without lifelines.
+const EMPTY_SPAN: (f32, f32) = (40.0, 240.0);
 /// Default heights of a new combined fragment and interaction use.
 const FRAGMENT_HEIGHT: f32 = 80.0;
 const USE_HEIGHT: f32 = 60.0;
@@ -264,8 +270,8 @@ pub fn extent(model: &Model, diagram: Id, items: &[Id]) -> (f32, f32, Vec<Id>) {
 
 /// Where something new goes when no place is given: below everything.
 pub fn next_y(model: &Model, diagram: Id) -> f32 {
-    let Ok(g) = Geometry::read(model, diagram) else { return 100.0 };
-    let heads = g.lanes.iter().map(|l| l.line_top()).reduce(f32::max).unwrap_or(60.0);
+    let Ok(g) = Geometry::read(model, diagram) else { return FIRST_LINE_TOP + NEXT };
+    let heads = g.lanes.iter().map(|l| l.line_top()).reduce(f32::max).unwrap_or(FIRST_LINE_TOP);
     g.content_bottom().unwrap_or(heads) + NEXT
 }
 
@@ -281,7 +287,7 @@ pub fn add_lifeline(tx: &mut Tx<'_>, diagram: Id, lifeline: Id, x: f32, y: f32) 
         .filter(|l| !l.destroyed)
         .map(|l| l.bottom())
         .reduce(f32::max)
-        .map_or(LIFELINE_LENGTH, |bottom| (bottom - head.bottom()).max(60.0));
+        .map_or(LIFELINE_LENGTH, |bottom| (bottom - head.bottom()).max(MIN_LIFELINE));
     let id = tx.add_presentation(diagram, Presentation::lifeline(lifeline, head, length))?;
     tidy(tx, diagram)?;
     Ok(id)
@@ -407,9 +413,10 @@ pub fn add_fragment(
     if lanes.is_empty() {
         lanes = g.lanes.iter().collect();
     }
-    let left = lanes.iter().map(|l| l.head.x).reduce(f32::min).unwrap_or(40.0) - FRAGMENT_MARGIN;
-    let right =
-        lanes.iter().map(|l| l.head.right()).reduce(f32::max).unwrap_or(240.0) + FRAGMENT_MARGIN;
+    let left =
+        lanes.iter().map(|l| l.head.x).reduce(f32::min).unwrap_or(EMPTY_SPAN.0) - FRAGMENT_MARGIN;
+    let right = lanes.iter().map(|l| l.head.right()).reduce(f32::max).unwrap_or(EMPTY_SPAN.1)
+        + FRAGMENT_MARGIN;
     let height = if is_use { USE_HEIGHT } else { FRAGMENT_HEIGHT };
     let bounds = Rect::new(left, y, right - left, height);
     let presentation = if is_use {
@@ -574,6 +581,13 @@ pub fn move_item(tx: &mut Tx<'_>, diagram: Id, element: Id, y: f32) -> Result<()
         if !bars.insert(bar.id) {
             continue;
         }
+        // The messages that start the bar come along, so a call into a busy lifeline keeps
+        // its bar.
+        for other in &g.messages {
+            if other.target == bar.lane && (bar.top - other.end()).abs() < 0.5 {
+                messages.insert(other.id);
+            }
+        }
         for b in &g.bars {
             if b.lane == bar.lane && b.id != bar.id && bar.top < b.top && b.top <= bar.bottom {
                 queue.push(*b);
@@ -617,6 +631,23 @@ pub fn move_item(tx: &mut Tx<'_>, diagram: Id, element: Id, y: f32) -> Result<()
                 *length = (bottom - head.bottom()).max(RECEIVER_BAR + BAR_MARGIN);
             }
         })?;
+    }
+    // Moved off its sender's bar, a message gets a bar of its own there, as `add_message` gives
+    // it. Replies leave the bar they end and found messages have no sender.
+    let gate = match tx.model().get(element).map(|e| e.kind()) {
+        Some(ElementKind::Message(p)) => p.gate,
+        _ => MessageGate::None,
+    };
+    if m.sort != MessageSort::Reply && gate != MessageGate::Found {
+        let moved = Geometry::read(tx.model(), diagram)?;
+        if moved.bar_at(m.source, y).is_none() {
+            let height = match (gate, m.sort) {
+                (MessageGate::Lost, _) => LOST_SENDER_BAR,
+                (_, MessageSort::Create) => CREATE_SENDER_BAR,
+                _ => SENDER_BAR,
+            };
+            add_bar(tx, diagram, m.source, y, height)?;
+        }
     }
     tidy(tx, diagram)
 }
@@ -1348,6 +1379,27 @@ mod tests {
         // Numbered by the bars they are sent from.
         let numbers: Vec<String> = labels(&scene_of(&doc, d));
         assert_eq!(numbers[..2], ["1: ".to_owned(), "1.1: ".to_owned()]);
+        doc.model().check().unwrap();
+    }
+
+    #[test]
+    fn moving_a_call_takes_what_starts_inside_it_and_finds_a_sender_bar() {
+        let (mut doc, d, a, b) = two_lifelines();
+        let at = Point::new(440.0, 40.0);
+        let c = doc
+            .edit("lifeline", |tx| palette::create_node(tx, d, NodeTool::Lifeline, at, "c"))
+            .unwrap()
+            .1;
+        let call = draw(&mut doc, d, EdgeTool::Message, a, b, 120.0);
+        // A call into the busy lifeline: its bar sits inside the first call's bar.
+        let busy = draw(&mut doc, d, EdgeTool::Message, c, b, 135.0);
+        doc.edit("move", |tx| super::move_item(tx, d, call, 300.0)).unwrap();
+        assert!(matches!(message(&doc, d, busy), Shape::Message { y: 315.0, .. }));
+        // A message sent from the moved bar, moved up out of it, starts a bar of its own.
+        let onward = draw(&mut doc, d, EdgeTool::Message, b, c, 340.0);
+        doc.edit("move", |tx| super::move_item(tx, d, onward, 200.0)).unwrap();
+        let tops = bars(&doc, d).iter().filter(|(top, _)| *top == 200.0).count();
+        assert_eq!(tops, 2, "{:?}", bars(&doc, d));
         doc.model().check().unwrap();
     }
 
