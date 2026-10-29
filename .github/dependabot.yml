@@ -13,9 +13,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    # GPUI and gpui-component move together; their updates need manual porting anyway.
+    # GPUI and gpui-component move together; their updates need manual porting anyway. resvg
+    # follows the version GPUI uses, so icons render alike in the app and in the PNG export.
     ignore:
       - dependency-name: gpui*
+      - dependency-name: resvg
     groups:
       cargo:
         update-types: [minor, patch]
