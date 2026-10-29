@@ -13,12 +13,19 @@ use std::path::{Path, PathBuf};
 use resvg::{tiny_skia, usvg};
 use umlcraft_nsd::{Metrics, read, svg};
 
-/// Reference sets: diagrams as Structorizer saved them, and its PNG exports of them.
+/// Reference sets: diagrams as Structorizer saved them, and its PNG exports of them on Linux.
 const SETS: &[(&str, &str)] = &[
     ("korpus-kanonisch", "plain/korpus-kanonisch/png"),
     ("breiten-kanonisch", "plain/breiten/png"),
     ("struktur-kanonisch", "plain/struktur/png"),
     ("mess2-kanonisch", "plain/mess2/png"),
+];
+
+/// The same diagrams exported on Windows (by Ulf, with the same settings).
+const WINDOWS_SETS: &[(&str, &str)] = &[
+    ("korpus-kanonisch", "windows/korpus/png"),
+    ("breiten-kanonisch", "windows/breiten/png"),
+    ("struktur-kanonisch", "windows/struktur/png"),
 ];
 
 /// Runs of dark pixels: (row, from, to) and (column, from, to).
@@ -63,11 +70,26 @@ fn unmatched(a: &BTreeSet<(u32, u32, u32)>, b: &BTreeSet<(u32, u32, u32)>) -> Ve
 
 #[test]
 fn drawings_match_structorizer() {
+    compare(SETS, Metrics::linux(), "");
+}
+
+#[test]
+fn drawings_match_structorizer_on_windows() {
+    compare(WINDOWS_SETS, Metrics::windows(), "windows:");
+}
+
+/// Draws the diagrams of `sets` with `metrics` and compares them with the images; deviations
+/// of these sets are listed with `prefix`.
+fn compare(sets: &[(&str, &str)], metrics: &Metrics, prefix: &str) {
     let Some(refs) = std::env::var_os("UMLCRAFT_NSD_REFS") else {
         eprintln!("skipped: UMLCRAFT_NSD_REFS is not set");
         return;
     };
     let refs = PathBuf::from(refs);
+    if !refs.join(sets[0].1).is_dir() {
+        eprintln!("skipped: {} is missing", sets[0].1);
+        return;
+    }
     let deviations = std::fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/structorizer_deviations.txt"),
     )
@@ -79,9 +101,8 @@ fn drawings_match_structorizer() {
         .collect();
     let mut options = usvg::Options::default();
     options.fontdb_mut().load_system_fonts();
-    let metrics = Metrics::linux();
     let (mut checked, mut failures) = (0, Vec::new());
-    for (diagrams, images) in SETS {
+    for (diagrams, images) in sets {
         let mut files: Vec<PathBuf> = std::fs::read_dir(refs.join(diagrams))
             .unwrap()
             .map(|e| e.unwrap().path())
@@ -99,7 +120,7 @@ fn drawings_match_structorizer() {
             let mut ours = tiny_skia::Pixmap::new(size.width(), size.height()).unwrap();
             resvg::render(&tree, tiny_skia::Transform::identity(), &mut ours.as_mut());
             checked += 1;
-            let key = format!("{diagrams}/{name}");
+            let key = format!("{prefix}{diagrams}/{name}");
             let mut problems = Vec::new();
             if (ours.width(), ours.height()) != (expected.width(), expected.height()) {
                 problems.push(format!(

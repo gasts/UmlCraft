@@ -47,6 +47,8 @@ const REFERENCE_FOLDERS: &[&str] = &[
     "java",
     "korpus-kanonisch",
     "korpus-gui",
+    // Saved by Structorizer's GUI on Windows: the same bytes as on Linux (LF, no BOM).
+    "windows/gui",
     "breiten-kanonisch",
     "struktur-kanonisch",
 ];

@@ -10,6 +10,20 @@ use std::sync::OnceLock;
 pub struct Metrics {
     plain: Face,
     bold: Face,
+    includes: Includes,
+}
+
+/// The box with the include list above a diagram's title, in its small font: measured in
+/// Structorizer's images, since the small font's widths are not in the table.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Includes {
+    /// The box's height (two lines of the small font).
+    pub height: i32,
+    /// The width of its caption `Included diagrams:`.
+    pub caption: i32,
+    /// The first line's baseline below the box's top, and the distance to the next.
+    pub baseline: i32,
+    pub line: i32,
 }
 
 #[derive(Debug)]
@@ -37,16 +51,22 @@ impl Face {
 }
 
 impl Metrics {
-    /// The metrics of the platform UmlCraft runs on. Only Linux's table is measured so far;
-    /// the others use it until theirs are.
+    /// The metrics of the platform UmlCraft runs on: Linux's on Linux, otherwise Windows's,
+    /// the reference platform (macOS is not measured).
     pub fn for_platform() -> &'static Metrics {
-        Metrics::linux()
+        if cfg!(target_os = "linux") { Metrics::linux() } else { Metrics::windows() }
     }
 
     /// Dialog 12 as Java draws it on Linux (DejaVu Sans).
     pub fn linux() -> &'static Metrics {
         static LINUX: OnceLock<Metrics> = OnceLock::new();
         LINUX.get_or_init(|| parse(include_str!("metrics/dialog12-linux.txt")))
+    }
+
+    /// Dialog 12 as Java draws it on Windows (Arial): whole-pixel advances, lines 16 px apart.
+    pub fn windows() -> &'static Metrics {
+        static WINDOWS: OnceLock<Metrics> = OnceLock::new();
+        WINDOWS.get_or_init(|| parse(include_str!("metrics/dialog12-windows.txt")))
     }
 
     /// The width Structorizer gives `text` (one line); tabs and control characters count 0.
@@ -90,15 +110,34 @@ impl Metrics {
     pub fn title_line(&self) -> i32 {
         self.bold.height
     }
+
+    pub fn includes(&self) -> Includes {
+        self.includes
+    }
 }
 
 fn parse(table: &str) -> Metrics {
     let mut faces: [Option<Face>; 2] = [None, None];
+    let mut includes = Includes::default();
     for line in table.lines() {
         let mut words = line.split_whitespace();
         let index = match words.next() {
             Some("plain") => 0,
             Some("bold") => 1,
+            Some("includes") => {
+                let rest: Vec<&str> = words.collect();
+                let number = |key: &str| -> i32 {
+                    let at = rest.iter().position(|w| *w == key).expect("includes key");
+                    rest[at + 1].parse().expect("includes number")
+                };
+                includes = Includes {
+                    height: number("height"),
+                    caption: number("caption"),
+                    baseline: number("baseline"),
+                    line: number("line"),
+                };
+                continue;
+            }
             _ => continue,
         };
         let rest: Vec<&str> = words.collect();
@@ -130,7 +169,8 @@ fn parse(table: &str) -> Metrics {
     let [Some(plain), Some(bold)] = faces else { panic!("metrics table lacks a face") };
     assert_eq!(plain.latin.len(), 224, "plain advances of U+0020..U+00FF");
     assert_eq!(bold.latin.len(), 224, "bold advances of U+0020..U+00FF");
-    Metrics { plain, bold }
+    assert!(includes.height > 0, "metrics table lacks the include box");
+    Metrics { plain, bold, includes }
 }
 
 #[cfg(test)]
