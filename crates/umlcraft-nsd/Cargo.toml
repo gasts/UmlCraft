@@ -13,6 +13,8 @@ thiserror.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
+# The drawing test rasterizes our SVG and decodes Structorizer's PNG images.
+resvg.workspace = true
 
 [lints]
 workspace = true
