@@ -7,7 +7,8 @@ today.
 
 - **Settings dialog** (Tools › Settings …, Ctrl+,): language, theme and the visibility column
   in one place. Changes apply at once. The language can also follow the system again, and the
-  visibility column no longer needs editing `settings.json`.
+  visibility column no longer needs editing `settings.json`. In the toolbar, a Settings button
+  takes the place of the Light/Dark and language buttons; View keeps both toggles.
 
 ## 0.8.0 – 2026-10-28
 

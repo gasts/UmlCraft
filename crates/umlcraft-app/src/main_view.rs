@@ -919,13 +919,6 @@ impl MainView {
                 }),
             )
             .child(div().flex_1())
-            .child(action_button("theme", t!("toolbar.theme").into(), Box::new(ToggleTheme)))
-            .child(action_button(
-                "language",
-                t!("toolbar.language").into(),
-                Box::new(ToggleLanguage),
-            ))
-            .child(separator())
             .child(action_button("settings", t!("toolbar.settings").into(), Box::new(OpenSettings)))
     }
 
