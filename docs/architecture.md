@@ -467,6 +467,14 @@ writes, and none of its code is used.
   own colours. The hatching of disabled elements repeats Structorizer's 5×10 pixel tile from
   the image's origin. `svg::render` writes it as an SVG image as large as Structorizer's PNG
   export; the app rasterizes it with `png::from_svg` like UML diagrams.
+- **In the app** (`umlcraft-app/src/nsd`), a structogram opens in a window of its own
+  (`nsd::open`); the main window only gets the menu item and a switch by extension where files
+  open (menu, command line, system, recent files). `NsdView` holds the diagram apart from the
+  window, so that an editor or a tab can build on it. It shows the SVG export rasterized with
+  resvg, made again when the zoom or the screen's scale changes, so the window holds exactly
+  what an export does; GPUI cannot turn text, which turned case branches need. The diagram stays
+  a white sheet in the dark theme; the area around it follows the theme. The window has a
+  toolbar instead of menus, because on macOS the menu bar belongs to the whole app.
 - Where the texts in triangular heads sit (an alternative's condition, a case's
   discriminator) follows no rule we found; a fit to Structorizer's positions puts them within
   a few pixels. Lines are exact.

@@ -3,6 +3,14 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
+## Unreleased
+
+- **Structograms**: File › Open structogram … shows Nassi-Shneiderman diagrams from
+  [Structorizer](https://structorizer.fisch.lu) (`.nsd`) in a window of their own, drawn as
+  Structorizer draws them with syntax highlighting off, with zoom, panning and export as SVG
+  or PNG. The project stays open; `.nsd` files also open from the command line, the system and
+  the recent files.
+
 ## 0.9.0 – 2026-10-29
 
 - **Settings dialog** (Tools › Settings …, Ctrl+,): language, theme and the visibility column
