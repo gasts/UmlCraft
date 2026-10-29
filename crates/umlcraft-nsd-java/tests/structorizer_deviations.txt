@@ -1,0 +1,10 @@
+# Methods whose structure differs from Structorizer's Java import on purpose (docs/nsd-spec.md § 4).
+Exceptions.withResources: Structorizer adds a broken "var r: Reader <- null" after the try; we put the resource at the start of the try only
+Jumps.labels: Structorizer keeps the label "outer:" as a red, disabled instruction; we leave it out and report it
+Loops.endless: while (true) is an endless loop for us, Structorizer keeps a while loop
+Loops.free: a for loop with several variables stays one for element for us (text as in the code); Structorizer splits it into instructions and a while loop and drops the update; in for (int i = 0; ; i++) we keep the update at the end of the body
+Misc.check: assert stays an instruction as written; Structorizer turns it into an alternative with a throw
+Misc.sync: synchronized puts its body in place with the lock as a comment; Structorizer makes a for loop "for synchronized <- 0 to 0"
+Statements.declarations: a declaration without a value (int x;) stays; Structorizer drops it
+Switches.classic: the declaration String name; stays (see Statements.declarations)
+Switches.defaultInMiddle: the declaration int r; stays (see Statements.declarations), and Structorizer misreads a default in the middle as a fourth, empty case
