@@ -6744,6 +6744,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "umlcraft-nsd"
+version = "0.8.0"
+dependencies = [
+ "pretty_assertions",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "umlcraft-reverse"
 version = "0.9.0"
 dependencies = [
