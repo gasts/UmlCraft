@@ -2,6 +2,8 @@ toolbar:
   save: Speichern
   undo: Rückgängig
   redo: Wiederholen
+  undo_named: "Rückgängig: %{what}"
+  redo_named: "Wiederholen: %{what}"
   theme: Hell/Dunkel
   language: English
   settings: Einstellungen
@@ -146,6 +148,9 @@ prop:
   type: Art
   visibility: Sichtbarkeit
   stereotypes: Stereotypen
+  stereotypes_placeholder: entity, control
+  constraints_placeholder: ordered, unique
+  in_state_placeholder: gefüllt, bezahlt
   abstract: Abstrakt
   declaration: Deklaration
   static: Statisch
@@ -245,6 +250,7 @@ status:
   unsaved_file: Nicht gespeichert
   exporting: Export nach Astah läuft …
   importing: Quellcode wird importiert …
+  importing_astah: Astah-Projekt wird importiert …
   imported: "%{files} Dateien importiert: %{created} neue Typen, %{updated} aktualisiert, %{associations} Assoziationen."
   hint: "Mausrad: verschieben · Strg+Mausrad: zoomen · mittlere Taste: Ansicht ziehen"
   hint_node: "Klicken, um das Element zu platzieren · Esc: abbrechen"
@@ -258,11 +264,15 @@ dialog:
   save: Speichern
   discard: Verwerfen
   cancel: Abbrechen
+  ok: OK
   open_failed: Das Projekt konnte nicht geöffnet werden.
   save_failed: Das Projekt konnte nicht gespeichert werden.
   import_failed: Das Astah-Projekt konnte nicht importiert werden.
   import_partial: "%{count} Elemente des Astah-Projekts wurden nicht übernommen."
   import_partial_detail: "UmlCraft kennt diese Elementarten noch nicht: %{kinds}"
+  import_failed_detail: "Diese Elemente ließen sich nicht ins Modell einfügen: %{kinds}"
+  import_lost_shapes: "%{count} Formen in Diagrammen wurden weggelassen."
+  import_shapes_partial: Einige Formen des Astah-Projekts wurden nicht übernommen.
   export_done: Das Astah-Projekt wurde exportiert.
   export_failed: Das Astah-Projekt konnte nicht exportiert werden.
   export_partial: "%{count} Details des Projekts konnten nicht nach Astah übernommen werden."
@@ -272,6 +282,8 @@ dialog:
   astah_missing_detail: "UmlCraft schreibt Astah-Projekte über die API von Astah Professional, UML oder SysML. Dazu muss eines davon installiert sein oder die Umgebungsvariable ASTAH_HOME auf seinen Installationsordner zeigen; danach UmlCraft neu starten."
   import_source_failed: Der Quellcode konnte nicht importiert werden.
   import_source_none: Keine Quelldateien gefunden.
+  import_source_discarded: Der Quellcode-Import wurde verworfen.
+  import_source_discarded_detail: Während des Imports wurde ein anderes Projekt geöffnet. Bitte den Import in diesem Projekt wiederholen.
   import_source_none_detail: "Die Auswahl enthält keine Dateien mit der Endung %{extensions}."
   import_source_partial: "%{count} Dateien konnten nicht importiert werden, die übrigen schon."
   import_source_skipped: "Wie in Astah ausgelassen: %{items}"
@@ -458,3 +470,32 @@ kind:
   slot: Slot
   link: Link
   interactionUse: Interaktionsverweis
+error:
+  named: "„%{name}“"
+  unnamed: ein Element
+  not_found: "%{a} gibt es nicht."
+  duplicate_id: Die Kennung eines Elements kommt doppelt vor.
+  invalid_owner: "%{child} (%{child_kind}) kann nicht in %{owner} (%{owner_kind}) liegen."
+  index_out_of_range: Die Position liegt außerhalb der Liste.
+  root: Das Projekt selbst kann nicht gelöscht, verschoben oder angelegt werden.
+  has_children: "%{a} enthält noch Elemente."
+  still_referenced: "%{a} wird noch von %{b} verwendet."
+  still_shown: "%{a} wird noch im Diagramm %{b} gezeigt."
+  invalid_reference: "%{a} verweist auf ein Element, das es nicht gibt oder das dort nicht passt."
+  kind_changed: "Die Art von %{a} kann sich nicht ändern."
+  ownership_cycle: "%{a} kann nicht in sich selbst liegen."
+  generalization_cycle: Diese Generalisierung würde ein Element zu seinem eigenen Vorfahren machen.
+  not_a_diagram: "%{a} ist kein Diagramm."
+  diagram_not_empty: "Das Diagramm %{a} zeigt noch Elemente."
+  edges_attached: An dieser Form hängen noch Linien.
+  shape_changed: Eine Form kann nicht zur Linie werden und umgekehrt.
+  edge_cycle: Diese Linie würde über andere Linien bei sich selbst enden.
+  reference_cycle: "%{a} würde sich über andere Beziehungen mit sich selbst verbinden."
+  not_finite: Eine Position oder Größe ist keine gültige Zahl.
+  type_too_deep: "Ein Typ von %{a} ist tiefer als %{max} Ebenen verschachtelt."
+  invalid: "Das Modell ist widersprüchlich: %{detail}"
+  multiplicity: "„%{text}“ ist keine Multiplizität. Beispiele: 1, 0..1, 1..*, *"
+  malformed: "Die Datei ist beschädigt (Zeile %{line}, Spalte %{column})."
+  not_a_project: Die Datei ist kein UmlCraft-Projekt.
+  too_new: "Die Datei stammt von einem neueren UmlCraft (Formatversion %{found}; diese Version liest bis %{supported})."
+  migration: "Die Datei ließ sich nicht von Formatversion %{from} umstellen: %{reason}"

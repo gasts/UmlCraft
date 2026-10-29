@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use rust_i18n::t;
@@ -34,15 +34,25 @@ pub struct Workspace {
     pub measure: Box<dyn TextMeasure>,
 }
 
-/// The fitted sizes and the contents of all automatically sized boxes, by diagram and
-/// presentation.
-fn fitted_boxes(model: &Model, measure: &dyn TextMeasure) -> Vec<(Id, Id, Size, String)> {
+/// An automatically sized box: where it is, its bounds, the size its content needs, and the
+/// content.
+struct FittedBox {
+    diagram: Id,
+    presentation: Id,
+    bounds: Rect,
+    size: Size,
+    content: String,
+}
+
+/// All automatically sized boxes of all diagrams.
+fn fitted_boxes(model: &Model, measure: &dyn TextMeasure) -> Vec<FittedBox> {
     model
         .views()
         .flat_map(|(diagram, view)| {
             view.presentations().iter().filter_map(move |p| {
+                let bounds = p.bounds()?;
                 let (size, content) = scene::fitted_box(model, p, measure)?;
-                Some((diagram, p.id, size, content))
+                Some(FittedBox { diagram, presentation: p.id, bounds, size, content })
             })
         })
         .collect()
@@ -179,19 +189,20 @@ impl Workspace {
         f: impl FnOnce(&mut Tx<'_>) -> Result<R, ModelError>,
     ) -> Result<R, ModelError> {
         let measure = &*self.measure;
-        let before = fitted_boxes(self.doc.model(), measure);
+        let before: HashMap<Id, String> = fitted_boxes(self.doc.model(), measure)
+            .into_iter()
+            .map(|b| (b.presentation, b.content))
+            .collect();
         self.doc.edit(label, |tx| {
             let result = f(tx)?;
             let close = |a: Size, b: Size| {
                 (a.width - b.width).abs() < 0.01 && (a.height - b.height).abs() < 0.01
             };
-            for (diagram, p, size, content) in fitted_boxes(tx.model(), measure) {
-                let unchanged = before.iter().any(|(_, q, _, old)| *q == p && *old == content);
-                let Some(bounds) = tx.model().view(diagram).and_then(|v| v.get(p)?.bounds()) else {
-                    continue;
-                };
-                if !unchanged && !close(bounds.size(), size) {
-                    tx.set_bounds(diagram, p, Rect::from_origin_size(bounds.origin(), size))?;
+            for b in fitted_boxes(tx.model(), measure) {
+                let unchanged = before.get(&b.presentation) == Some(&b.content);
+                if !unchanged && !close(b.bounds.size(), b.size) {
+                    let rect = Rect::from_origin_size(b.bounds.origin(), b.size);
+                    tx.set_bounds(b.diagram, b.presentation, rect)?;
                 }
             }
             Ok(result)
@@ -205,7 +216,7 @@ impl Workspace {
                 Some(value)
             }
             Err(err) => {
-                self.message = Some(err.to_string());
+                self.message = Some(crate::errors::model_error(Some(self.doc.model()), &err));
                 None
             }
         }
@@ -334,7 +345,6 @@ impl Workspace {
         let Some(diagram) = self.active_diagram else { return };
         let label = t!("edit.connect").to_string();
         let result = self
-            .doc
             .edit(label, |tx| palette::connect_message(tx, diagram, tool, source, target, slot));
         if let Some(edge) = self.report(result) {
             self.select(vec![edge]);
@@ -352,7 +362,7 @@ impl Workspace {
     ) {
         let Some(diagram) = self.active_diagram else { return };
         let label = t!("edit.create").to_string();
-        let result = self.doc.edit(label, |tx| {
+        let result = self.edit(label, |tx| {
             palette::create_fragment(tx, diagram, tool, slot, covered, Some(origin))
         });
         if let Some((fragment, node)) = self.report(result) {
@@ -497,7 +507,6 @@ impl Workspace {
         let Some(diagram) = self.active_diagram else { return };
         let label = t!("edit.properties").to_string();
         let result = self
-            .doc
             .edit(label, |tx| tx.update_presentation(diagram, presentation, |p| f(&mut p.style)));
         self.report(result);
     }
@@ -754,11 +763,18 @@ impl Workspace {
         if nodes.len() < 2 {
             return;
         }
-        let rects: Vec<Rect> = nodes.iter().map(|&(_, r)| r).collect();
+        // Aligned as drawn: a box may be drawn larger than stored, e.g. around a long name.
+        let drawn =
+            scene::build(self.doc.model(), diagram, &scene::Preview::default(), &*self.measure);
+        let rects: Vec<Rect> =
+            nodes.iter().map(|&(p, r)| drawn.node(p).map_or(r, |n| n.rect)).collect();
         let aligned = scene::align(&rects, alignment);
         let label = t!("edit.align").to_string();
         let result = self.edit(label, |tx| {
-            nodes.iter().zip(aligned).try_for_each(|(&(p, _), r)| tx.set_bounds(diagram, p, r))
+            nodes.iter().zip(rects.iter().zip(aligned)).try_for_each(|(&(p, stored), (d, a))| {
+                let moved = stored.translate(a.x - d.x, a.y - d.y);
+                tx.set_bounds(diagram, p, moved)
+            })
         });
         self.report(result);
     }
@@ -956,7 +972,17 @@ impl Workspace {
     /// Changes an element's data as one undo step, e.g. from the properties panel.
     pub fn update_element(&mut self, id: Id, f: impl FnOnce(&mut ElementData)) {
         let label = t!("edit.properties").to_string();
-        let result = self.edit(label, |tx| tx.update(id, f));
+        let result = self.edit(label, |tx| {
+            tx.update(id, f)?;
+            // A message's sort decides how bars are fitted around it.
+            let sequence = |d: &Id| {
+                tx.model().get(*d).and_then(|e| e.kind().as_diagram())
+                    == Some(umlcraft_model::DiagramKind::Sequence)
+            };
+            let diagrams: Vec<Id> =
+                tx.model().shown_on(id).into_iter().map(|(d, _)| d).filter(sequence).collect();
+            diagrams.into_iter().try_for_each(|d| umlcraft_notation::sequence_edit::tidy(tx, d))
+        });
         self.report(result);
     }
 
@@ -972,14 +998,15 @@ impl Workspace {
     /// Deletes one element from the model (with everything that depends on it).
     pub fn delete_element(&mut self, id: Id) {
         let label = t!("edit.delete").to_string();
-        let region =
-            self.doc.model().get(id).is_some_and(|e| matches!(e.kind(), ElementKind::Region));
+        let kind = self.doc.model().get(id).map(|e| e.kind().clone());
         let result = self.edit(label, |tx| {
-            // The neighbors of a region take its room.
-            if region {
-                state_edit::delete_region(tx, id)?
-            } else {
-                tx.delete(id)?
+            match kind {
+                // The neighbors of a region take its room.
+                Some(ElementKind::Region) => state_edit::delete_region(tx, id)?,
+                Some(ElementKind::InteractionOperand(_)) => {
+                    umlcraft_notation::sequence_edit::delete_operand(tx, id)?
+                }
+                _ => tx.delete(id)?,
             }
             umlcraft_notation::sequence_edit::tidy_all(tx)
         });
@@ -1021,6 +1048,36 @@ mod tests {
     use umlcraft_model::sample::order_system;
 
     use super::*;
+
+    #[test]
+    fn align_lines_up_the_boxes_as_drawn() {
+        let (doc, ids) = order_system();
+        let mut ws = Workspace::new(doc, None);
+        let d = ids.class_diagram;
+        ws.open_diagram(d);
+        let node = |ws: &Workspace, element: Id| ws.doc.model().shown_on(element)[0].1;
+        let (customer, order) = (node(&ws, ids.customer), node(&ws, ids.order));
+        // A small stored box drawn wider around a long name.
+        ws.select(vec![order]);
+        ws.edit("tiny".into(), |tx| {
+            tx.rename(ids.order, "AnOrderWithAVeryLongName")?;
+            tx.update_presentation(d, order, |p| {
+                p.style.auto_size = false;
+                if let Shape::Node { bounds, .. } = &mut p.shape {
+                    (bounds.width, bounds.height) = (40.0, 30.0);
+                }
+            })
+        })
+        .unwrap();
+        let stored = ws.doc.model().view(d).unwrap().get(order).unwrap().bounds().unwrap();
+        let drawn = scene::build(ws.doc.model(), d, &scene::Preview::default(), &*ws.measure);
+        assert!(drawn.node(order).unwrap().rect.width > stored.width, "drawn wider than stored");
+        ws.select(vec![customer, order]);
+        ws.align_selection(Alignment::Right);
+        let scene = scene::build(ws.doc.model(), d, &scene::Preview::default(), &*ws.measure);
+        let right = |p: Id| scene.node(p).unwrap().rect.right();
+        assert_eq!(right(order), right(customer));
+    }
 
     #[test]
     fn boxes_sized_by_content_fit_when_edited() {

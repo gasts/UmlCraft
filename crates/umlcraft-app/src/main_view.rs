@@ -38,6 +38,7 @@ type Continuation = Box<dyn FnOnce(&mut MainView, &mut Window, &mut Context<Main
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Busy {
     ExportingAstah,
+    ImportingAstah,
     ImportingSource,
 }
 
@@ -68,6 +69,9 @@ pub struct MainView {
     /// Set once the user agreed to close despite unsaved changes.
     close_confirmed: bool,
     busy: Option<Busy>,
+    /// Counts replaced documents, so background work can tell whether its document is still
+    /// the open one.
+    generation: u64,
     /// A message for the status bar, shown while the document stays at the given revision.
     notice: Option<(String, u64)>,
     _subscriptions: Vec<Subscription>,
@@ -127,6 +131,7 @@ impl MainView {
             tree_selection: None,
             close_confirmed: false,
             busy: None,
+            generation: 0,
             notice: None,
             clipboard: None,
             paste_count: 0,
@@ -207,7 +212,7 @@ impl MainView {
                     ws.select_element(target);
                     cx.notify();
                 });
-                self.properties.update(cx, |p, cx| p.focus_name(window, cx));
+                self.properties.update(cx, |p, cx| p.focus_name(target, window, cx));
             }
             TreeCommandKind::Delete => self.workspace.update(cx, |ws, cx| {
                 ws.delete_element(target);
@@ -218,8 +223,16 @@ impl MainView {
 
     // ----- Files ---------------------------------------------------------------------------
 
+    /// Commits text typed into the canvas or the properties panel but not yet confirmed, so
+    /// that saving, exporting and the unsaved-changes check see it.
+    fn flush_edits(&mut self, cx: &mut Context<Self>) {
+        self.canvas.update(cx, |canvas, cx| canvas.commit_edit(cx));
+        self.properties.update(cx, |properties, cx| properties.flush(cx));
+    }
+
     /// Runs `then` right away, or after asking what to do with unsaved changes.
     fn confirm_discard(&mut self, window: &mut Window, cx: &mut Context<Self>, then: Continuation) {
+        self.flush_edits(cx);
         if !self.workspace.read(cx).doc.is_dirty() {
             then(self, window, cx);
             return;
@@ -253,6 +266,11 @@ impl MainView {
         });
         self.collapsed.clear();
         self.tree_revision = None;
+        self.generation += 1;
+        // Neither belongs to the new document: a notice keyed by revision would come back, and
+        // what was copied refers to elements that are gone.
+        self.notice = None;
+        self.clipboard = None;
     }
 
     fn new_project(&mut self, _: &NewProject, window: &mut Window, cx: &mut Context<Self>) {
@@ -312,36 +330,99 @@ impl MainView {
 
     /// Opens a project, or imports an `.asta` file.
     pub fn open(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        // Relative paths (from the command line) would not open from elsewhere later.
+        let path = std::path::absolute(&path).unwrap_or(path);
         if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("asta")) {
             self.import(&path, window, cx);
             return;
         }
-        match umlcraft_format::load(&path) {
-            Ok(model) => {
+        match umlcraft_format::load_versioned(&path) {
+            Ok((model, version)) => {
                 let mut doc = Document::new(model);
-                umlcraft_notation::sequence_edit::upgrade_document(&mut doc);
+                // Version 1 stored no geometry for sequence diagrams.
+                if version < 2 {
+                    umlcraft_notation::sequence_edit::upgrade_document(&mut doc);
+                }
                 self.replace_document(doc, Some(path.clone()), cx);
                 self.remember(&path, cx);
             }
-            Err(err) => self.show_error(&t!("dialog.open_failed"), &err.to_string(), window, cx),
+            Err(err) => {
+                // A recent file that no longer opens leaves the list.
+                if self.settings.remove_recent(&path) {
+                    self.settings.save();
+                    self.reload_menus(cx);
+                }
+                let detail = crate::errors::format_error(&err);
+                self.show_error(&t!("dialog.open_failed"), &detail, window, cx)
+            }
         }
     }
 
-    /// Imports an Astah project as a new, not yet saved project. Says so when parts of it
-    /// could not be carried over.
+    /// Imports an Astah project in the background as a new, not yet saved project. Says so
+    /// when parts of it could not be carried over.
     fn import(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        match umlcraft_asta::import(path) {
+        if self.busy.is_some() {
+            return;
+        }
+        self.busy = Some(Busy::ImportingAstah);
+        cx.notify();
+        let generation = self.generation;
+        let path = path.to_owned();
+        cx.spawn_in(window, async move |this, cx| {
+            let result =
+                cx.background_executor().spawn(async move { umlcraft_asta::import(&path) }).await;
+            this.update_in(cx, |this, window, cx| {
+                this.busy = None;
+                cx.notify();
+                // Another project opened meanwhile was the user's later choice.
+                if this.generation == generation {
+                    this.apply_import(result, window, cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn apply_import(
+        &mut self,
+        result: Result<umlcraft_asta::Imported, umlcraft_asta::AstaError>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
             Ok(imported) => {
-                self.replace_document(Document::new(imported.model), None, cx);
-                let count: usize = imported.skipped.values().sum();
-                if count > 0 {
-                    let kinds: Vec<String> = imported
-                        .skipped
+                let mut doc = Document::new(imported.model);
+                doc.mark_unsaved();
+                self.replace_document(doc, None, cx);
+                let kinds = |counts: &std::collections::BTreeMap<String, usize>| {
+                    let list: Vec<String> = counts
                         .iter()
                         .map(|(class, n)| format!("{} ({n})", astah_class_label(class)))
                         .collect();
-                    let message = t!("dialog.import_partial", count = count);
-                    let detail = t!("dialog.import_partial_detail", kinds = kinds.join(", "));
+                    list.join(", ")
+                };
+                let count: usize = imported.skipped.values().sum::<usize>()
+                    + imported.failed.values().sum::<usize>();
+                let mut lines = Vec::new();
+                if !imported.skipped.is_empty() {
+                    lines
+                        .push(t!("dialog.import_partial_detail", kinds = kinds(&imported.skipped)));
+                }
+                if !imported.failed.is_empty() {
+                    lines.push(t!("dialog.import_failed_detail", kinds = kinds(&imported.failed)));
+                }
+                if imported.lost_presentations > 0 {
+                    let lost = imported.lost_presentations;
+                    lines.push(t!("dialog.import_lost_shapes", count = lost));
+                }
+                if !lines.is_empty() {
+                    let message = if count > 0 {
+                        t!("dialog.import_partial", count = count)
+                    } else {
+                        t!("dialog.import_shapes_partial")
+                    };
+                    let detail = lines.join("\n");
                     self.inform(PromptLevel::Info, &message, &detail, window, cx);
                 }
             }
@@ -360,6 +441,7 @@ impl MainView {
         if self.busy.is_some() {
             return;
         }
+        self.flush_edits(cx);
         let ws = self.workspace.read(cx);
         let model = ws.doc.model();
         let project = model.element(model.root()).map(|e| e.name().to_owned()).unwrap_or_default();
@@ -418,10 +500,9 @@ impl MainView {
             let started = this.update(cx, |this, cx| {
                 this.busy = Some(Busy::ImportingSource);
                 cx.notify();
+                this.generation
             });
-            if started.is_err() {
-                return;
-            }
+            let Ok(generation) = started else { return };
             let parsed = cx
                 .background_executor()
                 .spawn(async move {
@@ -433,6 +514,12 @@ impl MainView {
                 this.busy = None;
                 cx.notify();
                 match parsed {
+                    // The project it was meant for has been replaced in the meantime.
+                    Ok(_) if this.generation != generation => {
+                        let message = t!("dialog.import_source_discarded");
+                        let detail = t!("dialog.import_source_discarded_detail");
+                        this.inform(PromptLevel::Info, &message, &detail, window, cx);
+                    }
                     Ok(parsed) => this.apply_source(language, &parsed, window, cx),
                     Err(err) => this.show_error(
                         &t!("dialog.import_source_failed"),
@@ -567,6 +654,7 @@ impl MainView {
     /// Writes the open diagram as an SVG image, or rasterized as PNG, drawn as on the canvas
     /// in the light theme.
     fn export_image(&mut self, png: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.flush_edits(cx);
         let ws = self.workspace.read(cx);
         let Some(diagram) = ws.active_diagram else { return };
         let model = ws.doc.model();
@@ -655,6 +743,7 @@ impl MainView {
         cx: &mut Context<Self>,
         then: Option<Continuation>,
     ) {
+        self.flush_edits(cx);
         let ws = self.workspace.read(cx);
         let current = ws.path.clone();
         if let Some(path) = current.clone().filter(|_| !save_as) {
@@ -700,15 +789,19 @@ impl MainView {
                 true
             }
             Err(err) => {
-                self.show_error(&t!("dialog.save_failed"), &err.to_string(), window, cx);
+                self.show_error(
+                    &t!("dialog.save_failed"),
+                    &crate::errors::format_error(&err),
+                    window,
+                    cx,
+                );
                 false
             }
         }
     }
 
     fn remember(&mut self, path: &Path, cx: &mut Context<Self>) {
-        self.settings.add_recent(path);
-        self.settings.save();
+        self.settings.remember(path);
         self.reload_menus(cx);
     }
 
@@ -726,7 +819,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let rx = window.prompt(level, message, Some(detail), &["OK"], cx);
+        let rx = window.prompt(level, message, Some(detail), &[t!("dialog.ok").as_ref()], cx);
         cx.spawn_in(window, async move |_, _| {
             rx.await.ok();
         })
@@ -738,6 +831,7 @@ impl MainView {
     }
 
     fn should_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        self.flush_edits(cx);
         if self.close_confirmed || !self.workspace.read(cx).doc.is_dirty() {
             return true;
         }
@@ -844,7 +938,11 @@ impl MainView {
         self.settings.save();
         self.reload_menus(cx);
         self.sync_from_workspace(window, cx);
-        self.properties.update(cx, |_, cx| cx.notify());
+        // The fields' lists (Select items) take the new language too.
+        self.properties.update(cx, |p, cx| {
+            p.sync(window, cx);
+            cx.notify();
+        });
         window.refresh();
     }
 
@@ -872,6 +970,13 @@ impl MainView {
     fn toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ws = self.workspace.read(cx);
         let (can_undo, can_redo) = (ws.doc.can_undo(), ws.doc.can_redo());
+        // The step's name, e.g. "Undo Delete".
+        let named = |label: Option<&str>, key: &str, plain: &str| match label {
+            Some(what) if !what.is_empty() => t!(key, what = what).to_string(),
+            _ => t!(plain).to_string(),
+        };
+        let undo_tip = named(ws.doc.undo_label(), "toolbar.undo_named", "toolbar.undo");
+        let redo_tip = named(ws.doc.redo_label(), "toolbar.redo_named", "toolbar.redo");
         let can_align = ws.selected_nodes().len() > 1;
         let zoom = (self.canvas.read(cx).zoom() * 100.0).round();
         let separator = || div().w(px(1.0)).h(px(18.0)).mx_1().bg(cx.theme().border);
@@ -890,11 +995,13 @@ impl MainView {
             .child(separator())
             .child(
                 action_button("undo", t!("toolbar.undo").into(), Box::new(Undo))
-                    .disabled(!can_undo),
+                    .disabled(!can_undo)
+                    .tooltip(undo_tip),
             )
             .child(
                 action_button("redo", t!("toolbar.redo").into(), Box::new(Redo))
-                    .disabled(!can_redo),
+                    .disabled(!can_redo)
+                    .tooltip(redo_tip),
             )
             .child(separator())
             .child(action_button("zoom-out", "−".into(), Box::new(ZoomOut)))
@@ -1078,6 +1185,9 @@ impl MainView {
             }
             _ if self.busy == Some(Busy::ImportingSource) => {
                 div().child(t!("status.importing").to_string())
+            }
+            _ if self.busy == Some(Busy::ImportingAstah) => {
+                div().child(t!("status.importing_astah").to_string())
             }
             Some(message) => div().text_color(cx.theme().danger).child(message.clone()),
             None if notice.is_some() => {
@@ -1325,6 +1435,8 @@ fn menus(settings: &Settings) -> Vec<Menu> {
 }
 
 fn install_menus(settings: &Settings, cx: &mut App) {
+    // Built twice: `Menu` holds boxed actions and cannot be cloned, and both the platform and
+    // the in-window menu bar take one.
     cx.set_menus(menus(settings));
     let owned = menus(settings).into_iter().map(|m| m.owned()).collect();
     GlobalState::global_mut(cx).set_app_menus(owned);
@@ -1565,6 +1677,20 @@ mod tests {
         let label = recent_label(&long);
         assert!(label.starts_with(r"m2.ucraft — C:\Users\ulf…"), "{label}");
         assert!(label.ends_with(r"abcdef\scratchpad"), "{label}");
+        assert!(label.chars().count() <= "m2.ucraft — ".len() + 40, "{label}");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn recent_labels_put_the_file_name_first_and_shorten_folders() {
+        use super::recent_label;
+
+        let short = PathBuf::from("/home/ulf/shop.ucraft");
+        assert_eq!(recent_label(&short), "shop.ucraft — /home/ulf");
+        let long = PathBuf::from("/home/ulf/projects/teaching/2026/autumn/uml/examples/m2.ucraft");
+        let label = recent_label(&long);
+        assert!(label.starts_with("m2.ucraft — /home/ulf"), "{label}");
+        assert!(label.ends_with("uml/examples"), "{label}");
         assert!(label.chars().count() <= "m2.ucraft — ".len() + 40, "{label}");
     }
 }

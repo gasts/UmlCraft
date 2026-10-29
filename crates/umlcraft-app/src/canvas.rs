@@ -1,7 +1,7 @@
 //! The diagram editor surface: paints a [`Scene`] and handles tools, selection, dragging,
 //! waypoints, in-place editing and elements dropped from the model tree.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -46,6 +46,8 @@ const GRID: f32 = 20.0;
 const MIN_NODE: f32 = 20.0;
 /// How close (in screen pixels) the pointer must be to grab a handle.
 const HANDLE_GRAB: f32 = 6.0;
+/// How near, in screen pixels, the pointer must come to a line or figure to hit it.
+const HIT_TOLERANCE: f32 = 4.0;
 
 /// Snaps a logical coordinate or distance to half the grid.
 fn snap(v: f32) -> f32 {
@@ -181,11 +183,14 @@ impl Render for DraggedElement {
 enum Drag {
     /// Moving the selected nodes; `start` is the logical grab point. `reselect` is a node that
     /// was already part of a multi-selection: a click without movement selects just it.
+    /// `moved` is the selection with the contents of its containers, taken from the scene as it
+    /// was before the drag, so nodes a container passes over are not picked up.
     Move {
         start: MPoint,
         dx: f32,
         dy: f32,
         reselect: Option<Id>,
+        moved: Vec<Id>,
     },
     Resize {
         presentation: Id,
@@ -274,6 +279,8 @@ struct InlineEdit {
     free_text: bool,
     /// Logical rectangle of the edited text.
     rect: Rect,
+    /// The text the editor opened with; committing it unchanged changes nothing.
+    original: String,
     editor: Editor,
     _subscription: Subscription,
 }
@@ -296,7 +303,22 @@ pub struct DiagramCanvas {
     edit_when_drawn: Option<Id>,
     /// Members show their visibility in UmlCraft's own column (a setting).
     pub visibility_column: bool,
+    /// What the scene was built from: revision, diagram, column setting and locale. Without a
+    /// drag the scene is only built again when one of them changes, not on every pan, zoom or
+    /// caret blink.
+    scene_key: Option<(u64, Id, bool, String)>,
 }
+
+thread_local! {
+    /// Widths measured by [`FontMeasure`], by font size and boldness, then text: shaping is the
+    /// expensive part of building a scene, and the texts stay the same from frame to frame.
+    /// Looking a text up needs no copy of it.
+    static MEASURED: RefCell<HashMap<(u32, bool), HashMap<String, f32>>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Measured widths kept at most, so that typing in long texts cannot fill the memory.
+const MAX_MEASURED: usize = 50_000;
 
 /// Measures text with the window's font system, at 100 % zoom.
 pub struct FontMeasure<'a> {
@@ -317,6 +339,12 @@ impl TextMeasure for FontMeasure<'_> {
         if text.is_empty() {
             return 0.0;
         }
+        let font_key = (font_size.to_bits(), bold);
+        let cached =
+            MEASURED.with(|m| m.borrow().get(&font_key).and_then(|t| t.get(text)).copied());
+        if let Some(width) = cached {
+            return width;
+        }
         let mut f = font(self.family.clone());
         if bold {
             f = f.bold();
@@ -328,7 +356,15 @@ impl TextMeasure for FontMeasure<'_> {
             &[run],
             None,
         );
-        f32::from(line.width())
+        let width = f32::from(line.width());
+        MEASURED.with(|m| {
+            let mut m = m.borrow_mut();
+            if m.values().map(HashMap::len).sum::<usize>() >= MAX_MEASURED {
+                m.clear();
+            }
+            m.entry(font_key).or_default().insert(text.to_owned(), width);
+        });
+        width
     }
 
     fn visibility_column(&self) -> bool {
@@ -384,6 +420,7 @@ impl DiagramCanvas {
             editing: None,
             edit_when_drawn: None,
             visibility_column: false,
+            scene_key: None,
         }
     }
 
@@ -442,8 +479,13 @@ impl DiagramCanvas {
     }
 
     fn to_logical(&self, screen: Point<Pixels>) -> MPoint {
-        let local = self.local(screen);
-        MPoint::new((local.x - self.pan.x) / self.zoom, (local.y - self.pan.y) / self.zoom)
+        Transform { origin: self.bounds.get().origin, pan: self.pan, zoom: self.zoom }
+            .to_logical(screen)
+    }
+
+    /// [`HIT_TOLERANCE`] in diagram units at the current zoom.
+    fn hit_tolerance(&self) -> f32 {
+        HIT_TOLERANCE / self.zoom
     }
 
     /// Keeps a separate zoom and pan per diagram.
@@ -462,10 +504,10 @@ impl DiagramCanvas {
         self.editing = None;
     }
 
-    fn preview(&self, ws: &Workspace) -> Preview {
+    fn preview(&self) -> Preview {
         match &self.drag {
-            Some(Drag::Move { dx, dy, .. }) => Preview {
-                moved: scene::with_contents(&self.scene, &ws.selection).into_iter().collect(),
+            Some(Drag::Move { dx, dy, moved, .. }) => Preview {
+                moved: moved.iter().copied().collect(),
                 dx: *dx,
                 dy: *dy,
                 ..Preview::default()
@@ -487,7 +529,7 @@ impl DiagramCanvas {
     /// The node under `p` for connecting. Fragment frames and swimlanes only count at their
     /// border, so messages and flows can be drawn between what lies inside them.
     fn node_at(&self, p: MPoint) -> Option<Id> {
-        let tolerance = 4.0 / self.zoom;
+        let tolerance = self.hit_tolerance();
         self.scene
             .nodes
             .iter()
@@ -512,7 +554,7 @@ impl DiagramCanvas {
     /// relationship's line (not another anchor), as in Astah.
     fn connect_target(&self, tool: EdgeTool, p: MPoint, cx: &App) -> Option<Id> {
         let line = (tool == EdgeTool::NoteAnchor)
-            .then(|| scene::edge_at(&self.scene, p, 4.0 / self.zoom))
+            .then(|| scene::edge_at(&self.scene, p, self.hit_tolerance()))
             .flatten()
             .filter(|&edge| {
                 let ws = self.workspace.read(cx);
@@ -610,7 +652,7 @@ impl DiagramCanvas {
                     return;
                 }
                 // The lines between the regions of a state can be moved.
-                let line = scene::region_line_at(&self.scene, p, 4.0 / self.zoom)
+                let line = scene::region_line_at(&self.scene, p, self.hit_tolerance())
                     .filter(|_| !extend)
                     .map(|(n, index, vertical)| (n.id, index, n.rect, vertical));
                 if let Some((presentation, index, state, vertical)) = line {
@@ -645,7 +687,7 @@ impl DiagramCanvas {
                     cx.notify();
                     return;
                 }
-                match scene::hit_test(&self.scene, p, 4.0 / self.zoom) {
+                match scene::hit_test(&self.scene, p, self.hit_tolerance()) {
                     Some(id) => {
                         let already = selection.contains(&id);
                         // A click on a member row selects the member for the properties panel.
@@ -672,7 +714,12 @@ impl DiagramCanvas {
                         {
                             let reselect =
                                 (already && !extend && selection.len() > 1).then_some(id);
-                            self.drag = Some(Drag::Move { start: p, dx: 0.0, dy: 0.0, reselect });
+                            // Containers (boundaries, packages) take the nodes drawn inside
+                            // them along.
+                            let selection = &self.workspace.read(cx).selection;
+                            let moved = scene::with_contents(&self.scene, selection);
+                            self.drag =
+                                Some(Drag::Move { start: p, dx: 0.0, dy: 0.0, reselect, moved });
                         }
                     }
                     None => {
@@ -769,7 +816,7 @@ impl DiagramCanvas {
             return;
         }
         let p = self.to_logical(ev.position);
-        let hit = scene::hit_test(&self.scene, p, 4.0 / self.zoom);
+        let hit = scene::hit_test(&self.scene, p, self.hit_tolerance());
         self.update_workspace(cx, |ws| match hit {
             Some(id) if ws.selection.contains(&id) => {}
             Some(id) => ws.select(vec![id]),
@@ -889,10 +936,7 @@ impl DiagramCanvas {
             Some(Drag::Move { dx: 0.0, dy: 0.0, reselect: Some(id), .. }) => {
                 self.update_workspace(cx, |ws| ws.select(vec![id]));
             }
-            Some(Drag::Move { dx, dy, .. }) => {
-                // Containers (boundaries, packages) take the nodes drawn inside them along.
-                let selection = self.workspace.read(cx).selection.clone();
-                let moved = scene::with_contents(&self.scene, &selection);
+            Some(Drag::Move { dx, dy, moved, .. }) => {
                 self.update_workspace(cx, |ws| ws.move_nodes(&moved, dx, dy))
             }
             Some(Drag::Resize { presentation, original, rect, .. }) if rect != original => {
@@ -1053,7 +1097,7 @@ impl DiagramCanvas {
             }
             // A message of a sequence diagram: edit its label.
             None => {
-                let Some(id) = scene::hit_test(&self.scene, p, 4.0 / self.zoom) else {
+                let Some(id) = scene::hit_test(&self.scene, p, self.hit_tolerance()) else {
                     return false;
                 };
                 let Some(edge) = self.scene.edge(id).filter(|e| e.fixed) else { return false };
@@ -1117,6 +1161,7 @@ impl DiagramCanvas {
         cx: &mut Context<Self>,
     ) {
         // Focus once the editor is on screen; the click itself still focuses the canvas.
+        let original = text.clone();
         let editor = if multi_line {
             let state = cx.new(|cx| TextareaState::new(window, cx).default_value(text));
             let focus = state.clone();
@@ -1145,6 +1190,7 @@ impl DiagramCanvas {
             slot_of,
             free_text,
             rect,
+            original,
             editor: editor.0,
             _subscription: editor.1,
         });
@@ -1152,12 +1198,16 @@ impl DiagramCanvas {
     }
 
     /// Writes the in-place edit back, if one is open.
-    fn commit_edit(&mut self, cx: &mut Context<Self>) {
+    pub fn commit_edit(&mut self, cx: &mut Context<Self>) {
         let Some(edit) = self.editing.take() else { return };
         let text = match &edit.editor {
             Editor::Line(s) => s.read(cx).value().to_string(),
             Editor::Area(s) => s.read(cx).value().to_string(),
         };
+        if text == edit.original {
+            cx.notify();
+            return;
+        }
         let element = edit.element;
         match edit.slot_of {
             _ if edit.free_text => self.update_workspace(cx, |ws| ws.set_free_text(element, &text)),
@@ -1577,15 +1627,27 @@ impl Render for DiagramCanvas {
         };
         self.switch_viewport(active);
         let font_family: SharedString = DIAGRAM_FONT.into();
-        let scene = {
+        let key = {
+            let ws = self.workspace.read(cx);
+            ws.active_diagram.map(|d| {
+                (ws.doc.revision(), d, self.visibility_column, rust_i18n::locale().to_string())
+            })
+        };
+        // While dragging, the preview changes the scene on every mouse move.
+        let reuse = self.drag.is_none() && key.is_some() && key == self.scene_key;
+        let scene = if reuse {
+            self.scene.clone()
+        } else {
             let ws = self.workspace.read(cx);
             let measure = FontMeasure::new(window, self.visibility_column);
-            match ws.active_diagram {
-                Some(d) => scene::build(ws.doc.model(), d, &self.preview(ws), &measure),
+            let scene = match ws.active_diagram {
+                Some(d) => scene::build(ws.doc.model(), d, &self.preview(), &measure),
                 None => Scene::empty(),
-            }
+            };
+            Rc::new(scene)
         };
-        let scene = Rc::new(scene);
+        // A scene with a drag preview is not the plain one of this key.
+        self.scene_key = if self.drag.is_none() { key } else { None };
         self.scene = scene.clone();
         // A row just added from the context menu is edited as soon as it is drawn.
         if let Some(element) = self.edit_when_drawn.take() {

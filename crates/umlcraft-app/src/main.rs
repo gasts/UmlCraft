@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod canvas;
+mod errors;
 mod labels;
 mod main_view;
 mod png;
@@ -122,35 +123,40 @@ fn main() {
 
     gpui_kit::application().with_assets(gpui_kit::assets::Assets).run(move |cx| {
         gpui_kit::init(cx);
+        // "secondary" is Cmd on macOS and Ctrl elsewhere.
         cx.bind_keys([
-            KeyBinding::new("ctrl-n", NewProject, None),
-            KeyBinding::new("ctrl-o", OpenProject, None),
-            KeyBinding::new("ctrl-s", SaveProject, None),
-            KeyBinding::new("ctrl-shift-s", SaveProjectAs, None),
-            KeyBinding::new("ctrl-z", Undo, None),
-            KeyBinding::new("ctrl-y", Redo, None),
-            KeyBinding::new("ctrl-shift-z", Redo, None),
+            KeyBinding::new("secondary-n", NewProject, None),
+            KeyBinding::new("secondary-o", OpenProject, None),
+            KeyBinding::new("secondary-s", SaveProject, None),
+            KeyBinding::new("secondary-shift-s", SaveProjectAs, None),
+            KeyBinding::new("secondary-z", Undo, None),
+            KeyBinding::new("secondary-y", Redo, None),
+            KeyBinding::new("secondary-shift-z", Redo, None),
+            // Fields bind only Ctrl+Y for their own redo there; without this, Ctrl+Shift+Z in a
+            // field would redo a model change and reload the field being typed in.
+            #[cfg(not(target_os = "macos"))]
+            KeyBinding::new("ctrl-shift-z", gpui_kit::component::input::Redo, Some("Input")),
             KeyBinding::new("delete", DeleteSelection, Some("Canvas")),
-            KeyBinding::new("ctrl-delete", RemoveFromDiagram, Some("Canvas")),
-            KeyBinding::new("ctrl-a", SelectAll, Some("Canvas")),
-            KeyBinding::new("ctrl-c", Copy, Some("Canvas")),
-            KeyBinding::new("ctrl-x", Cut, Some("Canvas")),
-            KeyBinding::new("ctrl-v", Paste, Some("Canvas")),
-            KeyBinding::new("ctrl-shift-v", PasteAsReference, Some("Canvas")),
+            KeyBinding::new("secondary-delete", RemoveFromDiagram, Some("Canvas")),
+            KeyBinding::new("secondary-a", SelectAll, Some("Canvas")),
+            KeyBinding::new("secondary-c", Copy, Some("Canvas")),
+            KeyBinding::new("secondary-x", Cut, Some("Canvas")),
+            KeyBinding::new("secondary-v", Paste, Some("Canvas")),
+            KeyBinding::new("secondary-shift-v", PasteAsReference, Some("Canvas")),
             KeyBinding::new("escape", Cancel, Some("Canvas")),
-            KeyBinding::new("ctrl-g", WrapInFragment, Some("Canvas")),
+            KeyBinding::new("secondary-g", WrapInFragment, Some("Canvas")),
             // Astah's shortcuts for the line styles.
-            KeyBinding::new("ctrl-l", SetLineShape { shape: LineShape::Line }, Some("Canvas")),
+            KeyBinding::new("secondary-l", SetLineShape { shape: LineShape::Line }, Some("Canvas")),
             KeyBinding::new(
-                "ctrl-e",
+                "secondary-e",
                 SetLineShape { shape: LineShape::RightAngle },
                 Some("Canvas"),
             ),
-            KeyBinding::new("ctrl-0", ResetZoom, None),
-            KeyBinding::new("ctrl-=", ZoomIn, None),
-            KeyBinding::new("ctrl--", ZoomOut, None),
-            KeyBinding::new("ctrl-shift-0", ZoomToFit, None),
-            KeyBinding::new("ctrl-,", OpenSettings, None),
+            KeyBinding::new("secondary-0", ResetZoom, None),
+            KeyBinding::new("secondary-=", ZoomIn, None),
+            KeyBinding::new("secondary--", ZoomOut, None),
+            KeyBinding::new("secondary-shift-0", ZoomToFit, None),
+            KeyBinding::new("secondary-,", OpenSettings, None),
         ]);
 
         let bounds = Bounds::centered(None, size(px(1280.0), px(820.0)), cx);

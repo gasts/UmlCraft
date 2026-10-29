@@ -1,4 +1,6 @@
-//! Small per-user settings, stored as JSON in `%APPDATA%\UmlCraft\settings.json`.
+//! Small per-user settings, stored as JSON in `UmlCraft/settings.json` in the platform's folder
+//! for them: `%APPDATA%` on Windows, `~/Library/Application Support` on macOS,
+//! `$XDG_CONFIG_HOME` (else `~/.config`) elsewhere.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,29 +27,81 @@ pub struct Settings {
 
 impl Settings {
     fn file() -> Option<PathBuf> {
-        let base = std::env::var_os("APPDATA")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".config")))?;
+        let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from);
+        let base = if cfg!(windows) {
+            var("APPDATA")
+        } else if cfg!(target_os = "macos") {
+            var("HOME").map(|h| h.join("Library").join("Application Support"))
+        } else {
+            var("XDG_CONFIG_HOME").or_else(|| var("HOME").map(|h| h.join(".config")))
+        }?;
         Some(base.join("UmlCraft").join("settings.json"))
     }
 
-    /// Loads the settings; missing or broken files give the defaults.
+    /// Loads the settings; a missing or broken file gives the defaults.
     pub fn load() -> Self {
         Self::file()
             .and_then(|f| fs::read_to_string(f).ok())
-            .and_then(|json| serde_json::from_str(&json).ok())
-            .unwrap_or_default()
+            .map_or_else(Self::default, |json| Self::from_json(&json))
     }
 
-    /// Best effort: a failure to write settings must never disturb the user's work.
+    /// Reads each setting on its own, so one that is wrong (`"dark": "yes"`) falls back to its
+    /// default without taking the others, the recent files above all, along.
+    fn from_json(json: &str) -> Self {
+        let Ok(serde_json::Value::Object(fields)) = serde_json::from_str(json) else {
+            return Self::default();
+        };
+        fn field<T: serde::de::DeserializeOwned + Default>(
+            fields: &serde_json::Map<String, serde_json::Value>,
+            name: &str,
+        ) -> T {
+            fields
+                .get(name)
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default()
+        }
+        let recent = match fields.get("recent") {
+            Some(serde_json::Value::Array(paths)) => {
+                paths.iter().filter_map(|p| p.as_str().map(PathBuf::from)).collect()
+            }
+            _ => Vec::new(),
+        };
+        Self {
+            recent,
+            language: field(&fields, "language"),
+            dark: field(&fields, "dark"),
+            visibility_column: field(&fields, "visibilityColumn"),
+        }
+    }
+
+    /// Best effort: a failure to write settings must never disturb the user's work. Written
+    /// to a file beside and renamed, so a crash never leaves half a file.
     pub fn save(&self) {
         let Some(file) = Self::file() else { return };
         if let Some(dir) = file.parent()
             && fs::create_dir_all(dir).is_ok()
             && let Ok(json) = serde_json::to_string_pretty(self)
         {
-            let _ = fs::write(file, json);
+            let partial = file.with_extension("json.tmp");
+            if fs::write(&partial, json).is_ok() && fs::rename(&partial, &file).is_err() {
+                let _ = fs::remove_file(&partial);
+            }
         }
+    }
+
+    /// Adds `path` to the recent files as saved now, so that another UmlCraft window's recent
+    /// files are kept, and saves them.
+    pub fn remember(&mut self, path: &Path) {
+        if let Some(file) = Self::file()
+            && let Ok(json) = fs::read_to_string(file)
+        {
+            let saved = Self::from_json(&json).recent;
+            if !saved.is_empty() {
+                self.recent = saved;
+            }
+        }
+        self.add_recent(path);
+        self.save();
     }
 
     /// The language to show: the chosen one, else the system's.
@@ -59,6 +113,13 @@ impl Settings {
         self.recent.retain(|p| p != path);
         self.recent.insert(0, path.to_path_buf());
         self.recent.truncate(MAX_RECENT);
+    }
+
+    /// Takes `path` off the recent files, e.g. once it no longer opens. Whether it was there.
+    pub fn remove_recent(&mut self, path: &Path) -> bool {
+        let before = self.recent.len();
+        self.recent.retain(|p| p != path);
+        self.recent.len() != before
     }
 }
 
@@ -86,6 +147,18 @@ mod tests {
         assert_eq!(s.recent.len(), MAX_RECENT);
         assert_eq!(s.recent[0], Path::new("p5.ucraft"));
         assert_eq!(s.recent.iter().filter(|p| *p == Path::new("p5.ucraft")).count(), 1);
+    }
+
+    #[test]
+    fn a_wrong_setting_keeps_the_others() {
+        let s = Settings::from_json(
+            r#"{"recent": ["a.ucraft", 3, "b.ucraft"], "dark": "yes", "language": "de", "visibilityColumn": true}"#,
+        );
+        assert_eq!(s.recent, [Path::new("a.ucraft"), Path::new("b.ucraft")]);
+        assert_eq!((s.dark, s.language.as_deref(), s.visibility_column), (None, Some("de"), true));
+        assert_eq!(Settings::from_json("not json"), Settings::default());
+        let round = Settings::from_json(&serde_json::to_string(&s).unwrap());
+        assert_eq!(round, s);
     }
 
     #[test]

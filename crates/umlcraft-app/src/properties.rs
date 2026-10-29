@@ -3,6 +3,8 @@
 //! Text fields commit on Enter or when they lose focus, so typing is one undo step, and always
 //! into the element shown when editing began. Selects and checkboxes apply immediately.
 
+use std::collections::HashMap;
+
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
@@ -53,7 +55,7 @@ const OPERATORS: [InteractionOperator; 12] = [
 const PARAMETER_KINDS: [TemplateParameterKind; 2] =
     [TemplateParameterKind::Type, TemplateParameterKind::Value];
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Field {
     Name,
     Declaration,
@@ -78,28 +80,6 @@ enum Field {
     InState,
     Binding,
 }
-
-const TEXT_FIELDS: [Field; 19] = [
-    Field::Name,
-    Field::Declaration,
-    Field::Stereotypes,
-    Field::Text,
-    Field::Condition,
-    Field::Arguments,
-    Field::ReturnValue,
-    Field::Guard,
-    Field::Trigger,
-    Field::Effect,
-    Field::Entry,
-    Field::DoActivity,
-    Field::Exit,
-    Field::ValueType,
-    Field::Bounds,
-    Field::Default,
-    Field::Slots,
-    Field::InState,
-    Field::Binding,
-];
 
 /// Inputs for one association end.
 struct EndFields {
@@ -152,9 +132,10 @@ pub struct PropertiesPanel {
     association_ids: Vec<Option<Id>>,
     /// Element, document revision and locale the fields currently show.
     shown: Option<(Id, u64, String)>,
-    /// Element whose text fields are being edited. Edits always go back to this element, even
-    /// if the selection has changed by the time the field loses focus.
-    editing: Option<Id>,
+    /// Text fields the user has typed into, each with the element shown at the first keystroke.
+    /// An edit always goes back to that element, even if the selection has changed by the time
+    /// the field loses focus; fields nobody typed into are never written back.
+    editing: HashMap<Field, Id>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -309,14 +290,17 @@ impl PropertiesPanel {
         let name = input(window, cx);
         let declaration = input(window, cx);
         let condition = input(window, cx);
-        let stereotypes = cx.new(|cx| InputState::new(window, cx).placeholder("entity, control"));
+        let stereotypes = cx
+            .new(|cx| InputState::new(window, cx).placeholder(t!("prop.stereotypes_placeholder")));
         let text = cx.new(|cx| TextareaState::new(window, cx).auto_grow(3, 12));
         let slots = cx.new(|cx| TextareaState::new(window, cx).auto_grow(2, 12));
         let visibility = cx.new(|cx| SelectState::new(visibility_items(), None, window, cx));
         let end = |window: &mut Window, cx: &mut Context<Self>| EndFields {
             role: cx.new(|cx| InputState::new(window, cx)),
             multiplicity: cx.new(|cx| InputState::new(window, cx).placeholder("0..*")),
-            constraints: cx.new(|cx| InputState::new(window, cx).placeholder("ordered, unique")),
+            constraints: cx.new(|cx| {
+                InputState::new(window, cx).placeholder(t!("prop.constraints_placeholder"))
+            }),
             navigability: cx.new(|cx| SelectState::new(navigability_items(), None, window, cx)),
             aggregation: cx.new(|cx| SelectState::new(aggregation_items(), None, window, cx)),
         };
@@ -330,7 +314,8 @@ impl PropertiesPanel {
         let do_activity = input(window, cx);
         let exit = input(window, cx);
         let value_type = input(window, cx);
-        let in_state = cx.new(|cx| InputState::new(window, cx).placeholder("filled, paid"));
+        let in_state =
+            cx.new(|cx| InputState::new(window, cx).placeholder(t!("prop.in_state_placeholder")));
         let bounds = cx.new(|cx| InputState::new(window, cx).placeholder("Number, Comparable<T>"));
         let default = input(window, cx);
         let binding = cx.new(|cx| InputState::new(window, cx).placeholder("List<String>"));
@@ -553,19 +538,18 @@ impl PropertiesPanel {
             association,
             association_ids: Vec::new(),
             shown: None,
-            editing: None,
+            editing: HashMap::new(),
             _subscriptions: subscriptions,
         };
         panel.sync(window, cx);
         panel
     }
 
-    /// Puts the cursor into the name (or declaration) field, e.g. for "Rename".
-    pub fn focus_name(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let is_member = self
-            .shown_id()
-            .and_then(|id| self.workspace.read(cx).doc.model().get(id))
-            .is_some_and(|e| is_member(e.kind()));
+    /// Puts the cursor into the name (or declaration) field of `element`, e.g. for "Rename".
+    /// Decided by the element, as the panel may still show the one selected before.
+    pub fn focus_name(&self, element: Id, window: &mut Window, cx: &mut Context<Self>) {
+        let is_member =
+            self.workspace.read(cx).doc.model().get(element).is_some_and(|e| is_member(e.kind()));
         let field = if is_member { &self.declaration } else { &self.name };
         field.update(cx, |state, cx| state.focus(window, cx));
     }
@@ -575,14 +559,26 @@ impl PropertiesPanel {
     }
 
     fn on_input(&mut self, field: Field, ev: &InputEvent, cx: &mut Context<Self>) {
+        // Loading values into the fields emits no events, so `Change` means the user typed.
         match ev {
-            InputEvent::Focus => self.editing = self.editing.or(self.shown_id()),
-            InputEvent::PressEnter { .. } => self.commit(field, cx),
-            InputEvent::Blur => {
-                self.commit(field, cx);
-                self.editing = None;
+            InputEvent::Change => {
+                if let Some(id) = self.shown_id() {
+                    self.editing.entry(field).or_insert(id);
+                }
             }
-            InputEvent::Change => {}
+            InputEvent::PressEnter { .. } | InputEvent::Blur => {
+                if let Some(id) = self.editing.remove(&field) {
+                    self.commit(field, id, cx);
+                }
+            }
+            InputEvent::Focus => {}
+        }
+    }
+
+    /// Writes back whatever has been typed but not yet committed, e.g. before saving.
+    pub fn flush(&mut self, cx: &mut Context<Self>) {
+        for (field, id) in std::mem::take(&mut self.editing) {
+            self.commit(field, id, cx);
         }
     }
 
@@ -590,9 +586,8 @@ impl PropertiesPanel {
         state.read(cx).value().trim().to_owned()
     }
 
-    /// Writes one field back to the element being edited.
-    fn commit(&mut self, field: Field, cx: &mut Context<Self>) {
-        let Some(id) = self.editing else { return };
+    /// Writes one field back to element `id`.
+    fn commit(&mut self, field: Field, id: Id, cx: &mut Context<Self>) {
         match field {
             Field::Name => {
                 let value = Self::value(&self.name, cx);
@@ -774,7 +769,7 @@ impl PropertiesPanel {
                         }
                     }),
                     Err(err) => self.workspace.update(cx, |ws, cx| {
-                        ws.complain(err.to_string());
+                        ws.complain(crate::errors::multiplicity_error(&err));
                         cx.notify();
                     }),
                 }
@@ -816,23 +811,27 @@ impl PropertiesPanel {
         });
     }
 
-    /// Loads the selected element into the fields when it (or the document) changed.
-    fn sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let (selected, revision) = {
-            let ws = self.workspace.read(cx);
+    /// Loads the selected element into the fields when it, the document or the language
+    /// changed.
+    pub fn sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let selected = |this: &Self, cx: &App| {
+            let ws = this.workspace.read(cx);
             (ws.selected_element.filter(|&id| ws.doc.model().contains(id)), ws.doc.revision())
         };
         // The selection moved away while a field was being edited: save that edit first.
-        if let Some(editing) = self.editing
-            && selected != Some(editing)
-        {
-            let ends = (0..2)
-                .flat_map(|i| [Field::Role(i), Field::Multiplicity(i), Field::Constraints(i)]);
-            for field in TEXT_FIELDS.into_iter().chain(ends) {
-                self.commit(field, cx);
-            }
-            self.editing = None;
+        let (before, _) = selected(self, cx);
+        let pending: Vec<(Field, Id)> = self
+            .editing
+            .iter()
+            .filter(|(_, id)| before != Some(**id))
+            .map(|(f, id)| (*f, *id))
+            .collect();
+        for (field, id) in pending {
+            self.editing.remove(&field);
+            self.commit(field, id, cx);
         }
+        // Those commits may have deleted the selection, e.g. a «bind» dependency.
+        let (selected, revision) = selected(self, cx);
         let Some(id) = selected else {
             self.shown = None;
             cx.notify();
@@ -889,6 +888,8 @@ impl PropertiesPanel {
         };
         let reference_labels = reference_items(model, &references);
         self.shown = Some(key);
+        // The fields are overwritten below, so nothing typed into them is pending any more.
+        self.editing.clear();
 
         let set = |state: &Entity<InputState>,
                    value: String,

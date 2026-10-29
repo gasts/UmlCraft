@@ -2,6 +2,8 @@ toolbar:
   save: Save
   undo: Undo
   redo: Redo
+  undo_named: "Undo: %{what}"
+  redo_named: "Redo: %{what}"
   theme: Light/Dark
   language: Deutsch
   settings: Settings
@@ -146,6 +148,9 @@ prop:
   type: Kind
   visibility: Visibility
   stereotypes: Stereotypes
+  stereotypes_placeholder: entity, control
+  constraints_placeholder: ordered, unique
+  in_state_placeholder: filled, paid
   abstract: Abstract
   declaration: Declaration
   static: Static
@@ -245,6 +250,7 @@ status:
   unsaved_file: Not saved
   exporting: Exporting to Astah …
   importing: Importing source code …
+  importing_astah: Importing the Astah project …
   imported: "Imported %{files} files: %{created} new types, %{updated} updated, %{associations} associations."
   hint: "Wheel: scroll · Ctrl+wheel: zoom · middle button: pan"
   hint_node: "Click to place the element · Esc: cancel"
@@ -258,11 +264,15 @@ dialog:
   save: Save
   discard: Discard
   cancel: Cancel
+  ok: OK
   open_failed: The project could not be opened.
   save_failed: The project could not be saved.
   import_failed: The Astah project could not be imported.
   import_partial: "%{count} elements of the Astah project were not carried over."
   import_partial_detail: "UmlCraft does not know these kinds of elements yet: %{kinds}"
+  import_failed_detail: "These elements could not be placed in the model: %{kinds}"
+  import_lost_shapes: "%{count} shapes on diagrams were left out."
+  import_shapes_partial: Some shapes of the Astah project were not carried over.
   export_done: The Astah project was exported.
   export_failed: The Astah project could not be exported.
   export_partial: "%{count} details of the project could not be carried over to Astah."
@@ -272,6 +282,8 @@ dialog:
   astah_missing_detail: "UmlCraft writes Astah projects through the API of Astah Professional, UML or SysML. One of them must be installed, or the environment variable ASTAH_HOME must point to its install folder; then restart UmlCraft."
   import_source_failed: The source code could not be imported.
   import_source_none: No source files found.
+  import_source_discarded: The source import was discarded.
+  import_source_discarded_detail: Another project was opened while importing. Please repeat the import in this project.
   import_source_none_detail: "The selection contains no files ending in %{extensions}."
   import_source_partial: "%{count} files could not be imported; the others were."
   import_source_skipped: "Left out as in Astah: %{items}"
@@ -458,3 +470,32 @@ kind:
   slot: Slot
   link: Link
   interactionUse: Interaction use
+error:
+  named: "\"%{name}\""
+  unnamed: an element
+  not_found: "%{a} does not exist."
+  duplicate_id: An element's id is used twice.
+  invalid_owner: "%{child} (%{child_kind}) cannot be placed in %{owner} (%{owner_kind})."
+  index_out_of_range: The position is out of range.
+  root: The model itself cannot be removed, moved or created.
+  has_children: "%{a} still contains elements."
+  still_referenced: "%{a} is still used by %{b}."
+  still_shown: "%{a} is still shown on the diagram %{b}."
+  invalid_reference: "%{a} refers to an element that does not exist or does not fit there."
+  kind_changed: "The kind of %{a} cannot change."
+  ownership_cycle: "%{a} cannot be placed inside itself."
+  generalization_cycle: This generalization would make an element its own ancestor.
+  not_a_diagram: "%{a} is not a diagram."
+  diagram_not_empty: "The diagram %{a} still shows elements."
+  edges_attached: Lines are still attached to this shape.
+  shape_changed: A shape cannot turn into a line or back.
+  edge_cycle: This line would end on itself through other lines.
+  reference_cycle: "%{a} would connect itself through other relationships."
+  not_finite: A position or size is not a valid number.
+  type_too_deep: "A type of %{a} is nested more than %{max} levels deep."
+  invalid: "The model is inconsistent: %{detail}"
+  multiplicity: "\"%{text}\" is not a multiplicity. Examples: 1, 0..1, 1..*, *"
+  malformed: "The file is damaged (line %{line}, column %{column})."
+  not_a_project: The file is not an UmlCraft project.
+  too_new: "The file was saved by a newer UmlCraft (format version %{found}; this version reads up to %{supported})."
+  migration: "The file could not be upgraded from format version %{from}: %{reason}"
