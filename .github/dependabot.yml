@@ -1,0 +1,21 @@
+# Weekly update pull requests for the workflow actions and the Cargo dependencies.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    # GPUI and gpui-component move together; their updates need manual porting anyway.
+    ignore:
+      - dependency-name: gpui*
+    groups:
+      cargo:
+        update-types: [minor, patch]

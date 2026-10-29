@@ -9,7 +9,8 @@ How it is built: [`docs/architecture.md`](docs/architecture.md).
 - Tests: `cargo test --workspace`
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --all --check`
 
-CI runs all three on Windows, Ubuntu 22.04 and macOS. On Debian and Ubuntu,
+CI runs all three on Windows, Ubuntu 22.04 and macOS, plus `cargo deny check` (advisories,
+licenses and sources, `deny.toml`). On Debian and Ubuntu,
 `packaging/linux/install-build-deps.sh` installs GPUI's system libraries.
 
 ## Rules

@@ -1,0 +1,51 @@
+# cargo-deny: advisories, licenses and sources of the dependencies, checked on CI.
+# Run locally with `cargo deny check`.
+
+[graph]
+# The release targets, as in about.toml.
+targets = [
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+]
+
+[advisories]
+# Unmaintained crates deep in GPUI's tree are reported but not fatal; vulnerabilities are.
+unmaintained = "workspace"
+yanked = "warn"
+ignore = [
+    # ttf-parser is unmaintained; umlcraft-asta reads font metrics with it, and fontdb in GPUI's
+    # tree pulls it anyway. Moving umlcraft-asta to skrifa would leave only the latter.
+    { id = "RUSTSEC-2026-0192", reason = "no replacement in GPUI's tree yet" },
+]
+
+[licenses]
+# Keep in step with `accepted` in about.toml, which builds the notices shipped with releases.
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "0BSD",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[licenses.private]
+# Our own crates (publish = false) are covered by LICENSE-MIT and LICENSE-APACHE.
+ignore = true
+
+[bans]
+# GPUI's tree has many duplicate versions; listing them would be noise.
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
