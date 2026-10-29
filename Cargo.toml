@@ -29,6 +29,8 @@ indexmap = { version = "2", features = ["serde"] }
 thiserror = "2"
 anyhow = "1"
 pretty_assertions = "1"
+# Reads Structorizer's .nsd files; they are written by hand to match Structorizer byte for byte.
+quick-xml = "0.41"
 rust-i18n = "4"
 sys-locale = "0.3"
 # PNG export rasterizes the SVG export; diagrams contain no raster images.
