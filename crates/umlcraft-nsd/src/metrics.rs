@@ -11,6 +11,8 @@ pub struct Metrics {
     plain: Face,
     bold: Face,
     includes: Includes,
+    /// The fonts an SVG image names, the one the table was measured with first.
+    family: &'static str,
 }
 
 /// The box with the include list above a diagram's title, in its small font: measured in
@@ -60,13 +62,19 @@ impl Metrics {
     /// Dialog 12 as Java draws it on Linux (DejaVu Sans).
     pub fn linux() -> &'static Metrics {
         static LINUX: OnceLock<Metrics> = OnceLock::new();
-        LINUX.get_or_init(|| parse(include_str!("metrics/dialog12-linux.txt")))
+        LINUX.get_or_init(|| {
+            let family = "'DejaVu Sans', Dialog, Arial, sans-serif";
+            parse(include_str!("metrics/dialog12-linux.txt"), family)
+        })
     }
 
     /// Dialog 12 as Java draws it on Windows (Arial): whole-pixel advances, lines 16 px apart.
     pub fn windows() -> &'static Metrics {
         static WINDOWS: OnceLock<Metrics> = OnceLock::new();
-        WINDOWS.get_or_init(|| parse(include_str!("metrics/dialog12-windows.txt")))
+        WINDOWS.get_or_init(|| {
+            let family = "Arial, Dialog, 'DejaVu Sans', sans-serif";
+            parse(include_str!("metrics/dialog12-windows.txt"), family)
+        })
     }
 
     /// The width Structorizer gives `text` (one line); tabs and control characters count 0.
@@ -89,16 +97,11 @@ impl Metrics {
         lines.iter().map(|l| self.width(l, bold)).max().unwrap_or(0)
     }
 
-    /// The fonts an SVG image names: the one Java draws Dialog with on the platform the image
-    /// is made on first (DejaVu Sans on Linux, Arial on Windows, Lucida Grande on macOS).
+    /// The fonts an SVG image names: the one Java draws Dialog with on the platform the table
+    /// was measured on first (DejaVu Sans on Linux, Arial on Windows), so that the glyphs fit
+    /// the boxes measured with it.
     pub fn font_family(&self) -> &'static str {
-        if cfg!(windows) {
-            "Arial, Dialog, 'DejaVu Sans', sans-serif"
-        } else if cfg!(target_os = "macos") {
-            "'Lucida Grande', Dialog, Arial, sans-serif"
-        } else {
-            "'DejaVu Sans', Dialog, Arial, sans-serif"
-        }
+        self.family
     }
 
     /// The distance between the lines of an element's text.
@@ -116,7 +119,7 @@ impl Metrics {
     }
 }
 
-fn parse(table: &str) -> Metrics {
+fn parse(table: &str, family: &'static str) -> Metrics {
     let mut faces: [Option<Face>; 2] = [None, None];
     let mut includes = Includes::default();
     for line in table.lines() {
@@ -170,7 +173,7 @@ fn parse(table: &str) -> Metrics {
     assert_eq!(plain.latin.len(), 224, "plain advances of U+0020..U+00FF");
     assert_eq!(bold.latin.len(), 224, "bold advances of U+0020..U+00FF");
     assert!(includes.height > 0, "metrics table lacks the include box");
-    Metrics { plain, bold, includes }
+    Metrics { plain, bold, includes, family }
 }
 
 #[cfg(test)]

@@ -3,3 +3,4 @@
 korpus-kanonisch/38-deaktiviert texts of disabled elements: where glyphs meet the hatching Structorizer's anti-aliasing joins them into vertical runs
 windows:korpus-kanonisch/37-farben texts: in the Windows font the crossbars of "ff" touch and make a 12 px line, which is text, not a line of the drawing
 windows:korpus-kanonisch/38-deaktiviert texts of disabled elements: as on Linux, glyphs meeting the hatching join into vertical runs
+windows:struktur-kanonisch/case5 texts: the arches of the selector "mmm…" in Arial (named since the SVG follows the table) join into a 14 px run; where Structorizer puts that text is only approximated

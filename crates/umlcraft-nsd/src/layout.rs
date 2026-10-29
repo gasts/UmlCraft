@@ -236,20 +236,26 @@ impl Layouter<'_> {
         size
     }
 
+    /// The unturned size of an instruction, call or jump.
+    fn plain_size(&self, e: &Element) -> Size {
+        let (n, tw) = text_of(self.m, e);
+        let extra = match e.kind {
+            ElementKind::Call => 2 * PADDING,
+            ElementKind::Jump => PADDING + PADDING / 2,
+            _ => PADDING,
+        };
+        Size { w: tw + extra, h: self.text_box(n) }
+    }
+
     fn element_size(&self, e: &Element, rotate: bool) -> Size {
         let (n, tw) = text_of(self.m, e);
         match e.kind {
             ElementKind::Instruction | ElementKind::Call | ElementKind::Jump => {
-                let extra = match e.kind {
-                    ElementKind::Call => 2 * PADDING,
-                    ElementKind::Jump => PADDING + PADDING / 2,
-                    _ => PADDING,
-                };
-                let s = Size { w: tw + extra, h: self.text_box(n) };
+                let s = self.plain_size(e);
                 if rotate && s.h < s.w { Size { w: s.h, h: s.w } } else { s }
             }
             ElementKind::Alternative => {
-                let (head, min_w, l, r) = self.alternative_parts(e, n, tw);
+                let (head, min_w, l, r) = self.alternative_parts(e, n);
                 Size { w: min_w.max(l.w + r.w), h: head + l.h.max(r.h) }
             }
             ElementKind::Case => {
@@ -285,7 +291,7 @@ impl Layouter<'_> {
 
     /// Head height, the head's minimum width (the condition fits into the triangle) and the
     /// branches' sizes, at least as wide as their labels need.
-    fn alternative_parts(&self, e: &Element, n: usize, tw: i32) -> (i32, i32, Size, Size) {
+    fn alternative_parts(&self, e: &Element, n: usize) -> (i32, i32, Size, Size) {
         let head = self.line() * n.max(1) as i32 + 2 * PADDING - 1;
         // Each line of the condition fits between the diagonals at its baseline (19 px below
         // the top for the first, a line further for each next).
@@ -300,7 +306,6 @@ impl Layouter<'_> {
             })
             .max()
             .unwrap_or(0);
-        let _ = tw;
         let mut l = self.sequence_size(&e.branches[0], false);
         let mut r = self.sequence_size(&e.branches[1], false);
         l.w = l.w.max(2 * self.m.width(TRUE_LABEL, false) + 16);
@@ -372,16 +377,17 @@ impl Layouter<'_> {
     }
 
     fn place_element(&self, e: &Element, r: Rect, path: Path, rotate: bool) -> ElementBox {
-        let (n, tw) = text_of(self.m, e);
+        let (n, _) = text_of(self.m, e);
 
         let mut branches = Vec::new();
         let shape = match e.kind {
             ElementKind::Instruction | ElementKind::Call | ElementKind::Jump => {
-                // Turned only where that makes it narrower.
-                Shape::Plain { rotated: rotate && self.text_box(n) < tw + PADDING }
+                // Turned only where that makes it narrower (as measured).
+                let s = self.plain_size(e);
+                Shape::Plain { rotated: rotate && s.h < s.w }
             }
             ElementKind::Alternative => {
-                let (head, _, _, right) = self.alternative_parts(e, n, tw);
+                let (head, _, _, right) = self.alternative_parts(e, n);
                 let split = r.right() - right.w - 1;
                 let h = r.h - head;
                 branches.push(self.branch(
@@ -514,6 +520,17 @@ mod tests {
 
     fn first(d: &Diagram) -> ElementBox {
         Layout::of(d, Metrics::linux()).body.elements[0].clone()
+    }
+
+    #[test]
+    fn turned_calls_are_placed_as_measured() {
+        // Two short lines: a call is 56 wide and 46 high, so with many branches it is turned.
+        let mut case =
+            Element::case(&lines(&["c", "1", "2", "3", "4", "5", "6", "7", "8", "9", "%"]));
+        case.branches[0] = Sequence::new(vec![Element::call(&lines(&["ab", "cd"]))]);
+        let call = first(&diagram(vec![case])).branches[0].elements[0].clone();
+        assert_eq!(call.shape, Shape::Plain { rotated: true });
+        assert!(call.rect.h > call.rect.w);
     }
 
     #[test]

@@ -111,12 +111,19 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// An error in the attributes of the tag that starts at `self.at` (the reader does not
+    /// track a position for these).
+    fn attr_error(&self, message: impl ToString) -> ReadError {
+        let (line, column) = self.position(self.at);
+        ReadError::Xml { line, column, message: message.to_string() }
+    }
+
     fn attrs(&self, start: &BytesStart) -> Result<Attrs, ReadError> {
         let mut attrs = Vec::new();
         for a in start.attributes() {
-            let a = a.map_err(|e| self.xml_error(e))?;
-            let raw = std::str::from_utf8(&a.value).map_err(|e| self.xml_error(e))?;
-            let value = unescape(raw).map_err(|e| self.xml_error(e))?;
+            let a = a.map_err(|e| self.attr_error(e))?;
+            let raw = std::str::from_utf8(&a.value).map_err(|e| self.attr_error(e))?;
+            let value = unescape(raw).map_err(|e| self.attr_error(e))?;
             attrs.push(Attr {
                 name: String::from_utf8_lossy(a.key.as_ref()).into(),
                 value: Cow::into_owned(value),
@@ -313,6 +320,15 @@ mod tests {
         assert!(matches!(read(&with_body(body)), Err(ReadError::WrongBranches { .. })));
         let body = "<while text=\"\" comment=\"\"><qFor></qFor></while>";
         assert!(matches!(read(&with_body(body)), Err(ReadError::UnexpectedElement { .. })));
+    }
+
+    #[test]
+    fn attribute_errors_point_at_their_tag() {
+        let xml = with_body("\t\t<instruction text=\"&bogus;\"></instruction>\n");
+        match read(&xml) {
+            Err(ReadError::Xml { line, .. }) => assert_eq!(line, 4),
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
