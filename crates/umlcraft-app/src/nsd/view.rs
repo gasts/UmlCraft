@@ -891,11 +891,8 @@ impl NsdView {
         then: Option<Continuation>,
     ) {
         if let Some(path) = self.path.clone().filter(|_| !save_as) {
-            if self.write(path, window, cx)
-                && let Some(then) = then
-            {
-                then(self, window, cx);
-            }
+            let written = self.write(path, window, cx);
+            self.after_save(written, then, window, cx);
             return;
         }
         let suggested = self
@@ -915,19 +912,45 @@ impl NsdView {
             .unwrap_or_default();
         let rx = cx.prompt_for_new_path(&directory, Some(&suggested));
         cx.spawn_in(window, async move |this, cx| {
-            let Ok(Ok(Some(path))) = rx.await else { return };
             // Appended, not replaced: "Aufgabe 3.1" must not become "Aufgabe 3.nsd".
-            let path = crate::main_view::with_extension(path, "nsd");
+            let path = match rx.await {
+                Ok(Ok(Some(path))) => Some(crate::main_view::with_extension(path, "nsd")),
+                _ => None,
+            };
             this.update_in(cx, move |this, window, cx| {
-                if this.write(path, window, cx)
-                    && let Some(then) = then
-                {
-                    then(this, window, cx);
-                }
+                let written = path.is_some_and(|path| this.write(path, window, cx));
+                this.after_save(written, then, window, cx);
             })
             .ok();
         })
         .detach();
+    }
+
+    /// Runs `then` once saved. Not saved (the name not chosen, or writing failed) is
+    /// cancelling: quitting stops there.
+    fn after_save(
+        &mut self,
+        written: bool,
+        then: Option<Continuation>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match then {
+            Some(then) if written => then(self, window, cx),
+            Some(_) => self.ask_again_elsewhere(cx),
+            None => {}
+        }
+    }
+
+    /// Quitting stops, and windows asked before stay open: what they discarded on the way is
+    /// unsaved again and is asked about next time.
+    fn ask_again_elsewhere(&self, cx: &mut Context<Self>) {
+        let me = cx.entity_id();
+        for (_, view) in super::open_windows(cx) {
+            if view.entity_id() != me {
+                view.update(cx, |view, _| view.discarded = false);
+            }
+        }
     }
 
     /// Writes the diagram to `path`: through a temporary file, so that a failed write leaves
@@ -998,16 +1021,7 @@ impl NsdView {
                     this.discarded = true;
                     then(this, window, cx);
                 }
-                // Quitting stops here, and windows asked before stay open: what they
-                // discarded on the way is unsaved again and is asked about next time.
-                _ => {
-                    let me = cx.entity_id();
-                    for (_, view) in super::open_windows(cx) {
-                        if view.entity_id() != me {
-                            view.update(cx, |view, _| view.discarded = false);
-                        }
-                    }
-                }
+                _ => this.ask_again_elsewhere(cx),
             })
             .ok();
         })

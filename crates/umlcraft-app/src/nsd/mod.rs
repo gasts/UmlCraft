@@ -220,13 +220,14 @@ fn show(opening: Opening, diagram: Diagram, cx: &mut App) -> Result<(), String> 
 /// Asks every structogram window with unsaved changes whether to save them, one after the
 /// other, and then runs `then` (quitting). Cancelling in one stops there.
 pub fn confirm_all(cx: &mut App, then: Box<dyn FnOnce(&mut App)>) {
-    // What open element dialogs hold counts as a change.
-    for (handle, view) in open_windows(cx) {
+    // What an open element dialog holds counts as a change. Dialogs in windows not asked yet
+    // stay open: cancelling there leaves them as they were.
+    let dirty = open_windows(cx).into_iter().find(|(handle, view)| {
         handle
             .update(cx, |_, window, cx| view.update(cx, |view, cx| view.flush_dialog(window, cx)))
             .ok();
-    }
-    let dirty = open_windows(cx).into_iter().find(|(_, view)| view.read(cx).needs_saving());
+        view.read(cx).needs_saving()
+    });
     let Some((handle, view)) = dirty else {
         then(cx);
         return;
