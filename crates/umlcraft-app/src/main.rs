@@ -2,12 +2,15 @@
 
 mod canvas;
 mod errors;
+mod icons;
 mod labels;
 mod main_view;
 mod png;
 mod properties;
+mod ribbon;
 mod settings;
 mod settings_dialog;
+mod shell;
 mod workspace;
 
 use std::cell::RefCell;
@@ -63,6 +66,8 @@ actions!(
         ResetLineEnds,
         ResetLabels,
         AddExtensionPoint,
+        // Folds the ribbon to its tabs, or unfolds it.
+        ToggleRibbon,
     ]
 );
 
@@ -98,6 +103,27 @@ pub struct ImportSource {
     pub folder: bool,
 }
 
+/// Chooses a diagram tool, from the ribbon.
+#[derive(Clone, PartialEq, Debug, Action)]
+#[action(namespace = umlcraft, no_json)]
+pub struct SelectTool {
+    pub tool: umlcraft_notation::palette::Tool,
+}
+
+/// Creates a diagram in the selected package, or else in the model, and opens it.
+#[derive(Clone, PartialEq, Debug, Action)]
+#[action(namespace = umlcraft, no_json)]
+pub struct NewDiagram {
+    pub kind: umlcraft_model::DiagramKind,
+}
+
+/// Opens a tab of the ribbon.
+#[derive(Clone, PartialEq, Debug, Action)]
+#[action(namespace = umlcraft, no_json)]
+pub struct SelectRibbonTab {
+    pub tab: ribbon::RibbonTab,
+}
+
 /// The line styles in menu order, with their labels.
 pub const LINE_SHAPES: [(LineShape, &str); 4] = [
     (LineShape::Line, "menu.line_straight"),
@@ -126,7 +152,7 @@ fn main() {
     let settings = settings::Settings::load();
     rust_i18n::set_locale(&settings.ui_language());
 
-    let app = gpui_kit::application().with_assets(gpui_kit::assets::Assets);
+    let app = gpui_kit::application().with_assets(icons::AppAssets);
     // Files the system asks to open while UmlCraft runs (on macOS also at launch, instead of
     // the command line), picked up by the main view.
     let requested: Rc<RefCell<Vec<PathBuf>>> = Rc::default();
@@ -173,22 +199,22 @@ fn main() {
         ]);
 
         let bounds = Bounds::centered(None, size(px(1280.0), px(820.0)), cx);
-        gpui_kit::open_window(
+        // Like `gpui_kit::open_window`, but the root surface stays transparent: gpui-component
+        // paints it in the theme's background, which would hide the system backdrop (Mica).
+        cx.open_window(
+            // The main view draws the title bar itself (`TitleBar`), with the window's controls.
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("UmlCraft".into()),
-                    ..Default::default()
-                }),
                 window_min_size: Some(size(px(800.0), px(520.0))),
                 // Matches packaging/linux/com.umlcraft.app.desktop, so that Wayland
                 // desktops show the window with the app's icon.
                 app_id: Some("com.umlcraft.app".into()),
-                ..Default::default()
+                window_decorations: cfg!(target_os = "linux").then_some(WindowDecorations::Client),
+                window_background: shell::window_background(settings.backdrop),
+                ..gpui_kit::component::TitleBar::window_options()
             },
-            cx,
             move |window, cx| {
-                cx.new(|cx| {
+                let view = cx.new(|cx| {
                     let mut view = main_view::MainView::new(settings, window, cx);
                     // A file given on the command line, e.g. by "Open with".
                     if let Some(path) = std::env::args_os().nth(1) {
@@ -208,7 +234,8 @@ fn main() {
                     })
                     .detach();
                     view
-                })
+                });
+                cx.new(|cx| base::Root::new(view, window, cx).bg(transparent_black()))
             },
         )
         .expect("failed to open the main window");

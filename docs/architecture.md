@@ -70,7 +70,24 @@ UmlCraft's keys (`java.`, `csharp.`, `cpp.`); the migration renames Astah's `jud
   the centers and labels back to their default places, then deleting.
 - `properties.rs` commits text fields on Enter or when the field loses focus, always to the element
   that was shown when the field got focus.
-- `main_view.rs` contains menus, tabs, palette, model tree and the file operations.
+- `main_view.rs` lays out the window and holds the file operations: the title bar (gpui-component's
+  `TitleBar` with the File menu, save, undo and redo; the window draws its own title bar), the
+  ribbon above three cards for model tree, canvas and properties, and a status
+  line. The platform menu bar (`cx.set_menus`) stays for macOS.
+- `ribbon.rs` describes the ribbon as data (tabs, groups, large and small buttons, each with an
+  action) built on every render from a `ribbon::State` read once from the workspace, and draws
+  it. The diagram tab holds the palette of the active diagram's kind and opens by itself when
+  another diagram becomes active. Where the estimated width does not fit, buttons drop their
+  labels; a double click on a tab folds the ribbon (`ribbonCollapsed` in the settings).
+- `shell.rs` has the window's optional system backdrop (`backdrop` in the settings, off by
+  default: Mica on Windows, `Blurred` on macOS, none on Linux, where only KWin blurs), the
+  card style and icon buttons. Over the backdrop the grey between the cards is transparent,
+  never translucent: GPUI adds alpha instead of blending it, which roughens text over
+  translucent pixels, and with any non-opaque window it drops subpixel antialiasing
+  everywhere. The window's root surface is transparent for the same reason (`main.rs`
+  opens the window itself instead of `gpui_kit::open_window`). `icons.rs` embeds
+  `assets/icons/` (`AppAssets`, falling back to gpui-kit's Lucide icons) and maps tools, diagram
+  kinds and model elements to their icons.
 - `png.rs` rasterizes the SVG export (`umlcraft_notation::svg`) with `resvg` for PNG export, at
   twice the canvas size and with the system's fonts, on a background thread.
 - `settings.rs` stores recent files, language, theme and the visibility column

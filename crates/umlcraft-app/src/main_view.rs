@@ -7,26 +7,27 @@ use std::rc::Rc;
 
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::list::ListItem;
-use gpui_kit::component::menu::{AppMenuBar, PopupMenu};
-use gpui_kit::component::tab::{Tab, TabBar};
+use gpui_kit::component::menu::{DropdownMenu, PopupMenu};
 use gpui_kit::component::tree::{TreeEvent, TreeItem, TreeState, tree};
 use gpui_kit::component::{
-    ActiveTheme, Disableable, GlobalState, Selectable, Sizable, StyledExt, Theme, ThemeMode,
-    h_flex, h_resizable, resizable_panel, v_flex,
+    ActiveTheme, Disableable, Sizable, StyledExt, Theme, ThemeMode, TitleBar, h_flex, h_resizable,
+    resizable_panel, v_flex,
 };
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use rust_i18n::t;
 use umlcraft_format::FILE_EXTENSION;
 use umlcraft_model::sample::order_system;
 use umlcraft_model::{DiagramKind, Document, ElementData, ElementKind, Id, Model};
 use umlcraft_notation::clipboard::Clip;
-use umlcraft_notation::palette::{self, NodeTool, Tool};
+use umlcraft_notation::palette::{NodeTool, Tool};
 use umlcraft_notation::scene::{self, Alignment, Preview};
 use umlcraft_reverse::{Problem, SourceLanguage};
 
 use crate::canvas::{AppMeasure, DiagramCanvas, DraggedElement, FontMeasure};
 use crate::labels;
 use crate::properties::PropertiesPanel;
+use crate::ribbon::{self, RibbonTab};
 use crate::settings::Settings;
 use crate::workspace::{NewItem, Workspace};
 use crate::*;
@@ -58,7 +59,6 @@ pub struct MainView {
     canvas: Entity<DiagramCanvas>,
     properties: Entity<PropertiesPanel>,
     tree: Entity<TreeState>,
-    menu_bar: Entity<AppMenuBar>,
     settings: Settings,
     /// Copied content and the diagram it came from.
     clipboard: Option<(Id, Clip)>,
@@ -77,6 +77,11 @@ pub struct MainView {
     generation: u64,
     /// A message for the status bar, shown while the document stays at the given revision.
     notice: Option<(String, u64)>,
+    ribbon_tab: RibbonTab,
+    /// The diagram the ribbon last saw active; opening another one shows its tools.
+    ribbon_diagram: Option<Id>,
+    /// The first click of a double click on a tab unfolded the ribbon.
+    ribbon_unfolded_by_click: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -92,12 +97,13 @@ impl MainView {
         let canvas = cx.new(|cx| {
             let mut canvas = DiagramCanvas::new(workspace.clone(), cx);
             canvas.visibility_column = column;
+            // Inside the card's 1 px border.
+            canvas.corner_radius = f32::from(shell::RADIUS) - 1.0;
             canvas
         });
         let properties = cx.new(|cx| PropertiesPanel::new(workspace.clone(), window, cx));
         let tree = cx.new(|cx| TreeState::new(cx));
         install_menus(&settings, cx);
-        let menu_bar = AppMenuBar::new(cx);
 
         let subscriptions = vec![
             cx.subscribe(&tree, |this, _, event: &TreeEvent, _| match event {
@@ -126,7 +132,6 @@ impl MainView {
             canvas,
             properties,
             tree,
-            menu_bar,
             settings,
             tree_meta: Rc::default(),
             collapsed: HashSet::new(),
@@ -139,6 +144,9 @@ impl MainView {
             notice: None,
             clipboard: None,
             paste_count: 0,
+            ribbon_tab: RibbonTab::Home,
+            ribbon_diagram: None,
+            ribbon_unfolded_by_click: false,
             _subscriptions: subscriptions,
         };
         if !crate::canvas::choose_diagram_font(cx) {
@@ -177,6 +185,15 @@ impl MainView {
         }
 
         let ws = self.workspace.read(cx);
+        if ws.active_diagram != self.ribbon_diagram {
+            self.ribbon_diagram = ws.active_diagram;
+            self.ribbon_tab = match ws.active_diagram {
+                Some(_) => RibbonTab::Diagram,
+                None if self.ribbon_tab == RibbonTab::Diagram => RibbonTab::Home,
+                None => self.ribbon_tab,
+            };
+        }
+
         let model = ws.doc.model();
         let name = ws.file_name().unwrap_or_else(|| {
             model.element(model.root()).map(|e| e.name().to_owned()).unwrap_or_default()
@@ -986,6 +1003,96 @@ impl MainView {
 
     // ----- Settings --------------------------------------------------------------------------
 
+    fn select_tool(&mut self, action: &SelectTool, _: &mut Window, cx: &mut Context<Self>) {
+        let tool = action.tool;
+        self.workspace.update(cx, |ws, cx| {
+            ws.tool = tool;
+            cx.notify();
+        });
+    }
+
+    fn new_diagram(&mut self, action: &NewDiagram, _: &mut Window, cx: &mut Context<Self>) {
+        let item = NewItem::Diagram(action.kind);
+        self.workspace.update(cx, |ws, cx| {
+            let model = ws.doc.model();
+            // A selected package takes the diagram; anything else (a class, say) does not.
+            let owner = ws
+                .selected_element
+                .filter(|&id| {
+                    model.get(id).is_some_and(|e| {
+                        matches!(e.kind(), ElementKind::Package) && item.applies_to(e.kind())
+                    })
+                })
+                .unwrap_or(model.root());
+            ws.add_item(owner, item);
+            cx.notify();
+        });
+    }
+
+    fn select_ribbon_tab(
+        &mut self,
+        action: &SelectRibbonTab,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ribbon_tab = action.tab;
+        // Choosing a tab of a folded ribbon unfolds it; the second click of a double click
+        // must not fold it again.
+        self.ribbon_unfolded_by_click = self.settings.ribbon_collapsed;
+        if self.settings.ribbon_collapsed {
+            self.settings.ribbon_collapsed = false;
+            self.settings.save();
+        }
+        cx.notify();
+    }
+
+    fn toggle_ribbon(&mut self, _: &ToggleRibbon, cx: &mut Context<Self>) {
+        if std::mem::take(&mut self.ribbon_unfolded_by_click) {
+            return;
+        }
+        self.settings.ribbon_collapsed = !self.settings.ribbon_collapsed;
+        self.settings.save();
+        cx.notify();
+    }
+
+    /// The ribbon and the diagram card left of it.
+    fn ribbon(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let ws = self.workspace.read(cx);
+        let diagram = ws
+            .active_diagram
+            .and_then(|d| ws.doc.model().get(d))
+            .and_then(|e| e.kind().as_diagram());
+        let has_selection = !ws.selection.is_empty();
+        let state = ribbon::State {
+            diagram,
+            tool: ws.tool,
+            has_selection,
+            can_align: ws.selected_nodes().len() > 1,
+            can_paste: self.clipboard.is_some() && diagram.is_some(),
+            can_wrap: has_selection && diagram == Some(DiagramKind::Sequence),
+            dark: cx.theme().is_dark(),
+        };
+        let tabs = ribbon::tabs(&state);
+        let active = if tabs.iter().any(|(t, _)| *t == self.ribbon_tab) {
+            self.ribbon_tab
+        } else {
+            RibbonTab::Home
+        };
+        let groups = ribbon::groups(active, &state);
+        // The diagram card, the gaps and the window's edges take about 140 px.
+        let room = f32::from(window.viewport_size().width) - 140.0;
+        let compact = ribbon::width(&groups) > room;
+        let collapsed = self.settings.ribbon_collapsed;
+        let focus = self.canvas.focus_handle(cx);
+        h_flex()
+            .items_stretch()
+            .gap(shell::GAP)
+            .px(shell::GAP)
+            .pt(shell::GAP)
+            .child(ribbon::new_diagram_card(collapsed, &focus, cx))
+            .child(ribbon::render(&tabs, active, &groups, compact, collapsed, &focus, cx))
+    }
+
     pub fn settings(&self) -> &Settings {
         &self.settings
     }
@@ -994,6 +1101,14 @@ impl MainView {
         Theme::change(if dark { ThemeMode::Dark } else { ThemeMode::Light }, Some(window), cx);
         self.settings.dark = Some(dark);
         self.settings.save();
+    }
+
+    /// Lets the system's backdrop show behind the cards, or not.
+    pub fn set_backdrop(&mut self, on: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.backdrop = on;
+        self.settings.save();
+        window.set_background_appearance(shell::window_background(on));
+        cx.notify();
     }
 
     /// Switches the user interface to `language`, or with `None` to the system's language.
@@ -1032,14 +1147,15 @@ impl MainView {
 
     fn reload_menus(&mut self, cx: &mut Context<Self>) {
         install_menus(&self.settings, cx);
-        self.menu_bar.update(cx, |bar, cx| bar.reload(cx));
+        cx.notify();
     }
 
     // ----- Rendering -------------------------------------------------------------------------
 
-    fn toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// Logo, File menu, save, undo and redo, and the project's name; the window's controls on
+    /// the right are the title bar's own.
+    fn title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ws = self.workspace.read(cx);
-        let (can_undo, can_redo) = (ws.doc.can_undo(), ws.doc.can_redo());
         // The step's name, e.g. "Undo Delete".
         let named = |label: Option<&str>, key: &str, plain: &str| match label {
             Some(what) if !what.is_empty() => t!(key, what = what).to_string(),
@@ -1047,56 +1163,70 @@ impl MainView {
         };
         let undo_tip = named(ws.doc.undo_label(), "toolbar.undo_named", "toolbar.undo");
         let redo_tip = named(ws.doc.redo_label(), "toolbar.redo_named", "toolbar.redo");
-        let can_align = ws.selected_nodes().len() > 1;
-        let zoom = (self.canvas.read(cx).zoom() * 100.0).round();
-        let separator = || div().w(px(1.0)).h(px(18.0)).mx_1().bg(cx.theme().border);
-        let action_button = |id: &'static str, label: String, action: Box<dyn Action>| {
-            Button::new(id).ghost().small().label(label).on_click(move |_, window, cx| {
-                window.dispatch_action(action.boxed_clone(), cx);
-            })
-        };
-        h_flex()
-            .gap_1()
-            .px_2()
-            .py_1()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .child(action_button("save", t!("toolbar.save").into(), Box::new(SaveProject)))
-            .child(separator())
-            .child(
-                action_button("undo", t!("toolbar.undo").into(), Box::new(Undo))
-                    .disabled(!can_undo)
-                    .tooltip(undo_tip),
-            )
-            .child(
-                action_button("redo", t!("toolbar.redo").into(), Box::new(Redo))
-                    .disabled(!can_redo)
-                    .tooltip(redo_tip),
-            )
-            .child(separator())
-            .child(action_button("zoom-out", "−".into(), Box::new(ZoomOut)))
-            .child(
-                action_button("zoom-reset", format!("{zoom} %"), Box::new(ResetZoom))
-                    .tooltip(t!("toolbar.zoom_reset")),
-            )
-            .child(action_button("zoom-in", "+".into(), Box::new(ZoomIn)))
-            .child(action_button("zoom-fit", t!("toolbar.zoom_fit").into(), Box::new(ZoomToFit)))
-            .child(separator())
-            .children(
-                [
-                    ("align-left", "⇤", AlignLeft.boxed_clone(), "menu.align_left"),
-                    ("align-center", "↔", AlignCenter.boxed_clone(), "menu.align_center"),
-                    ("align-right", "⇥", AlignRight.boxed_clone(), "menu.align_right"),
-                    ("align-top", "⤒", AlignTop.boxed_clone(), "menu.align_top"),
-                    ("align-middle", "↕", AlignMiddle.boxed_clone(), "menu.align_middle"),
-                    ("align-bottom", "⤓", AlignBottom.boxed_clone(), "menu.align_bottom"),
-                ]
-                .map(|(id, symbol, action, tip)| {
-                    action_button(id, symbol.into(), action).disabled(!can_align).tooltip(t!(tip))
-                }),
-            )
-            .child(div().flex_1())
-            .child(action_button("settings", t!("toolbar.settings").into(), Box::new(OpenSettings)))
+        let model = ws.doc.model();
+        let project = ws.file_name().unwrap_or_else(|| {
+            model.element(model.root()).map(|e| e.name().to_owned()).unwrap_or_default()
+        });
+        let recent = self.settings.recent.clone();
+        // Menu commands go where shortcuts go, so that this view handles them.
+        let focus = self.canvas.focus_handle(cx);
+        let muted = cx.theme().muted_foreground;
+        let divider = || div().w(px(1.0)).h(px(16.0)).mx_1().bg(cx.theme().border);
+        // On the window's backdrop, like the cards, with no line of its own.
+        TitleBar::new().bg(transparent_black()).border_b_0().child(
+            h_flex()
+                .flex_1()
+                .gap_1()
+                .child(img(icons::LOGO).size(px(18.0)).mr_1())
+                .child(div().text_sm().font_semibold().mr_2().child("UmlCraft"))
+                .child(
+                    Button::new("file-menu").ghost().small().label(t!("menu.file")).dropdown_menu(
+                        move |menu, window, cx| {
+                            file_menu(menu, &recent, window, cx).action_context(focus.clone())
+                        },
+                    ),
+                )
+                .child(divider())
+                .child(shell::in_title_bar(shell::icon_button(
+                    "save",
+                    icons::fluent("save"),
+                    t!("toolbar.save"),
+                    Box::new(SaveProject),
+                )))
+                .child(shell::in_title_bar(
+                    shell::icon_button(
+                        "undo",
+                        icons::fluent("arrow_undo"),
+                        undo_tip,
+                        Box::new(Undo),
+                    )
+                    .disabled(!ws.doc.can_undo()),
+                ))
+                .child(shell::in_title_bar(
+                    shell::icon_button(
+                        "redo",
+                        icons::fluent("arrow_redo"),
+                        redo_tip,
+                        Box::new(Redo),
+                    )
+                    .disabled(!ws.doc.can_redo()),
+                ))
+                .child(divider())
+                .child(div().text_sm().ml_1().child(project))
+                .when(ws.doc.is_dirty(), |this| {
+                    this.child(div().text_sm().text_color(muted).child("•"))
+                })
+                .child(div().flex_1())
+                .child(
+                    shell::in_title_bar(shell::icon_button(
+                        "settings",
+                        icons::fluent("settings"),
+                        t!("toolbar.settings"),
+                        Box::new(OpenSettings),
+                    ))
+                    .mr_1(),
+                ),
+        )
     }
 
     fn model_browser(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1105,16 +1235,24 @@ impl MainView {
         let muted = cx.theme().muted_foreground;
         let drop_highlight = cx.theme().list_active;
         let workspace = self.workspace.clone();
-        v_flex().size_full().child(panel_header(t!("panel.model"), cx)).child(
-            div().flex_1().min_h_0().child(
+        let count = self.workspace.read(cx).doc.model().len();
+        let header = panel_header(None, t!("panel.model"), Some(count.to_string()), cx);
+        v_flex().size_full().child(header).child(
+            div().flex_1().min_h_0().py_1().child(
                 tree(&self.tree, move |ix, entry, selected, _, _| {
                     let item = entry.item();
                     let meta = meta.get(&item.id);
                     let kind = meta.map(|m| m.kind.type_name()).unwrap_or_default();
+                    // Members and other elements without an icon keep the names in line.
+                    let icon = match meta.and_then(|m| icons::kind_icon(&m.kind)) {
+                        Some(icon) => shell::icon(icon).size_4().into_any_element(),
+                        None => div().size_4().into_any_element(),
+                    };
                     let mut row = div().id(("tree-row", ix)).w_full().child(
                         h_flex()
                             .gap_2()
                             .overflow_hidden()
+                            .child(icon)
                             .child(div().text_sm().child(item.label.clone()))
                             .child(
                                 div()
@@ -1160,77 +1298,23 @@ impl MainView {
 
     fn diagram_area(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ws = self.workspace.read(cx);
-        let model = ws.doc.model();
-        let active_ix =
-            ws.active_diagram.and_then(|a| ws.open_diagrams.iter().position(|&d| d == a));
-        let tabs: Vec<Tab> = ws
-            .open_diagrams
-            .iter()
-            .enumerate()
-            .map(|(ix, &d)| {
-                let name = model.get(d).map(labels::display_name).unwrap_or_default();
-                let workspace = self.workspace.clone();
-                Tab::new().label(name).suffix(
-                    Button::new(("close-tab", ix)).ghost().xsmall().label("×").on_click(
-                        move |_, _, cx| {
-                            cx.stop_propagation();
-                            workspace.update(cx, |ws, cx| {
-                                ws.close_diagram(d);
-                                cx.notify();
-                            });
-                        },
-                    ),
-                )
-            })
-            .collect();
-        let open = ws.open_diagrams.clone();
-        let workspace = self.workspace.clone();
-        let tab_bar = TabBar::new("diagram-tabs")
-            .small()
-            .children(tabs)
-            .selected_index(active_ix.unwrap_or(0))
-            .on_click(move |ix: &usize, _, cx| {
-                if let Some(&d) = open.get(*ix) {
-                    workspace.update(cx, |ws, cx| {
-                        ws.open_diagram(d);
-                        cx.notify();
-                    });
-                }
-            });
-
-        let kind = ws.active_diagram.and_then(|d| model.get(d)).and_then(|e| e.kind().as_diagram());
-        let current_tool = ws.tool;
-        // Wraps onto further lines where the diagram area is narrower than the palette.
-        let palette_row = h_flex()
-            .flex_wrap()
-            .gap_1()
-            .px_2()
-            .py_1()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .children(kind.map(palette::palette).unwrap_or_default().into_iter().enumerate().map(
-                |(ix, tool)| {
-                    let workspace = self.workspace.clone();
-                    let label = match tool {
-                        Tool::Node(NodeTool::Note) => t!("tool.note").to_string(),
-                        _ => t!(format!("tool.{}", tool.key())).to_string(),
-                    };
-                    Button::new(("tool", ix))
-                        .ghost()
-                        .xsmall()
-                        .label(label)
-                        .selected(current_tool == tool)
-                        .on_click(move |_, _, cx| {
-                            workspace.update(cx, |ws, cx| {
-                                ws.tool = tool;
-                                cx.notify();
-                            });
-                        })
-                },
-            ));
-
         let body = if ws.active_diagram.is_some() {
-            div().flex_1().min_h_0().child(self.canvas.clone()).into_any_element()
+            div()
+                .relative()
+                .flex_1()
+                .min_h_0()
+                .child(self.canvas.clone())
+                .child(
+                    div()
+                        .absolute()
+                        .bottom_3()
+                        .left_0()
+                        .right_0()
+                        .flex()
+                        .justify_center()
+                        .child(self.zoom_pill(cx)),
+                )
+                .into_any_element()
         } else {
             div()
                 .flex_1()
@@ -1243,12 +1327,72 @@ impl MainView {
                 .into_any_element()
         };
         // Nothing of the diagram area draws over the panels beside it.
-        v_flex().size_full().overflow_hidden().child(tab_bar).child(palette_row).child(body)
+        v_flex().size_full().overflow_hidden().child(body)
+    }
+
+    /// The properties panel under a heading that names what it shows, like "CLASS".
+    fn properties_area(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let ws = self.workspace.read(cx);
+        let kind = ws.selected_element.and_then(|id| ws.doc.model().get(id)).map(|e| e.kind());
+        let header = match kind {
+            Some(kind) => panel_header(
+                icons::kind_icon(kind),
+                t!(format!("kind.{}", kind.type_name())).to_uppercase(),
+                None,
+                cx,
+            ),
+            None => panel_header(None, t!("panel.properties").to_string(), None, cx),
+        };
+        v_flex().size_full().child(header).child(
+            div()
+                .id("properties-scroll")
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .child(self.properties.clone()),
+        )
+    }
+
+    /// Zoom out, the zoom (resets it), zoom in and zoom to fit, floating over the canvas.
+    fn zoom_pill(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let zoom = (self.canvas.read(cx).zoom() * 100.0).round();
+        shell::card(cx)
+            .rounded_full()
+            .flex()
+            .items_center()
+            .gap_0p5()
+            .px_1()
+            .py_0p5()
+            .child(shell::icon_button(
+                "zoom-out",
+                icons::fluent("zoom_out"),
+                t!("menu.zoom_out"),
+                Box::new(ZoomOut),
+            ))
+            .child(
+                Button::new("zoom-reset")
+                    .ghost()
+                    .small()
+                    .label(format!("{zoom} %"))
+                    .tooltip(t!("toolbar.zoom_reset"))
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(ResetZoom), cx)),
+            )
+            .child(shell::icon_button(
+                "zoom-in",
+                icons::fluent("zoom_in"),
+                t!("menu.zoom_in"),
+                Box::new(ZoomIn),
+            ))
+            .child(shell::icon_button(
+                "zoom-fit",
+                icons::fluent("zoom_fit"),
+                t!("toolbar.zoom_fit"),
+                Box::new(ZoomToFit),
+            ))
     }
 
     fn status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ws = self.workspace.read(cx);
-        let zoom = (self.canvas.read(cx).zoom() * 100.0).round();
         let state = if ws.doc.is_dirty() { t!("status.modified") } else { t!("status.saved") };
         let selection = match ws.selection.len() {
             0 => String::new(),
@@ -1290,14 +1434,11 @@ impl MainView {
         };
         h_flex()
             .gap_4()
-            .px_3()
-            .py_1()
+            .px(shell::GAP + px(4.0))
+            .pb_1()
             .text_xs()
             .text_color(cx.theme().muted_foreground)
-            .border_t_1()
-            .border_color(cx.theme().border)
             .child(ws.file_name().unwrap_or_else(|| t!("status.unsaved_file").to_string()))
-            .child(format!("{zoom} %"))
             .child(state.to_string())
             .child(selection)
             .child(div().flex_1())
@@ -1386,16 +1527,35 @@ fn tree_item(
         .children(children)
 }
 
-fn panel_header(title: impl Into<SharedString>, cx: &App) -> impl IntoElement {
+/// One of the three panels as a card, inset from the panel's edges so that the cards keep a gap
+/// between them where the split handles are.
+fn panel_card(content: impl IntoElement, cx: &App) -> impl IntoElement {
     div()
+        .size_full()
+        .px(shell::GAP / 2.0)
+        .child(shell::card(cx).size_full().overflow_hidden().child(content))
+}
+
+/// A card's heading: an optional icon, the title and, muted, a detail such as a count.
+fn panel_header(
+    icon: Option<SharedString>,
+    title: impl Into<SharedString>,
+    detail: Option<String>,
+    cx: &App,
+) -> impl IntoElement {
+    let muted = cx.theme().muted_foreground;
+    h_flex()
+        .gap_2()
         .px_3()
-        .py_1p5()
-        .text_xs()
-        .font_semibold()
-        .text_color(cx.theme().muted_foreground)
+        .py_2()
         .border_b_1()
         .border_color(cx.theme().border)
-        .child(title.into())
+        .when_some(icon, |this, icon| this.child(shell::icon(icon).size_4().text_color(muted)))
+        .child(div().text_sm().font_semibold().child(title.into()))
+        .child(div().flex_1())
+        .when_some(detail, |this, detail| {
+            this.child(div().text_xs().text_color(muted).child(detail))
+        })
 }
 
 /// A readable name for an Astah metaclass, e.g. `UMatrixDiagramImp` → `MatrixDiagram`.
@@ -1522,12 +1682,41 @@ fn menus(settings: &Settings) -> Vec<Menu> {
     ]
 }
 
+/// The platform's menu bar (macOS); in the window, the title bar's File menu and the ribbon
+/// take its place.
 fn install_menus(settings: &Settings, cx: &mut App) {
-    // Built twice: `Menu` holds boxed actions and cannot be cloned, and both the platform and
-    // the in-window menu bar take one.
     cx.set_menus(menus(settings));
-    let owned = menus(settings).into_iter().map(|m| m.owned()).collect();
-    GlobalState::global_mut(cx).set_app_menus(owned);
+}
+
+/// The title bar's File menu: the same entries as the platform's File menu.
+fn file_menu(
+    menu: PopupMenu,
+    recent: &[PathBuf],
+    window: &mut Window,
+    cx: &mut Context<PopupMenu>,
+) -> PopupMenu {
+    let recent = recent.to_vec();
+    let item = |menu: PopupMenu, key: &str, action: Box<dyn Action>| menu.menu(t!(key), action);
+    let mut menu = item(menu, "menu.new", Box::new(NewProject));
+    menu = item(menu, "menu.open", Box::new(OpenProject));
+    menu = menu.submenu(t!("menu.recent"), window, cx, move |mut menu, _, _| {
+        if recent.is_empty() {
+            return menu.menu_with_disabled(t!("menu.no_recent"), Box::new(Cancel), true);
+        }
+        for (index, path) in recent.iter().enumerate() {
+            menu = menu.menu(recent_label(path), Box::new(OpenRecent { index }));
+        }
+        menu
+    });
+    menu = item(menu, "menu.import_astah", Box::new(ImportAstah));
+    menu = menu.submenu(t!("menu.export"), window, cx, |menu, _, _| {
+        menu.menu(t!("menu.export_svg"), Box::new(ExportSvg))
+            .menu(t!("menu.export_png"), Box::new(ExportPng))
+            .menu(t!("menu.export_astah"), Box::new(ExportAstah))
+    });
+    menu = item(menu.separator(), "menu.save", Box::new(SaveProject));
+    menu = item(menu, "menu.save_as", Box::new(SaveProjectAs));
+    item(menu.separator(), "menu.quit", Box::new(Quit))
 }
 
 /// A new project with one empty class diagram.
@@ -1622,6 +1811,11 @@ impl Render for MainView {
         if window.focused(cx).is_none() {
             self.canvas.focus_handle(cx).focus(window, cx);
         }
+        let backdrop = shell::backdrop(self.settings.backdrop, window, cx);
+        let model_browser = self.model_browser(cx).into_any_element();
+        let diagram_area = self.diagram_area(cx).into_any_element();
+        let properties_area = self.properties_area(cx).into_any_element();
+        let ribbon = self.ribbon(window, cx).into_any_element();
         let theme = cx.theme();
         let canvas = self.canvas.clone();
         let (c1, c2, c3, c4) = (canvas.clone(), canvas.clone(), canvas.clone(), canvas.clone());
@@ -1629,7 +1823,7 @@ impl Render for MainView {
             .id("main")
             .key_context("UmlCraft")
             .size_full()
-            .bg(theme.background)
+            .bg(backdrop)
             .text_color(theme.foreground)
             .on_action(cx.listener(Self::new_project))
             .on_action(cx.listener(Self::open_project))
@@ -1651,6 +1845,12 @@ impl Render for MainView {
             .on_action(cx.listener(Self::toggle_theme))
             .on_action(cx.listener(Self::toggle_language))
             .on_action(cx.listener(Self::open_settings))
+            .on_action(cx.listener(Self::select_tool))
+            .on_action(cx.listener(Self::new_diagram))
+            .on_action(cx.listener(Self::select_ribbon_tab))
+            .on_action(
+                cx.listener(|this, action: &ToggleRibbon, _, cx| this.toggle_ribbon(action, cx)),
+            )
             .on_action(cx.listener(|this, _: &Undo, _, cx| {
                 this.with_workspace(cx, |ws| {
                     ws.doc.undo();
@@ -1694,41 +1894,23 @@ impl Render for MainView {
                 c4.update(cx, |c, cx| c.set_line_shape(a.shape, cx))
             })
             .on_action(move |_: &ZoomToFit, _, cx| canvas.update(cx, |c, cx| c.zoom_to_fit(cx)))
+            .child(self.title_bar(cx))
+            .child(ribbon)
             .child(
-                div()
-                    .h(px(30.0))
-                    .border_b_1()
-                    .border_color(theme.border)
-                    .child(self.menu_bar.clone()),
-            )
-            .child(self.toolbar(cx))
-            .child(
-                div().flex_1().min_h_0().child(
+                div().flex_1().min_h_0().px(shell::GAP / 2.0).py(shell::GAP).child(
                     h_resizable("main-split")
                         .child(
                             resizable_panel()
                                 .size(px(260.0))
                                 .size_range(px(160.0)..px(520.0))
-                                .child(self.model_browser(cx)),
+                                .child(panel_card(model_browser, cx)),
                         )
-                        .child(resizable_panel().child(self.diagram_area(cx)))
+                        .child(resizable_panel().child(panel_card(diagram_area, cx)))
                         .child(
                             resizable_panel()
-                                .size(px(280.0))
+                                .size(px(300.0))
                                 .size_range(px(180.0)..px(560.0))
-                                .child(
-                                    v_flex()
-                                        .size_full()
-                                        .child(panel_header(t!("panel.properties"), cx))
-                                        .child(
-                                            div()
-                                                .id("properties-scroll")
-                                                .flex_1()
-                                                .min_h_0()
-                                                .overflow_y_scroll()
-                                                .child(self.properties.clone()),
-                                        ),
-                                ),
+                                .child(panel_card(properties_area, cx)),
                         ),
                 ),
             )

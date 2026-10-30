@@ -319,6 +319,9 @@ pub struct DiagramCanvas {
     edit_when_drawn: Option<Id>,
     /// Members show their visibility in UmlCraft's own column (a setting).
     pub visibility_column: bool,
+    /// The corner radius of the card the canvas fills; background and grid keep inside the
+    /// corners.
+    pub corner_radius: f32,
     /// What the scene was built from: revision, diagram, column setting and locale. Without a
     /// drag the scene is only built again when one of them changes, not on every pan, zoom or
     /// caret blink.
@@ -436,6 +439,7 @@ impl DiagramCanvas {
             editing: None,
             edit_when_drawn: None,
             visibility_column: false,
+            corner_radius: 0.0,
             scene_key: None,
         }
     }
@@ -1469,27 +1473,48 @@ impl Painter<'_> {
         }
     }
 
-    fn grid(&mut self, bounds: Bounds<Pixels>) {
+    /// The grid, kept inside the corners rounded by `corner`.
+    fn grid(&mut self, bounds: Bounds<Pixels>, corner: f32) {
         let step = GRID * self.t.zoom;
         if step < 8.0 {
             return;
         }
+        // How far a line `inset` from an edge must stay off the perpendicular edge to keep
+        // inside the corner's arc.
+        let cut = |inset: f32| {
+            if inset >= corner {
+                0.0
+            } else {
+                let d = corner - inset.max(0.0);
+                corner - (corner * corner - d * d).sqrt()
+            }
+        };
+        let (left, right) = (f32::from(bounds.origin.x), f32::from(bounds.right()));
+        let (top, bottom) = (f32::from(bounds.origin.y), f32::from(bounds.bottom()));
         let top_left = self.t.to_logical(bounds.origin);
         let bottom_right = self.t.to_logical(bounds.bottom_right());
         let mut x = (top_left.x / GRID).floor() * GRID;
         while x <= bottom_right.x {
-            let sx = self.t.pt(MPoint::new(x, 0.0)).x;
+            let sx = f32::from(self.t.pt(MPoint::new(x, 0.0)).x);
+            let shorten = cut((sx - left).min(right - sx - 1.0));
             self.window.paint_quad(fill(
-                Bounds::new(point(sx, bounds.origin.y), size(px(1.0), bounds.size.height)),
+                Bounds::new(
+                    point(px(sx), px(top + shorten)),
+                    size(px(1.0), px(bottom - top - 2.0 * shorten)),
+                ),
                 self.c.grid,
             ));
             x += GRID;
         }
         let mut y = (top_left.y / GRID).floor() * GRID;
         while y <= bottom_right.y {
-            let sy = self.t.pt(MPoint::new(0.0, y)).y;
+            let sy = f32::from(self.t.pt(MPoint::new(0.0, y)).y);
+            let shorten = cut((sy - top).min(bottom - sy - 1.0));
             self.window.paint_quad(fill(
-                Bounds::new(point(bounds.origin.x, sy), size(bounds.size.width, px(1.0))),
+                Bounds::new(
+                    point(px(left + shorten), px(sy)),
+                    size(px(right - left - 2.0 * shorten), px(1.0)),
+                ),
                 self.c.grid,
             ));
             y += GRID;
@@ -1701,6 +1726,7 @@ impl Render for DiagramCanvas {
         };
         let (pan, zoom, drag) = (self.pan, self.zoom, self.drag.clone());
         let column = self.visibility_column;
+        let corner = self.corner_radius;
         let editing_element = self.editing.as_ref().map(|e| e.element);
         let bounds_cell = self.bounds.clone();
         let this = cx.entity();
@@ -1727,6 +1753,7 @@ impl Render for DiagramCanvas {
             .size_full()
             .overflow_hidden()
             .bg(colors.background)
+            .rounded(px(corner))
             .cursor(cursor)
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_left_down))
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::on_middle_down))
@@ -1817,7 +1844,7 @@ impl Render for DiagramCanvas {
                                 node_fill: None,
                                 column,
                             };
-                            p.grid(bounds);
+                            p.grid(bounds, corner);
                             for node in &scene.nodes {
                                 p.node(node, editing_element);
                             }

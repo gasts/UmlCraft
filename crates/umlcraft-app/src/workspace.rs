@@ -99,16 +99,6 @@ impl Workspace {
         }
     }
 
-    pub fn close_diagram(&mut self, diagram: Id) {
-        let Some(ix) = self.open_diagrams.iter().position(|&d| d == diagram) else { return };
-        self.open_diagrams.remove(ix);
-        if self.active_diagram == Some(diagram) {
-            let next = self.open_diagrams.get(ix).or(self.open_diagrams.last()).copied();
-            self.active_diagram = next;
-            self.selection.clear();
-        }
-    }
-
     pub fn clear_selection(&mut self) {
         self.selected_element = None;
         self.selection.clear();

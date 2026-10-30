@@ -1742,8 +1742,9 @@ Sources: F, O X-3.
 and `.asta` (imported type, alternate viewer), and the app opens files the system hands over
 (`on_open_urls`, through the same unsaved-changes question as recent files; tested only for the
 URL decoding, not on macOS). On Linux the MIME file and the desktop entry cover `.asta` too.
-`metainfo.xml` lists 0.7.0 again. Open: file association on Windows (the release is a plain
-`.zip`), and the Fluent icon licence in the release copies once icons are embedded.
+`metainfo.xml` lists 0.7.0 again. Since 2026-10-30 the icons are embedded and `about.hbs` adds
+the Fluent licence to `THIRD-PARTY-LICENSES.html`. Open: file association on Windows (the
+release is a plain `.zip`).
 
 - `packaging/macos/Info.plist` declares no `CFBundleDocumentTypes` or UTI for `.ucraft`/`.asta`;
   the Windows release is a plain `.zip` without file association; on Linux the desktop and MIME

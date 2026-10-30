@@ -23,6 +23,11 @@ pub struct Settings {
     /// Draw members' visibility in a column of its own, so all names of a compartment start
     /// in one line. Off by default: members then look as in Astah.
     pub visibility_column: bool,
+    /// The ribbon shows only its tabs.
+    pub ribbon_collapsed: bool,
+    /// Let the system's backdrop (Mica, the blurred desktop) show behind the cards. Off by
+    /// default: GPUI then draws all text without subpixel antialiasing (ClearType).
+    pub backdrop: bool,
 }
 
 impl Settings {
@@ -71,6 +76,8 @@ impl Settings {
             language: field(&fields, "language"),
             dark: field(&fields, "dark"),
             visibility_column: field(&fields, "visibilityColumn"),
+            ribbon_collapsed: field(&fields, "ribbonCollapsed"),
+            backdrop: field(&fields, "backdrop"),
         }
     }
 

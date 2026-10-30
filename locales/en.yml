@@ -9,15 +9,47 @@ toolbar:
   settings: Settings
   zoom_reset: "Reset zoom to 100 % (Ctrl+0)"
   zoom_fit: Fit
+ribbon:
+  tab:
+    home: Home
+    view: View
+    tools: Tools
+  group:
+    clipboard: Clipboard
+    edit: Edit
+    arrange: Arrange
+    select: Select
+    elements: Elements
+    relations: Relationships
+    notes: Notes
+    zoom: Zoom
+    appearance: Appearance
+    source: Import source code
+    exchange: Exchange
+    image: Export image
+  paste: Paste
+  cut: Cut
+  copy: Copy
+  delete: Delete
+  remove: Remove from diagram
+  select_all: Select all
+  wrap_in_fragment: In fragment
+  light: Light
+  dark: Dark
+  files: Files …
+  folder: Folder …
+  import: Import
+  export: Export
+  new_diagram: New diagram
 menu:
   file: File
   new: New project
   open: Open …
-  import_astah: Import Astah project …
+  import_astah: Import .asta project …
   export: Export
   export_svg: Diagram as SVG …
   export_png: Diagram as PNG …
-  export_astah: Astah project …
+  export_astah: .asta project …
   recent: Open recent
   no_recent: (none)
   save: Save
@@ -248,9 +280,9 @@ status:
   saved: Unchanged
   selected: selected
   unsaved_file: Not saved
-  exporting: Exporting to Astah …
+  exporting: Exporting to .asta …
   importing: Importing source code …
-  importing_astah: Importing the Astah project …
+  importing_astah: Importing the .asta project …
   opening: Opening the project …
   no_diagram_font: Neither Arial nor Liberation Sans is installed, so diagram texts use another font and may not fit their boxes.
   cancel: Cancel
@@ -270,32 +302,32 @@ dialog:
   ok: OK
   open_failed: The project could not be opened.
   save_failed: The project could not be saved.
-  import_failed: The Astah project could not be imported.
-  import_partial: "%{count} elements of the Astah project were not carried over."
+  import_failed: The .asta project could not be imported.
+  import_partial: "%{count} elements of the .asta project were not carried over."
   import_partial_detail: "UmlCraft does not know these kinds of elements yet: %{kinds}"
   import_failed_detail: "These elements could not be placed in the model: %{kinds}"
   import_lost_shapes: "%{count} shapes on diagrams were left out."
-  import_shapes_partial: Some shapes of the Astah project were not carried over.
-  export_done: The Astah project was exported.
-  export_failed: The Astah project could not be exported.
-  export_partial: "%{count} details of the project could not be carried over to Astah."
-  export_partial_detail: "Astah's API cannot express these:\n%{items}"
+  import_shapes_partial: Some shapes of the .asta project were not carried over.
+  export_done: The .asta project was exported.
+  export_failed: The .asta project could not be exported.
+  export_partial: "%{count} details of the project could not be carried over to the .asta format."
+  export_partial_detail: "The interface to the .asta format cannot express these:\n%{items}"
   image_failed: The diagram could not be saved as an image.
-  astah_missing: Exporting to Astah needs an installed Astah.
-  astah_missing_detail: "UmlCraft writes Astah projects through the API of Astah Professional, UML or SysML. One of them must be installed, or the environment variable ASTAH_HOME must point to its install folder; then restart UmlCraft."
+  astah_missing: Exporting to the .asta format needs an application that is not installed.
+  astah_missing_detail: "UmlCraft writes .asta projects through the programming interface of the application the format belongs to. It must be installed, or the environment variable ASTAH_HOME must point to its install folder; then restart UmlCraft."
   import_source_failed: The source code could not be imported.
   import_source_none: No source files found.
   import_source_discarded: The source import was discarded.
   import_source_discarded_detail: Another project was opened while importing. Please repeat the import in this project.
   import_source_none_detail: "The selection contains no files ending in %{extensions}."
   import_source_partial: "%{count} files could not be imported; the others were."
-  import_source_skipped: "Left out as in Astah: %{items}"
+  import_source_skipped: "Left out on purpose: %{items}"
   syntax_error: "%{file}: syntax error in line %{line}, column %{column}, at „%{token}“"
   syntax_missing: "%{file}: syntax error in line %{line}, column %{column}, %{token} missing"
   read_error: "%{file}: %{error}"
   encoding_guessed: "%{file}: read as %{encoding}"
   more_files: "… and %{count} more"
-  astah_unlicensed: "Astah refused to save the project because its license check failed. Start Astah once and check its license, then export again."
+  astah_unlicensed: "The application that writes .asta projects refused to save because its license check failed. Start it once and check its license, then export again."
 export_dropped:
   comment: Comments not shown on a diagram
   interaction: Interactions without a diagram
@@ -313,14 +345,14 @@ export_dropped:
   emptyOperand: Empty operands of combined fragments
   nestedEnumeration: Nested enumerations (moved to the package)
   activity: Activities without a diagram
-  activityDiagram: Further diagrams of an activity (Astah has one per activity)
+  activityDiagram: Further diagrams of an activity (the .asta format has one per activity)
   activityNode: Activity nodes not shown on their diagram
   activityEdge: Flows not shown on their diagram
   partition: Partitions not shown on their diagram
   mergeNode: Merge nodes (exported as decision and merge nodes)
   objectNodeType: Types of object nodes that are not classes
   stateMachine: State machines without a diagram
-  stateMachineDiagram: Further diagrams of a state machine (Astah has one per state machine)
+  stateMachineDiagram: Further diagrams of a state machine (the .asta format has one per state machine)
   state: States not shown on their diagram
   finalState: Final states not shown on their diagram
   pseudostate: Pseudostates not shown on their diagram
@@ -338,10 +370,10 @@ export_dropped:
   templateParameter: Template parameters of elements other than classes
   templateParameterBounds: Further bounds of template parameters (only the first is kept)
   variadicTemplateParameter: Variadic flag of template parameters
-  edgeRoute: Routes of lines (Astah draws them itself)
-  barHeight: Heights of activation bars (Astah sizes them itself)
+  edgeRoute: Routes of lines (laid out anew on export)
+  barHeight: Heights of activation bars (sized anew on export)
   barColor: Colors of activation bars
-  lifelineLength: Lengths of lifelines (Astah sizes them itself)
+  lifelineLength: Lengths of lifelines (sized anew on export)
   framePosition: Positions of frames
   extraOperand: Further operands of combined fragments (their messages stay in the first one)
   region: Regions beyond the second of a state (what they hold goes into the second one)
@@ -360,9 +392,11 @@ settings:
   theme: Theme
   light: Light
   dark: Dark
+  backdrop: Translucent window background
+  backdrop_detail: "Lets the system's background show between the panels (Mica on Windows). Text is then smoothed without ClearType and looks less crisp."
   classes: Classes
   visibility_column: Visibility in a column of its own
-  visibility_column_detail: "Lines up the names of all attributes and operations of a class. Off, the visibility stands right before the name, as in Astah."
+  visibility_column_detail: "Lines up the names of all attributes and operations of a class. Off, the visibility stands right before the name."
   close: Close
 project:
   untitled: New project
@@ -500,11 +534,11 @@ error:
   multiplicity: "\"%{text}\" is not a multiplicity. Examples: 1, 0..1, 1..*, *"
   malformed: "The file is damaged (line %{line}, column %{column})."
   not_a_project: The file is not an UmlCraft project.
-  not_astah: The file is not an Astah project, or it is damaged.
-  astah_no_model: The Astah project contains no model.
-  astah_too_large: The Astah project is too large.
+  not_astah: The file is not an .asta project, or it is damaged.
+  astah_no_model: The .asta project contains no model.
+  astah_too_large: The .asta project is too large.
   java_launch: "Java could not be started (%{java}): %{reason}"
-  astah_reported: "Astah reported: %{message}"
+  astah_reported: "Reported during export: %{message}"
   export_tool: "The export tool failed (%{status}): %{output}"
   export_timeout: "The export did not finish within %{minutes} minutes and was stopped."
   export_cancelled: The export was cancelled.

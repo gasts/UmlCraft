@@ -28,10 +28,10 @@ Diagrams imported from `.asta` files keep their layout, sizes and colors.
 
 ## Files
 
-- **Open `.asta` files** (File › Import Astah project, or simply open the file): Astah project
+- **Open `.asta` files** (File › Import .asta project, or simply open the file): Astah project
   files with the model, all diagram kinds above, positions, sizes, waypoints, line styles, notes,
   free texts and lines, and colors. Anything UmlCraft cannot represent yet is skipped and reported.
-- **Export to `.asta`** (File › Export › Astah project …): writes `.asta` files through the
+- **Export to `.asta`** (File › Export › .asta project …): writes `.asta` files through the
   official API of an installed Astah; without one the menu item explains what is missing. What
   the API cannot express is reported. See
   [docs/architecture.md](docs/architecture.md#asta-export).
@@ -40,7 +40,10 @@ Diagrams imported from `.asta` files keep their layout, sizes and colors.
 
 ## Importing source code
 
-Tools › Java › Import Java files … / Import Java folder … reads declarations from `.java` sources
+The ribbon's Tools tab imports source code (Import source code › Java, C#, C++ or Python, then
+Files … or Folder …).
+
+The Java import reads declarations from `.java` sources
 into the open project: packages, classes, interfaces, enumerations,
 records and annotation types with attributes, operations, template parameters, supertypes and
 Javadoc. Library types become placeholders at their package path (`java › util › List`), and
@@ -49,7 +52,7 @@ map keys). Method bodies are skipped, files with syntax errors are reported, and
 updates the model instead of duplicating it. The whole import is one undo step; a project of
 6,300 files takes about ten seconds.
 
-Tools › C# › Import C# files … / Import C# folder … does the same for `.cs` sources: namespaces,
+The C# import does the same for `.cs` sources: namespaces,
 classes, interfaces, structs, enumerations and records with fields, methods, constructors,
 operators, template parameters with their `where` bounds, base classes and interfaces, and
 `///` documentation. Auto-properties become attributes, properties with bodies and indexers
@@ -58,7 +61,7 @@ become one class. Library types become placeholders at their namespace path
 (`System › Collections › Generic › List`), and `Order?` becomes an association end `0..1`. Of
 `#if` … `#else`, only the first branch is read.
 
-Tools › C++ › Import C++ files … / Import C++ folder … reads headers and sources (`.h`, `.hpp`,
+The C++ import reads headers and sources (`.h`, `.hpp`,
 `.cpp`, `.cc` …): namespaces, classes, structs, unions and enumerations with fields, member
 functions, constructors, destructors, operators, template parameters, base classes, and `///`,
 `//!` and `/** */` documentation. Pure virtual functions are abstract, `const` ones queries;
@@ -69,7 +72,7 @@ replaced by what they stand for. Standard containers and smart pointers make ass
 … `#else`, only the first branch is read; macros are not expanded, so files that use them in
 declarations (`class API Order`) are reported and left out.
 
-Tools › Python › Import Python files … / Import Python folder … reads `.py` and `.pyi` files:
+The Python import reads `.py` and `.pyi` files:
 every file is a module in the package of its folders (those with an `__init__.py`), with its
 classes, their annotated attributes and the attributes `__init__` assigns to `self`, methods
 without `self`, docstrings, and template parameters from `Generic[T]` or `class Box[T]:`.
@@ -81,6 +84,12 @@ resolve through imports, relative imports and what a package's `__init__.py` imp
 
 ## Editing
 
+The window has its own title bar (File menu, Save, Undo, Redo, Settings) and a ribbon with the
+tabs Home (clipboard, delete, align, line style), the open diagram's kind (its tools), View
+(zoom, theme, language) and Tools (source import, exchange with `.asta` files, images). Model
+tree, diagram and properties are cards beside each other. A double click on a ribbon tab folds
+the ribbon to its tabs; in a narrow window its buttons show icons only.
+
 Inline editing by double-click with a parser for `+ name : Type [0..*] = init` and
 `+ op(p : T) : R`; a properties panel for everything else. Undo and redo for every change, copy,
 cut and paste (as a copy or as the same elements), rubber-band and multiple selection, alignment,
@@ -89,7 +98,7 @@ Free texts and lines on every diagram (Text and Line tools): texts edited in pla
 dashed or with arrowheads, their ends dragged one by one. Light and dark theme, German and
 English. Members show their visibility right before the name (`- name`); UmlCraft's
 visibility column lines up all names of a compartment instead. Theme, language and the column
-are chosen in Tools › Settings … (Ctrl+,).
+are chosen in the settings (the gear in the title bar, or Ctrl+,).
 
 ## Not yet supported
 

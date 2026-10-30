@@ -3,6 +3,23 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
+## Unreleased
+
+- **New window layout**: the window draws its own title bar with the File menu, Save, Undo and
+  Redo; below it a ribbon with the tabs Home, the open diagram's kind, View and Tools replaces
+  the menu bar, the toolbar and the palette row. The diagram tab shows the tools of the open
+  diagram with icons and opens by itself when another diagram becomes active. Model tree,
+  diagram and properties are cards on a grey backdrop; zoom sits in a pill over the diagram.
+  The diagram tabs are gone: the canvas shows the diagram chosen in the model tree. A card
+  left of the ribbon creates new diagrams. In a narrow window the ribbon's buttons drop their
+  labels; a double click on a tab folds the ribbon to its tabs. The model tree shows an icon
+  per element, the properties panel names what it shows. On macOS the system menu bar stays
+  as it was. A new setting lets the system's backdrop show behind the cards, Mica on
+  Windows 11 and the blurred desktop on macOS. It is off by default, since text then loses
+  ClearType.
+- The interface no longer names Astah: menus, messages and the ribbon speak of `.asta`
+  projects, and the ribbon's group for import and export is called Exchange.
+
 ## 0.9.0 – 2026-10-29
 
 - **Settings dialog** (Tools › Settings …, Ctrl+,): language, theme and the visibility column
