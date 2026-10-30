@@ -19,6 +19,7 @@
 # Claude Code
 CLAUDE.md
 CLAUDE.local.md
+AGENTS.md
 .claude/
 
 # Docs
@@ -44,3 +45,6 @@ desktop.ini
 *.log
 .env
 .env.*
+
+# Local
+\#*
