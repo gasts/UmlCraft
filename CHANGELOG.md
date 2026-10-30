@@ -3,7 +3,7 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
-## Unreleased
+## 0.10.0 – 2026-10-30
 
 - **New window layout**: the window draws its own title bar with the File menu, Save, Undo and
   Redo; below it a ribbon with the tabs Home, the open diagram's kind, View and Tools replaces
