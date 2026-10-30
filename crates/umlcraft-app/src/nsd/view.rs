@@ -53,8 +53,8 @@ thread_local! {
 }
 
 /// A window size that shows the whole diagram where it fits on a usual screen.
-pub fn window_size(diagram: &Diagram) -> (f32, f32) {
-    let (w, h) = Layout::of(diagram, umlcraft_nsd::Metrics::for_platform()).size;
+pub fn window_size(layout: &Layout) -> (f32, f32) {
+    let (w, h) = layout.size;
     // Room for the margins and the two toolbars.
     let w = (w as f32 + 2.0 * MARGIN + 20.0).clamp(640.0, 1200.0);
     let h = (h as f32 + 2.0 * MARGIN + 100.0).clamp(400.0, 900.0);
@@ -159,9 +159,11 @@ pub struct NsdView {
 }
 
 impl NsdView {
+    /// A window for `diagram`, laid out as `layout` already (for the window's size).
     pub fn new(
         opening: Opening,
         diagram: Diagram,
+        layout: Layout,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -175,13 +177,12 @@ impl NsdView {
         // A new, empty diagram counts as saved until it is changed: closing it untouched
         // loses nothing. One made from code would be lost.
         let editor = Editor::new(diagram, !unsaved);
-        let metrics = umlcraft_nsd::Metrics::for_platform();
         let mut view = NsdView {
             path,
             draft,
             notes,
             notes_open: false,
-            layout: Layout::of(editor.diagram(), metrics),
+            layout,
             editor,
             svg: String::new(),
             tree: None,
@@ -200,7 +201,7 @@ impl NsdView {
             // The area around the diagram follows the theme the main window switches.
             _theme: cx.observe_global::<Theme>(|_, cx| cx.notify()),
         };
-        view.redraw();
+        view.draw();
         view
     }
 
@@ -224,8 +225,13 @@ impl NsdView {
         self.discarded = false;
         // The change has made a selection of its own.
         self.anchor = None;
+        self.layout = Layout::of(self.editor.diagram(), umlcraft_nsd::Metrics::for_platform());
+        self.draw();
+    }
+
+    /// Draws the diagram as laid out.
+    fn draw(&mut self) {
         let metrics = umlcraft_nsd::Metrics::for_platform();
-        self.layout = Layout::of(self.editor.diagram(), metrics);
         self.svg = umlcraft_nsd::svg::render_layout(self.editor.diagram(), &self.layout, metrics);
         self.tree =
             OPTIONS.with(|options| usvg::Tree::from_str(&self.svg, options)).ok().map(Arc::new);
@@ -979,8 +985,8 @@ impl NsdView {
         match written {
             Ok(()) => {
                 self.editor.saved(diagram);
+                // Only the header changed, which is not drawn: the title follows on render.
                 self.path = Some(path.clone());
-                self.redraw();
                 super::saved(&path, cx);
                 cx.notify();
                 true

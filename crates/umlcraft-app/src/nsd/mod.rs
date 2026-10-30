@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use gpui_kit::*;
 use rust_i18n::t;
+use umlcraft_nsd::layout::Layout;
 use umlcraft_nsd::{Diagram, ElementKind};
 
 pub use source::choose as choose_source_method;
@@ -202,7 +203,8 @@ pub fn open_imported(
 }
 
 fn show(opening: Opening, diagram: Diagram, cx: &mut App) -> Result<(), String> {
-    let (w, h) = view::window_size(&diagram);
+    let layout = Layout::of(&diagram, umlcraft_nsd::Metrics::for_platform());
+    let (w, h) = view::window_size(&layout);
     let bounds = Bounds::centered(None, size(px(w), px(h)), cx);
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -215,7 +217,7 @@ fn show(opening: Opening, diagram: Diagram, cx: &mut App) -> Result<(), String> 
         ..Default::default()
     };
     let (handle, view) = gpui_kit::open_window(options, cx, move |window, cx| {
-        cx.new(|cx| NsdView::new(opening, diagram, window, cx))
+        cx.new(|cx| NsdView::new(opening, diagram, layout, window, cx))
     })
     .map_err(|e| e.to_string())?;
     open_windows(cx);
