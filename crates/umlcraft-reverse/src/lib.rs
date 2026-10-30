@@ -39,15 +39,38 @@ pub enum SourceLanguage {
 }
 
 impl SourceLanguage {
-    /// File extensions, without the dot.
+    /// Every language the import reads.
+    pub const ALL: [SourceLanguage; 4] =
+        [SourceLanguage::Java, SourceLanguage::CSharp, SourceLanguage::Cpp, SourceLanguage::Python];
+
+    /// File extensions, without the dot. C and C headers are read as C++.
     pub fn extensions(self) -> &'static [&'static str] {
         match self {
             SourceLanguage::Java => &["java"],
             SourceLanguage::CSharp => &["cs"],
             SourceLanguage::Cpp => {
-                &["h", "hh", "hpp", "hxx", "c", "cpp", "cc", "cxx", "inl", "ipp", "tpp"]
+                &["h", "hh", "hpp", "hxx", "c", "cpp", "cc", "cxx", "c++", "inl", "ipp", "tpp"]
             }
-            SourceLanguage::Python => &["py", "pyi"],
+            SourceLanguage::Python => &["py", "pyi", "pyw"],
+        }
+    }
+
+    /// The language of a file by its extension (compared ignoring case), if it is one of
+    /// [`SourceLanguage::extensions`].
+    pub fn of(path: &Path) -> Option<SourceLanguage> {
+        let extension = path.extension()?.to_str()?;
+        SourceLanguage::ALL
+            .into_iter()
+            .find(|l| l.extensions().iter().any(|e| e.eq_ignore_ascii_case(extension)))
+    }
+
+    /// The language's name as people write it: `Java`, `C#`, `C++`, `Python`.
+    pub fn name(self) -> &'static str {
+        match self {
+            SourceLanguage::Java => "Java",
+            SourceLanguage::CSharp => "C#",
+            SourceLanguage::Cpp => "C++",
+            SourceLanguage::Python => "Python",
         }
     }
 

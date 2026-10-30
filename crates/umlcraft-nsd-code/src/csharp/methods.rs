@@ -326,7 +326,7 @@ fn doc(node: Node, src: &str) -> Option<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Language, Source};
+    use crate::{Source, SourceLanguage};
 
     #[test]
     fn members_with_their_signatures() {
@@ -358,7 +358,7 @@ namespace Shop
     }
 }
 "#;
-        let found: Vec<(String, String, String)> = Source::parse(Language::CSharp, src)
+        let found: Vec<(String, String, String)> = Source::parse(SourceLanguage::CSharp, src)
             .methods()
             .into_iter()
             .map(|m| (m.class_name(), m.name, m.signature))
@@ -390,7 +390,7 @@ namespace Shop
     fn titles_and_documentation() {
         let src = "namespace A;\nclass B {\n    /// <summary>\n    /// Adds.\n    /// </summary>\n    \
                    int Add(int a, int b) => a + b;\n    int this[int i] { set { } }\n}\n";
-        let s = Source::parse(Language::CSharp, src);
+        let s = Source::parse(SourceLanguage::CSharp, src);
         let made = crate::Made { author: "t", date: "2026-10-30", origin: "test" };
         let ms = s.methods();
         let (add, _) = s.diagram(&ms[0], &made).unwrap();

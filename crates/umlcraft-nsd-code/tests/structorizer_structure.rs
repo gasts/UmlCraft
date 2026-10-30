@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use umlcraft_nsd::{Element, Sequence, read};
-use umlcraft_nsd_code::{Language, Made, Source};
+use umlcraft_nsd_code::{Made, Source, SourceLanguage};
 
 /// The kinds and nesting of a sequence, one line per element.
 fn shape(seq: &Sequence, depth: usize, out: &mut String) {
@@ -50,8 +50,8 @@ fn structure_matches_structorizers_import() {
     let mut differing = Vec::new();
     let mut entries = Vec::new();
     for (refs_dir, folder, extension, language) in [
-        ("java/structorizer-default", "java", "java", Language::Java),
-        ("c/structorizer-default", "cpp", "c", Language::Cpp),
+        ("java/structorizer-default", "java", "java", SourceLanguage::Java),
+        ("c/structorizer-default", "cpp", "c", SourceLanguage::Cpp),
     ] {
         let dir = Path::new(&refs).join(refs_dir);
         let mut found: Vec<_> =

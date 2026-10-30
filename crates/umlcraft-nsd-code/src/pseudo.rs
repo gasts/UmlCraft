@@ -237,12 +237,14 @@ fn precedence(op: &str) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Language, Source};
+    use crate::{Source, SourceLanguage};
 
     /// The first statement of `body` as the notation gives it.
     fn first(body: &str) -> Vec<String> {
-        let source =
-            Source::parse(Language::Java, &format!("class A {{ void f(int n) {{ {body} }} }}"));
+        let source = Source::parse(
+            SourceLanguage::Java,
+            &format!("class A {{ void f(int n) {{ {body} }} }}"),
+        );
         let m = &source.methods()[0];
         let made = crate::Made { author: "t", date: "2026-10-30", origin: "test" };
         let (d, _) = source.diagram(m, &made).unwrap();
@@ -299,7 +301,7 @@ mod tests {
     #[test]
     fn signatures_name_only_the_parameters() {
         let source = Source::parse(
-            Language::Java,
+            SourceLanguage::Java,
             "class A { <T> int f(final java.util.List<T> xs, int[] a, String... rest) { return 0; }
                        void g(A this, int x) { } record P(int x) { P { } } }",
         );

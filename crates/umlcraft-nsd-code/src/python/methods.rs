@@ -219,7 +219,7 @@ fn string_lines(literal: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Language, Source};
+    use crate::{Source, SourceLanguage};
 
     #[test]
     fn functions_methods_and_module_code() {
@@ -254,7 +254,7 @@ total = area(2)
 if __name__ == "__main__":
     print(total)
 "#;
-        let s = Source::parse(Language::Python, src);
+        let s = Source::parse(SourceLanguage::Python, src);
         let found: Vec<(String, String, String)> =
             s.methods().into_iter().map(|m| (m.class_name(), m.name, m.signature)).collect();
         let expected = [

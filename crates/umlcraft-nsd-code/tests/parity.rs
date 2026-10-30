@@ -10,12 +10,12 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use common::{MADE, tree};
-use umlcraft_nsd_code::{Language, Source};
+use umlcraft_nsd_code::{Source, SourceLanguage};
 
 /// Every method of a file as its tree, by `Class.method`.
 fn trees(path: &Path) -> BTreeMap<String, String> {
     let text = std::fs::read_to_string(path).unwrap();
-    let source = Source::parse(Language::of(path).unwrap(), &text);
+    let source = Source::parse(SourceLanguage::of(path).unwrap(), &text);
     source
         .methods()
         .iter()

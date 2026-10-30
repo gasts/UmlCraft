@@ -21,45 +21,12 @@ mod pseudo;
 mod python;
 mod text;
 
-use std::path::Path;
-
 use tree_sitter::{Parser, Tree};
 use umlcraft_nsd::Diagram;
+/// The languages whose methods become structograms: those of the class import, with the same
+/// file extensions (`SourceLanguage::of`).
+pub use umlcraft_reverse::SourceLanguage;
 use umlcraft_reverse::preprocessor::{Dialect, first_branches};
-
-/// The languages whose methods become structograms.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Language {
-    Java,
-    CSharp,
-    Python,
-    Cpp,
-}
-
-impl Language {
-    /// The language of a file by its extension (`.java`, `.cs`, `.py`, `.pyw`; C++ and C:
-    /// `.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`, `.h`, `.c`).
-    pub fn of(path: &Path) -> Option<Language> {
-        let extension = path.extension()?.to_str()?.to_ascii_lowercase();
-        match extension.as_str() {
-            "java" => Some(Language::Java),
-            "cs" => Some(Language::CSharp),
-            "py" | "pyw" => Some(Language::Python),
-            "cpp" | "cc" | "cxx" | "c++" | "hpp" | "hh" | "hxx" | "h" | "c" => Some(Language::Cpp),
-            _ => None,
-        }
-    }
-
-    /// The language's name as people write it.
-    pub fn name(self) -> &'static str {
-        match self {
-            Language::Java => "Java",
-            Language::CSharp => "C#",
-            Language::Python => "Python",
-            Language::Cpp => "C++",
-        }
-    }
-}
 
 /// A method or constructor with a body.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -212,7 +179,7 @@ impl Report {
 
 /// A parsed source file.
 pub struct Source {
-    language: Language,
+    language: SourceLanguage,
     /// As parsed: in C#, the branches of `#if` after the first are blanked out (every byte
     /// keeps its place).
     text: String,
@@ -222,12 +189,14 @@ pub struct Source {
 }
 
 impl Source {
-    pub fn parse(language: Language, text: &str) -> Source {
+    pub fn parse(language: SourceLanguage, text: &str) -> Source {
         let (grammar, parsed) = match language {
-            Language::Java => (tree_sitter_java::LANGUAGE, text.to_owned()),
-            Language::Python => (tree_sitter_python::LANGUAGE, text.to_owned()),
-            Language::Cpp => (tree_sitter_cpp::LANGUAGE, first_branches(text, Dialect::Cpp).0),
-            Language::CSharp => {
+            SourceLanguage::Java => (tree_sitter_java::LANGUAGE, text.to_owned()),
+            SourceLanguage::Python => (tree_sitter_python::LANGUAGE, text.to_owned()),
+            SourceLanguage::Cpp => {
+                (tree_sitter_cpp::LANGUAGE, first_branches(text, Dialect::Cpp).0)
+            }
+            SourceLanguage::CSharp => {
                 (tree_sitter_c_sharp::LANGUAGE, first_branches(text, Dialect::CSharp).0)
             }
         };
@@ -238,7 +207,7 @@ impl Source {
         Source { language, text: parsed, written, tree }
     }
 
-    pub fn language(&self) -> Language {
+    pub fn language(&self) -> SourceLanguage {
         self.language
     }
 
@@ -250,10 +219,10 @@ impl Source {
     pub fn methods(&self) -> Vec<MethodRef> {
         let root = self.tree.root_node();
         match self.language {
-            Language::Java => java::methods(root, &self.text),
-            Language::CSharp => csharp::methods(root, &self.text),
-            Language::Python => python::methods(root, &self.text),
-            Language::Cpp => cpp::methods(root, &self.text),
+            SourceLanguage::Java => java::methods(root, &self.text),
+            SourceLanguage::CSharp => csharp::methods(root, &self.text),
+            SourceLanguage::Python => python::methods(root, &self.text),
+            SourceLanguage::Cpp => cpp::methods(root, &self.text),
         }
     }
 
@@ -261,11 +230,11 @@ impl Source {
     pub fn diagram(&self, method: &MethodRef, made: &Made) -> Option<(Diagram, Report)> {
         let root = self.tree.root_node();
         match self.language {
-            Language::Java => {
+            SourceLanguage::Java => {
                 let node = java::find(root, method)?;
                 Some(java::diagram(node, &self.text, made))
             }
-            Language::CSharp => {
+            SourceLanguage::CSharp => {
                 let member = csharp::find(root, &self.text, method)?;
                 let (d, mut report) = csharp::diagram(&member, &self.text, made);
                 if let Some(line) = self.left_out(member.range()) {
@@ -273,11 +242,11 @@ impl Source {
                 }
                 Some((d, report))
             }
-            Language::Python => {
+            SourceLanguage::Python => {
                 let member = python::find(root, &self.text, method)?;
                 Some(python::diagram(&member, root, &self.text, made))
             }
-            Language::Cpp => {
+            SourceLanguage::Cpp => {
                 let member = cpp::find(root, &self.text, method)?;
                 let (d, mut report) = cpp::diagram(&member, root, &self.text, made);
                 if let Some(line) = self.left_out(member.range()) {

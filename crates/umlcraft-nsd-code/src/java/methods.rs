@@ -91,7 +91,7 @@ pub fn find<'t>(root: Node<'t>, method: &MethodRef) -> Option<Node<'t>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Language, Source};
+    use crate::{Source, SourceLanguage};
 
     #[test]
     fn methods_of_nested_types_with_their_signatures() {
@@ -114,7 +114,7 @@ public class Outer {
     record P(int x) { P { } }
 }
 "#;
-        let found: Vec<(String, String, String)> = Source::parse(Language::Java, src)
+        let found: Vec<(String, String, String)> = Source::parse(SourceLanguage::Java, src)
             .methods()
             .into_iter()
             .map(|m| (m.class_name(), m.name, m.signature))
@@ -136,7 +136,7 @@ public class Outer {
 
     #[test]
     fn methods_are_found_again() {
-        let s = Source::parse(Language::Java, "class A { void f() { } void g() { } }");
+        let s = Source::parse(SourceLanguage::Java, "class A { void f() { } void g() { } }");
         let ms = s.methods();
         assert_eq!(ms[1].line, 1);
         assert_eq!(ms[1].file_name(), "A.g.nsd");

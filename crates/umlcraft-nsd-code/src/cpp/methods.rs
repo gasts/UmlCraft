@@ -287,7 +287,7 @@ fn doc(node: Node, src: &str) -> Option<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Language, Source};
+    use crate::{Source, SourceLanguage};
 
     #[test]
     fn functions_in_namespaces_classes_and_outside() {
@@ -310,7 +310,7 @@ public:
 void shop::Cart::run(int n, ...) const { }
 static int main(void) { return 0; }
 "#;
-        let s = Source::parse(Language::Cpp, src);
+        let s = Source::parse(SourceLanguage::Cpp, src);
         let found: Vec<(String, String, String)> =
             s.methods().into_iter().map(|m| (m.class_name(), m.name, m.signature)).collect();
         let expected = [
@@ -352,7 +352,7 @@ Vec Vec::operator+(const Vec&) const { return *this; }
 Vec operator+(const Vec&, const Vec&) { return Vec(); }
 Vec operator-(const Vec&) { return Vec(); }
 "#;
-        let s = Source::parse(Language::Cpp, src);
+        let s = Source::parse(SourceLanguage::Cpp, src);
         let names: Vec<String> = s.methods().into_iter().map(|m| m.name).collect();
         let expected = [
             "op_Subtraction",

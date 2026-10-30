@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use umlcraft_nsd::layout::Layout;
 use umlcraft_nsd::{Metrics, read, write};
-use umlcraft_nsd_code::{Language, Made, Source, decode};
+use umlcraft_nsd_code::{Made, Source, SourceLanguage, decode};
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
@@ -36,7 +36,7 @@ fn main() {
     let mut failures = Vec::new();
     for file in &files {
         let text = decode(&std::fs::read(file).expect("readable file"));
-        let Some(language) = Language::of(file) else { continue };
+        let Some(language) = SourceLanguage::of(file) else { continue };
         let source = Source::parse(language, &text);
         for m in source.methods() {
             let label = format!("{}:{} {}", file.display(), m.line, m.name);

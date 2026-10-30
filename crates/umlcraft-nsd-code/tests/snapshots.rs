@@ -9,11 +9,11 @@ use std::path::Path;
 
 use common::{MADE, tree};
 use umlcraft_nsd::{read, write};
-use umlcraft_nsd_code::{Language, Source};
+use umlcraft_nsd_code::{Source, SourceLanguage};
 
 fn snapshot(file: &Path) -> String {
     let text = std::fs::read_to_string(file).unwrap();
-    let source = Source::parse(Language::of(file).unwrap(), &text);
+    let source = Source::parse(SourceLanguage::of(file).unwrap(), &text);
     let mut out = String::new();
     for m in source.methods() {
         let (d, report) = source.diagram(&m, &MADE).unwrap();

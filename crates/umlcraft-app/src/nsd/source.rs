@@ -15,7 +15,7 @@ use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::{ActiveTheme, Sizable, StyledExt, WindowExt, v_flex};
 use gpui_kit::*;
 use rust_i18n::t;
-use umlcraft_nsd_code::{Language, Made, MethodRef, NoteKind, Report, Source};
+use umlcraft_nsd_code::{Made, MethodRef, NoteKind, Report, Source, SourceLanguage};
 
 /// More windows than this at once would rather be a mistake.
 const MAX_WINDOWS: usize = 20;
@@ -37,7 +37,7 @@ pub fn choose(
         .spawn(cx, async move |cx| {
             let Ok(Ok(Some(paths))) = rx.await else { return };
             let Some(path) = paths.into_iter().next() else { return };
-            let Some(language) = Language::of(&path) else {
+            let Some(language) = SourceLanguage::of(&path) else {
                 cx.update(|window, cx| {
                     let message = t!("nsd.source_unknown").to_string();
                     failed(message, path.display().to_string(), window, cx);
