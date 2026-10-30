@@ -1,0 +1,290 @@
+== Features.Add (line 16)
+| Add(a, b)
+# <summary>
+# Adds two numbers.
+# </summary>
+  jump
+    | gib a + b
+
+== Features.Log (line 18)
+| Log(message)
+  instruction
+    | Console.WriteLine(message)
+
+== Features.Features (line 20)
+| Features(start)
+  instruction
+    | this()
+  instruction
+    | count := start
+
+== Features.Features (line 25)
+| Features()
+
+== Features.get_Count (line 32)
+| get_Count()
+# <summary>The number of items.</summary>
+  jump
+    | gib count
+
+== Features.set_Count (line 33)
+| set_Count(value)
+# <summary>The number of items.</summary>
+  instruction
+    | count := value
+
+== Features.get_Twice (line 38)
+| get_Twice()
+  jump
+    | gib count * 2
+
+== Features.get_Item (line 42)
+| get_Item(i)
+  jump
+    | gib i * 2
+
+== Features.op_Addition (line 45)
+| operator +(a, b)
+  jump
+    | gib a
+
+== Features.~Features (line 50)
+| ~Features()
+  instruction
+    | count := 0
+
+== Features.Name (line 55)
+| Name(day)
+  case
+    | day?
+    | 1
+    | 2 or 3
+    | default
+    -
+      instruction
+        | name := "Monday"
+    -
+      instruction
+        | name := "Midweek"
+    -
+      instruction
+        | name := "Other"
+  jump
+    | gib name
+
+== Features.Size (line 66)
+| Size(n)
+  case
+    | n?
+    | < 0
+    | 0
+    | default
+    -
+      jump
+        | throw new ArgumentException("n")
+    -
+      jump
+        | gib "zero"
+    -
+      jump
+        | gib "many"
+
+== Features.Patterns (line 73)
+| Patterns(o)
+  case
+    | o?
+    | int n when n > 0
+    | string s
+    | default
+    -
+      jump
+        | gib n
+    -
+      jump
+        | gib s.Length
+    -
+      jump
+        | gib 0
+
+== Features.Assignments (line 86)
+| Assignments(s)
+  instruction
+    | s := s ?? "none"
+  instruction
+    | (a, b) := (1, 2)
+  instruction
+    | (a, b) := (b, a)
+  instruction
+    | count := count + a * b
+  instruction
+    | count := s.Length > 3 ? a : b
+  for style=TRAVERSAL
+    | foreach (k, v) in Pairs()
+    -
+      instruction
+        | count := count + 1
+
+== Features.Resources (line 99)
+| Resources(path)
+  instruction
+    | reader := Open(path)
+    # using
+  instruction
+    | reader.Read()
+  instruction
+    | writer := Open(path)
+    # using
+  instruction
+    | writer.Write()
+  instruction
+    | count := count + 1
+    # lock (gate)
+! line 101: Using
+! line 105: Using
+! line 107: Lock
+
+== Features.Numbers (line 113)
+| Numbers(n)
+  for style=COUNTER
+    | for i := 0 to n - 1
+    -
+      alternative
+        | i > 100?
+        -
+          jump
+            | yield break
+        -
+      instruction
+        | yield return i
+! line 119: Yield
+! line 121: Yield
+
+== Features.Jumps (line 125)
+| Jumps(a)
+  case
+    | a?
+    | 1
+    | 2
+    | %
+    -
+      instruction
+        | count := 1
+      jump
+        | goto case 2
+    -
+      instruction
+        | count := 2
+    -
+  alternative
+    | count > 0?
+    -
+      instruction
+        | count := count - 1
+      jump
+        | goto retry
+    -
+! line 131: Goto
+! line 136: Label
+! line 140: Goto
+
+== Features.Filters (line 144)
+| Filters(r)
+  try
+    | exception
+    -
+      instruction
+        | r.Read()
+    -
+      case
+        | exception instanceof?
+        | IOException when e.Message != null
+        | Exception
+        | %
+        -
+          instruction
+            | e := exception
+          call
+            | Log(e.Message)
+        -
+          jump
+            | throw
+        -
+    -
+
+== Features.OneFilter (line 160)
+| OneFilter(r)
+  try
+    | exception
+    -
+      instruction
+        | r.Read()
+    -
+      case
+        | exception instanceof?
+        | IOException when count > 0
+        | %
+        -
+          call
+            | this.Log("io")
+        -
+    -
+
+== Features.Local (line 172)
+| Local(n)
+  instruction
+    | await Task.Delay(n)
+  jump
+    | gib Square(n)
+! line 174: LocalFunction
+
+== Features.Untyped (line 180)
+| Untyped(path)
+  try
+    | exception
+    -
+      instruction
+        | File.Delete(path)
+    -
+      case
+        | exception instanceof?
+        | IOException
+        | %
+        -
+          call
+            | Trace(path)
+        -
+    -
+
+== Features.Open (line 192)
+| Open(path)
+  call
+    | Log(path)
+  jump
+    | gib null
+! line 196: Conditional
+
+== Features.Pairs (line 203)
+| Pairs()
+  jump
+    | gib null
+
+== Features.Trace (line 205)
+| Trace(path)
+  instruction
+    | count := count * 2
+
+== Features.Point.Point (line 217)
+| Point(x)
+  instruction
+    | X := x
+
+== Features.Pair.Sum (line 225)
+| Sum()
+  jump
+    | gib A + B
+
+== Features.IShape.Area (line 230)
+| Area()
+  jump
+    | gib 0
+

@@ -1,0 +1,44 @@
+== Jumps.plainReturn (line 3)
+| plainReturn(a)
+  alternative
+    | a > 0?
+    -
+      jump
+        | return
+    -
+  call
+    | work()
+
+== Jumps.loops (line 12)
+| loops(values)
+  instruction
+    | sum := 0
+  for style=TRAVERSAL
+    | foreach v in values
+    -
+      alternative
+        | v < 0?
+        -
+          instruction color=ff0000 disabled
+            | continue;
+        -
+      alternative
+        | v > 100?
+        -
+          jump
+            | break
+        -
+      instruction
+        | sum := sum + v
+  jump
+    | gib sum
+! line 19: Continue
+
+== Jumps.fail (line 30)
+| fail(message)
+  jump
+    | throw new IllegalStateException(message)
+
+== Jumps.work (line 35)
+| work()
+

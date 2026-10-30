@@ -1,0 +1,73 @@
+== Jumps.plainReturn (line 2)
+| plainReturn(a)
+  alternative
+    | a > 0?
+    -
+      jump
+        | return
+    -
+  call
+    | work()
+
+== Jumps.loops (line 9)
+| loops(values)
+  instruction
+    | sum := 0
+  for style=TRAVERSAL
+    | foreach v in values
+    -
+      alternative
+        | v < 0?
+        -
+          instruction color=ff0000 disabled
+            | continue;
+        -
+      alternative
+        | v > 100?
+        -
+          jump
+            | break
+        -
+      instruction
+        | sum := sum + v
+  jump
+    | gib sum
+! line 13: Continue
+
+== Jumps.labels (line 23)
+| labels(grid)
+  instruction
+    | found := -1
+  for style=COUNTER
+    | for i := 0 to grid.length - 1
+    -
+      for style=COUNTER
+        | for j := 0 to grid[i].length - 1
+        -
+          alternative
+            | grid[i][j] == 0?
+            -
+              instruction
+                | found := i
+              jump
+                | break outer
+            -
+          alternative
+            | grid[i][j] < 0?
+            -
+              instruction color=ff0000 disabled
+                | continue outer;
+            -
+  jump
+    | gib found
+! line 25: Label
+! line 33: Continue
+
+== Jumps.fail (line 40)
+| fail(message)
+  jump
+    | throw new IllegalStateException(message)
+
+== Jumps.work (line 44)
+| work()
+

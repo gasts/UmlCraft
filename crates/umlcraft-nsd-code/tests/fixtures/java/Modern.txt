@@ -1,0 +1,43 @@
+== Modern.arrow (line 2)
+| arrow(day)
+  case
+    | day?
+    | 1
+    | 2, 3
+    | default
+    -
+      instruction
+        | name := "Monday"
+    -
+      instruction
+        | name := "Midweek"
+    -
+      instruction
+        | name := "Other"
+  jump
+    | gib name
+
+== Modern.expression (line 12)
+| expression(day)
+  case
+    | day?
+    | 1
+    | 2
+    | default
+    -
+      instruction
+        | len := 6
+    -
+      call
+        | work()
+      instruction
+        | len := 7
+    -
+      instruction
+        | len := 0
+  jump
+    | gib len
+
+== Modern.work (line 24)
+| work()
+

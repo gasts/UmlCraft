@@ -47,6 +47,7 @@ menu:
   open: Öffnen …
   new_structogram: Neues Struktogramm
   open_structogram: Struktogramm öffnen …
+  structogram_from_source: Struktogramm aus Quelltext-Datei …
   import_astah: .asta-Projekt importieren …
   export: Exportieren
   export_svg: Diagramm als SVG …
@@ -604,3 +605,25 @@ nsd:
   color_7: Grau
   color_8: Orange
   color_9: Violett
+  source_title: "Struktogramm aus %{file}"
+  source_search: Methoden suchen …
+  source_hint: Methoden ankreuzen und öffnen, oder eine doppelt anklicken. Jede öffnet sich in einem eigenen Fenster, noch nicht gespeichert.
+  source_open: Öffnen
+  source_failed: Die Datei konnte nicht gelesen werden.
+  source_unknown: "Struktogramme lassen sich aus Java- (.java) und C#-Dateien (.cs) erstellen."
+  source_no_methods: Die Datei enthält keine Methoden mit Rumpf.
+  source_too_many: "Nur die ersten %{max} Methoden wurden geöffnet."
+  notes: "%{count} Stellen sind nicht wie im Code dargestellt"
+  note_line: "Zeile %{line}: %{what}"
+  note_continue: continue hat kein Element; als rote, deaktivierte Anweisung behalten
+  note_label: das Label ist weggelassen
+  note_local_class: eine in der Methode deklarierte Klasse ist weggelassen
+  note_synchronized: synchronized – der Rumpf steht an seiner Stelle, die Sperre als Kommentar
+  note_fallthrough: der Fall läuft in den nächsten weiter; dessen Anweisungen sind dorthin kopiert
+  note_syntax_error: der Parser konnte das nicht lesen; als rote, deaktivierte Anweisung behalten
+  note_using: using – die Ressource wird zugewiesen, der Rumpf steht an seiner Stelle
+  note_lock: lock – der Rumpf steht an seiner Stelle, die Sperre als Kommentar
+  note_yield: yield hat kein Element; wie geschrieben behalten
+  note_goto: goto hat kein Element; als Sprung mit seinem Text behalten
+  note_local_function: eine in der Methode deklarierte Funktion ist weggelassen
+  note_conditional: "#if: nur der erste Zweig ist gelesen, die anderen sind weggelassen"

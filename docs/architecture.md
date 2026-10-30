@@ -472,7 +472,6 @@ writes, and none of its code is used.
   Structorizer does on saving; an unchanged one is written as read, byte for byte. `clip` puts
   elements on the clipboard as a whole `.nsd` file, the form in which Structorizer puts a
   diagram there; other text pastes as one instruction.
-
 - **Text metrics** (`metrics`). Structorizer measures with Java's logical font Dialog 12,
   antialiased with integer metrics: a line is as wide as its characters' advances summed and
   rounded, the bold title's widths are cut off instead. The font behind Dialog differs by
@@ -495,6 +494,9 @@ writes, and none of its code is used.
   element takes spare height, a structured one hands it to its branches. Every element box
   has its path (element and branch indices); `Layout::hit` tells what a click selects and
   `Layout::slot_at` where a drop goes.
+- Where the texts in triangular heads sit (an alternative's condition, a case's
+  discriminator) follows no rule we found; a fit to Structorizer's positions puts them within
+  a few pixels. Lines are exact.
 - **Drawing** (`draw`) turns a layout into areas, 1 px lines and texts, fills first. Colours
   are roles (`Ink`) so that a painter can use its theme, except the elements' and branch heads'
   own colours. The hatching of disabled elements repeats Structorizer's 5×10 pixel tile from
@@ -514,9 +516,45 @@ writes, and none of its code is used.
   Structorizer; a new element is only inserted when its dialog is confirmed. The diagram stays
   a white sheet in the dark theme; the area around it follows the theme. The window has
   toolbars instead of menus, because on macOS the menu bar belongs to the whole app.
-- Where the texts in triangular heads sit (an alternative's condition, a case's
-  discriminator) follows no rule we found; a fit to Structorizer's positions puts them within
-  a few pixels. Lines are exact.
+- **From source code** (`umlcraft-nsd-code`; `java`, `csharp`): tree-sitter reads a `.java` or
+  `.cs` file (C# with only the first branch of each `#if`, as the class import reads it);
+  `Source::methods` lists methods and constructors with a body (nested types included, not
+  classes inside methods) with their signatures as written, in C# also finalizers, operators
+  (`op_Addition`), the accessors of properties, indexers and events as .NET names them
+  (`get_Count`, `set_Item`) and the top-level statements as `Program.Main`; `Source::diagram`
+  builds one with the elements of `umlcraft-nsd` (`edit::new_element`, so every rule of the
+  editor holds). Each language reads its own nodes and hands the parts to a shared builder
+  (`core`: comments, conditions and loops, the cases of a switch, the parts of a try), which a
+  `Grammar` tells the node kinds that differ. Both languages give the same structogram for the
+  same method (`tests/parity.rs`, differences on purpose in `tests/parity_deviations.txt`).
+  Texts are written as structograms write them (`pseudo`): no types (the root is `name(a, b)`, a
+  declaration without a value has no element), assignments as `x := value` (`total += a` as
+  `total := total + a`, `i++` as `i := i + 1`), no `;`; expressions and conditions stay as in
+  the code, conditions without their outer parentheses and ending in `?` (`a > 0?`, also a
+  case's discriminator and a loop's condition); a returned value reads `gib x` (`return;` stays
+  `return`). `f(x)` and `this.f(x)` are calls, other statements instructions; an expression body
+  (`=> a + b`) is a `return` or, where nothing is returned, a statement. A for loop that counts
+  one variable by a constant step is a counting loop (`for i := 0 to n - 1`, `by 2`),
+  `for (T x : c)` a traversal (`foreach x in c`); Structorizer reads both with the attributes we
+  write. Any other for loop becomes its initialization and a while loop with the update at the
+  end of its body; without a condition, and `while (true)`, it is an endless loop. `switch`
+  becomes a case element: labels sharing a body are joined, the default goes last (`%` without
+  one), a case that runs on gets the following statements copied (Java only: C# forbids it, so a
+  C# case never runs on), and a switch expression's values (C#'s arms too, `_` as the default,
+  `throw` as a jump) are assigned or returned where the expression stood. Several catches become
+  a case on the exception's type, C#'s `when` filters in its labels. Comments go to the element
+  of the next statement, or of the one they end on. What has no element is kept as near as
+  possible (`continue` and unreadable code as red, disabled instructions, a `synchronized` or
+  `lock` body in place with the lock as a comment, a `using` resource assigned with `using` as a
+  comment, `yield` and `goto` as written; labels and local functions left out) and named in the
+  `Report`. `tests/snapshots.rs` holds every fixture method as a readable tree;
+  `tests/structorizer_structure.rs` compares the nesting with Structorizer's own import of the
+  same files (with `UMLCRAFT_NSD_REFS`), the deliberate differences listed in
+  `tests/structorizer_deviations.txt`; the `nsd-import` example runs a whole source tree.
+  Structorizer has no C# import to compare with; besides the parity test, the example ran over
+  Newtonsoft.Json (951 files, 8438 methods), and Structorizer read the diagrams back as written.
+  In the app, `nsd/source.rs` holds the menu command (the extension picks the language) and the
+  dialog that picks methods; each opens unsaved, with the report in a bar at the bottom.
 
 Every file Structorizer 3.32-35 wrote that we have reads and writes back byte for byte. The
 tests check our own diagrams, one feature each, as Structorizer saved them

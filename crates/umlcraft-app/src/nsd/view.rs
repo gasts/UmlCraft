@@ -74,6 +74,25 @@ pub fn title(path: Option<&Path>, dirty: bool) -> String {
     format!("{}{dirty} – UmlCraft", file_name(path))
 }
 
+/// How a window starts.
+#[derive(Default)]
+pub struct Opening {
+    /// The file, or `None` for a diagram not saved yet.
+    pub path: Option<PathBuf>,
+    /// Where an unsaved diagram is suggested to go (it names the window, too).
+    pub draft: Option<PathBuf>,
+    /// What an import could not show as written, one line each.
+    pub notes: Vec<String>,
+    /// Made from something else (code): closing asks even before a change.
+    pub unsaved: bool,
+}
+
+impl Opening {
+    pub fn name(&self) -> Option<&Path> {
+        self.path.as_deref().or(self.draft.as_deref())
+    }
+}
+
 /// The diagram rasterized for one scale.
 struct Raster {
     scale: f32,
@@ -105,6 +124,11 @@ pub type Continuation = Box<dyn FnOnce(&mut NsdView, &mut Window, &mut Context<N
 pub struct NsdView {
     /// The file, or `None` for a new diagram never saved.
     path: Option<PathBuf>,
+    /// Where a diagram never saved is suggested to go.
+    draft: Option<PathBuf>,
+    /// What an import could not show as written, and whether that list is shown.
+    notes: Vec<String>,
+    notes_open: bool,
     editor: Editor,
     layout: Layout,
     /// The diagram as SVG, drawn again after each change.
@@ -136,23 +160,27 @@ pub struct NsdView {
 
 impl NsdView {
     pub fn new(
-        path: Option<PathBuf>,
+        opening: Opening,
         diagram: Diagram,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let Opening { path, draft, notes, unsaved } = opening;
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
         let weak = cx.entity().downgrade();
         window.on_window_should_close(cx, move |window, cx| {
             weak.update(cx, |this, cx| this.should_close(window, cx)).unwrap_or(true)
         });
-        // A new diagram counts as saved until it is changed: closing it untouched loses
-        // nothing.
-        let editor = Editor::new(diagram, true);
+        // A new, empty diagram counts as saved until it is changed: closing it untouched
+        // loses nothing. One made from code would be lost.
+        let editor = Editor::new(diagram, !unsaved);
         let metrics = umlcraft_nsd::Metrics::for_platform();
         let mut view = NsdView {
             path,
+            draft,
+            notes,
+            notes_open: false,
             layout: Layout::of(editor.diagram(), metrics),
             editor,
             svg: String::new(),
@@ -178,6 +206,11 @@ impl NsdView {
 
     pub fn path(&self) -> Option<&Path> {
         self.path.as_deref()
+    }
+
+    /// The file or the suggested one, for the title.
+    fn name(&self) -> Option<&Path> {
+        self.path.as_deref().or(self.draft.as_deref())
     }
 
     /// Whether closing would lose changes.
@@ -868,12 +901,14 @@ impl NsdView {
         let suggested = self
             .path
             .as_deref()
+            .or(self.draft.as_deref())
             .and_then(Path::file_name)
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| format!("{}.nsd", t!("nsd.untitled_stem")));
         let directory = self
             .path
             .as_deref()
+            .or(self.draft.as_deref())
             .and_then(Path::parent)
             .map(PathBuf::from)
             .or_else(crate::main_view::documents_dir)
@@ -946,7 +981,7 @@ impl NsdView {
             then(self, window, cx);
             return;
         }
-        let message = t!("nsd.unsaved", name = file_name(self.path.as_deref())).to_string();
+        let message = t!("nsd.unsaved", name = file_name(self.name())).to_string();
         let detail = t!("dialog.unsaved_detail").to_string();
         let answers = [
             t!("dialog.save").to_string(),
@@ -1011,13 +1046,13 @@ impl NsdView {
 
     fn export(&mut self, png: bool, window: &mut Window, cx: &mut Context<Self>) {
         let extension = if png { "png" } else { "svg" };
-        let stem = self.path.as_deref().and_then(Path::file_stem);
+        let stem = self.name().and_then(Path::file_stem);
         let stem = stem.map_or_else(
             || t!("nsd.untitled_stem").to_string(),
             |s| s.to_string_lossy().into_owned(),
         );
         let suggested = format!("{stem}.{extension}");
-        let directory = self.path.as_deref().and_then(Path::parent).map(PathBuf::from);
+        let directory = self.name().and_then(Path::parent).map(PathBuf::from);
         let directory = directory.or_else(crate::main_view::documents_dir).unwrap_or_default();
         let rx = cx.prompt_for_new_path(&directory, Some(&suggested));
         let svg = self.svg.clone();
@@ -1188,6 +1223,42 @@ impl NsdView {
             .children(swatches)
     }
 
+    /// What an import could not show as written: a line that opens into the list.
+    fn notes_bar(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        if self.notes.is_empty() {
+            return None;
+        }
+        let summary = t!("nsd.notes", count = self.notes.len()).to_string();
+        let arrow = if self.notes_open { "▾" } else { "▸" };
+        let list = self.notes_open.then(|| {
+            v_flex()
+                .id("nsd-notes")
+                .max_h(px(140.0))
+                .overflow_y_scroll()
+                .pl_4()
+                .children(self.notes.iter().map(|n| div().text_xs().child(n.clone())))
+        });
+        Some(
+            v_flex()
+                .px_2()
+                .py_1()
+                .border_t_1()
+                .border_color(cx.theme().border)
+                .text_sm()
+                .child(
+                    div()
+                        .id("nsd-notes-toggle")
+                        .cursor_pointer()
+                        .child(format!("{arrow} {summary}"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.notes_open = !this.notes_open;
+                            cx.notify();
+                        })),
+                )
+                .children(list),
+        )
+    }
+
     /// The context menu: what the selection allows.
     fn context_menu(
         view: &Entity<Self>,
@@ -1287,7 +1358,7 @@ fn rasterize(tree: &usvg::Tree, scale: f32) -> Option<(Arc<RenderImage>, (u32, u
 
 impl Render for NsdView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        window.set_window_title(&title(self.path.as_deref(), self.editor.is_dirty()));
+        window.set_window_title(&title(self.name(), self.editor.is_dirty()));
         let this = cx.entity();
         let menu_owner = cx.entity();
         let area = self.area.clone();
@@ -1408,6 +1479,7 @@ impl Render for NsdView {
                         Self::context_menu(&menu_owner, menu, window, cx)
                     }),
             )
+            .children(self.notes_bar(cx))
     }
 }
 

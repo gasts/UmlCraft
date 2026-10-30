@@ -1,0 +1,163 @@
+== Edge.kind (line 4)
+| kind(day)
+  case
+    | day?
+    | 6, 7
+    | 1
+    | default
+    -
+      jump
+        | gib 0
+    -
+      alternative
+        | value > 0?
+        -
+          jump
+            | gib 2
+        -
+      jump
+        | gib 1
+    -
+      jump
+        | throw new IllegalArgumentException("day")
+
+== Edge.fractions (line 17)
+| fractions()
+  instruction
+    | x := 0
+  while
+    | x < 2.5?
+    -
+      call
+        | step(x)
+      instruction
+        | x := x + 1
+
+== Edge.calls (line 23)
+| calls()
+  call
+    | this.reset()
+  instruction
+    | super.toString()
+  call
+    | reset()
+  instruction
+    | value := compute(1) + compute(2)
+
+== Edge.comments (line 30)
+| comments()
+  while
+    | value < 10?
+    # only a comment at the start
+    -
+      instruction
+        | value := value + 1
+        # a comment at the end of a block
+  alternative
+    | value > 0?
+    -
+    -
+
+== Edge.broken (line 41)
+| broken()
+  instruction
+    | a := 1
+  instruction color=ff0000 disabled
+    | a = = 2;
+  instruction
+    | a := a + 1
+! line 43: SyntaxError
+
+== Edge.caseDefaultWithLabel (line 47)
+| caseDefaultWithLabel(a)
+  case
+    | a?
+    | 1
+    | default
+    -
+      instruction
+        | value := 1
+    -
+      instruction
+        | value := 0
+
+== Edge.chain (line 58)
+| chain(sb)
+  instruction
+    | sb.append("a")
+    |   .append("b")
+    |   .append("c")
+  jump
+    | gib sb.toString()
+
+== Edge.reset (line 65)
+| reset()
+  instruction
+    | value := 0
+
+== Edge.compute (line 69)
+| compute(x)
+  jump
+    | gib x
+
+== Edge.braced (line 74)
+| braced(a)
+  case
+    | a?
+    | 1
+    | 2
+    | %
+    -
+      instruction
+        | value := 1
+    -
+      instruction
+        | value := 2
+    -
+
+== Edge.onlyDefault (line 86)
+| onlyDefault(a)
+  instruction
+    | value := a
+  instruction
+    | value := 3
+
+== Edge.unions (line 98)
+| unions(r)
+  try
+    | exception
+    -
+      instruction
+        | r.read()
+    -
+      case
+        | exception instanceof?
+        | java.io.IOException, IllegalStateException
+        | RuntimeException
+        | %
+        -
+          instruction
+            | e := exception
+          call
+            | reset()
+        -
+          instruction
+            | e := exception
+          call
+            | reset()
+        -
+    -
+
+== Edge.Nested.Mode.on (line 112)
+| on()
+  jump
+    | gib this == ON
+
+== Edge.Nested.Nested (line 117)
+| Nested()
+  instruction
+    | this(1)
+
+== Edge.Nested.Nested (line 121)
+| Nested(x)
+
