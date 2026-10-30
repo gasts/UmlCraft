@@ -166,7 +166,7 @@ fn open_windows(cx: &mut App) -> Vec<(AnyWindowHandle, Entity<NsdView>)> {
 pub fn open(path: &Path, cx: &mut App) -> Result<(), String> {
     let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
     for (handle, view) in open_windows(cx) {
-        if view.read(cx).path() == Some(path.as_path()) {
+        if view.read(cx).path().is_some_and(|open| same_file(open, &path)) {
             handle.update(cx, |_, window, _| window.activate_window()).ok();
             return Ok(());
         }
@@ -175,6 +175,12 @@ pub fn open(path: &Path, cx: &mut App) -> Result<(), String> {
     let text = String::from_utf8(bytes).map_err(|_| t!("error.nsd_not_utf8").to_string())?;
     let diagram = umlcraft_nsd::read(&text).map_err(|e| crate::errors::nsd_error(&e))?;
     show(Opening { path: Some(path), ..Opening::default() }, diagram, cx)
+}
+
+/// Whether `a` and `b` name the same file, also written differently (`Sort.nsd` is `sort.nsd`
+/// on Windows).
+fn same_file(a: &Path, b: &Path) -> bool {
+    a == b || matches!((a.canonicalize(), b.canonicalize()), (Ok(a), Ok(b)) if a == b)
 }
 
 /// Opens a window with a new, empty structogram.
@@ -277,7 +283,7 @@ mod tests {
     // Not `super::*`: gpui_kit brings a `test` attribute of its own.
     use std::path::Path;
 
-    use super::{is_structogram, origin};
+    use super::{is_structogram, origin, same_file};
 
     #[test]
     fn structograms_go_by_their_extension() {
@@ -286,6 +292,19 @@ mod tests {
         assert!(!is_structogram(Path::new("shop.ucraft")));
         assert!(!is_structogram(Path::new("shop.asta")));
         assert!(!is_structogram(Path::new("nsd")));
+    }
+
+    #[test]
+    fn a_file_is_found_however_it_is_written() {
+        let dir = std::env::temp_dir().join(format!("umlcraft-same-file-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("Sort.nsd");
+        std::fs::write(&file, "").unwrap();
+        assert!(same_file(&file, &dir.join(".").join("Sort.nsd")));
+        #[cfg(windows)]
+        assert!(same_file(&file, &dir.join("SORT.NSD")));
+        assert!(!same_file(&file, &dir.join("Other.nsd")));
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
