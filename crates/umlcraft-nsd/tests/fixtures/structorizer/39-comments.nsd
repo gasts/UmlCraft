@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32-35" preRepeat="until" postFor="to" preReturn="return" postForIn="in" preWhile="while" output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="???" changedby="tester" changed="2026-10-29" origin="Structorizer 3.32-35" text="&#34;kommentare&#34;" comment="&#34;Root-Kommentar&#34;" color="ffffff" type="program" style="nice">
+	<children>
+		<instruction text="&#34;a &#60;- 1&#34;" comment="&#34;Kommentar&#34;" color="ffffff" rotated="0" disabled="0"></instruction>
+		<call text="&#34;f()&#34;" comment="&#34;Aufruf&#34;" color="ffffff" disabled="0" ismethoddecl="0"></call>
+		<jump text="&#34;return&#34;" comment="&#34;Sprung&#34;" color="ffffff" disabled="0"></jump>
+		<alternative text="&#34;a &#62; b&#34;" comment="&#34;Verzweigung&#34;" color="ffffff" branch_colors="," disabled="0">
+			<qTrue>
+				<instruction text="&#34;a &#60;- 1&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qTrue>
+			<qFalse color="ffffff">
+			</qFalse>
+		</alternative>
+		<case text="&#34;x&#34;,&#34;1&#34;,&#34;default&#34;" comment="&#34;Auswahl&#34;" color="ffffff" branch_colors="," disabled="0">
+			<qCase>
+				<instruction text="&#34;a &#60;- 1&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qCase>
+			<qCase color="ffffff">
+			</qCase>
+		</case>
+		<for text="&#34;for i &#60;- 1 to 3&#34;" comment="&#34;Zählschleife&#34;" counterVar="i" startValue="1" endValue="3" stepConst="1" style="COUNTER" color="ffffff" disabled="0">
+			<qFor>
+				<instruction text="&#34;a &#60;- 1&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qFor>
+		</for>
+		<while text="&#34;a &#60; b&#34;" comment="&#34;zwei&#34;,&#34;Zeilen&#34;" color="ffffff" disabled="0">
+			<qWhile>
+				<instruction text="&#34;a &#60;- 1&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qWhile>
+		</while>
+		<repeat text="&#34;a &#62;= b&#34;" comment="&#34;Fuß&#34;" color="ffffff" disabled="0">
+			<qRepeat>
+				<instruction text="&#34;a &#60;- 1&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qRepeat>
+		</repeat>
+		<forever comment="&#34;ewig&#34;" color="ffffff" disabled="0">
+			<qForever>
+				<instruction text="&#34;a &#60;- 1&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qForever>
+		</forever>
+		<try text="&#34;ex&#34;" comment="&#34;Versuch&#34;" color="ffffff" disabled="0">
+			<qTry>
+				<instruction text="&#34;a &#60;- 1&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qTry>
+			<qCatch>
+				<instruction text="&#34;ab &#60;- c + d&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qCatch>
+			<qFinally color="ffffff">
+			</qFinally>
+		</try>
+		<parallel text="&#34;2&#34;" comment="&#34;parallel&#34;" color="ffffff" disabled="0">
+			<qPara>
+				<instruction text="&#34;a &#60;- 1&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qPara>
+			<qPara>
+				<instruction text="&#34;ab &#60;- c + d&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qPara>
+		</parallel>
+	</children>
+</root>

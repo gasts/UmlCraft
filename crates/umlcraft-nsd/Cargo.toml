@@ -1,0 +1,20 @@
+[package]
+name = "umlcraft-nsd"
+description = "Nassi-Shneiderman diagrams in Structorizer's .nsd format"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+quick-xml.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+# The drawing test rasterizes our SVG and decodes Structorizer's PNG images.
+resvg.workspace = true
+
+[lints]
+workspace = true

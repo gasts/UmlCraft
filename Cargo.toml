@@ -17,6 +17,7 @@ umlcraft-notation = { path = "crates/umlcraft-notation" }
 umlcraft-asta = { path = "crates/umlcraft-asta" }
 umlcraft-asta-export = { path = "crates/umlcraft-asta-export" }
 umlcraft-reverse = { path = "crates/umlcraft-reverse" }
+umlcraft-nsd = { path = "crates/umlcraft-nsd" }
 
 # gpui-kit pins the matching GPUI release (gpui-pre) together with gpui-component.
 gpui-kit = "=0.8.0"
@@ -28,9 +29,13 @@ indexmap = { version = "2", features = ["serde"] }
 thiserror = "2"
 anyhow = "1"
 pretty_assertions = "1"
+# Reads Structorizer's .nsd files; they are written by hand to match Structorizer byte for byte.
+quick-xml = "0.41"
 rust-i18n = "4"
 sys-locale = "0.3"
 # PNG export rasterizes the SVG export; diagrams contain no raster images.
+# Structograms in the app hand rasterized images to GPUI as image frames.
+image = { version = "0.25", default-features = false }
 resvg = { version = "0.46", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
 # The app's own icons (assets/icons), embedded in umlcraft.exe.
 rust-embed = { version = "8", features = ["interpolate-folder-path", "include-exclude"] }

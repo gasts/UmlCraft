@@ -427,3 +427,87 @@ through its official API (`astah-api.jar`):
   `end_a.name.point.x`, `end_b.multiplicity.point.y` …); the sidecar turns UmlCraft's offsets into
   those positions. `setProperty` silently ignores keys it does not know. Constraints of
   association ends become constraints on the end.
+
+## Nassi-Shneiderman diagrams
+
+`umlcraft-nsd` holds structograms in the `.nsd` format of
+[Structorizer](https://structorizer.fisch.lu) 3.32-35. They are not part of the UML model:
+a diagram is a file of its own. Structorizer is GPL-licensed; the format and the way
+Structorizer writes it were worked out from its XML schema, its user guide and the files it
+writes, and none of its code is used.
+
+- **Model.** A `Diagram` has the attributes of `<root>` (header: version, parser keywords,
+  author, dates, licence; the root's own text, comment, colour, `type` program/sub/includable,
+  `style` nice/abbr) and a `Sequence` of `Element`s. An element has a kind (instruction, call,
+  jump, alternative, case, for, while, repeat, forever, try, parallel), its attributes and its
+  branches (`qTrue`/`qFalse`, one `qCase` per case …). Every node keeps its attributes as an
+  ordered list exactly as read and offers typed access on top (`text`, `comment`, `color`,
+  `disabled`, `branch_colors` …). Texts are lists of lines, stored as `"line1","line2"` with
+  doubled quotes (`text`). Setting an attribute a node lacks puts it where Structorizer writes
+  it (`ElementKind::order`, `ROOT_ORDER`).
+- **Reading** (`read`) uses quick-xml. Attribute values are unescaped but not normalized: a
+  tab Structorizer wrote stays a tab, where an XML parser (Structorizer's too) would read a
+  space. Unknown attributes are kept; unknown elements, wrong branches and other encodings
+  than UTF-8 are errors with line and column.
+- **Writing** (`write`) is done by hand, because Structorizer escapes differently from XML
+  libraries (`&#34;`, `&#60;`, `&#62;`, `&amp;`, `&#10;`): the declaration, a tab per level,
+  elements without branches on one line, branch tags on lines of their own, LF line ends and
+  none after `</root>`. Empty sequences carry `color="ffffff"`, as in Structorizer's files.
+- **New diagrams and elements** (`create`) get the attributes Structorizer gives them: the
+  header of a fresh installation's GUI (its keywords `"until "` and `"while "` end in a space),
+  `branch_colors` with one slot per branch, a parallel element's branch count as its text,
+  the attributes of counting, traversing and free-text for loops.
+
+- **Text metrics** (`metrics`). Structorizer measures with Java's logical font Dialog 12,
+  antialiased with integer metrics: a line is as wide as its characters' advances summed and
+  rounded, the bold title's widths are cut off instead. The font behind Dialog differs by
+  platform; `tools/nsd-metrics/DialogMetrics.java` writes a table per platform
+  (`src/metrics/dialog12-<platform>.txt`). Linux (DejaVu Sans) and Windows (Arial, whole-pixel
+  advances, title lines 16 px apart instead of 17) are measured; Linux uses its own, every
+  other platform the Windows table, Structorizer's most common one. The include list's box
+  above the title uses a smaller font whose widths are not tabled: its height and caption
+  width were measured in Structorizer's images and stand in each table (`includes`).
+- **Layout** (`layout`) works in whole pixels, with the rules read off Structorizer's images
+  (GUI defaults, syntax highlighting off): `measure` gives each element its natural size from
+  the inside out, `place` its box. A box is given by its lines; neighbours share theirs.
+  Texts get a padding of 20 and 13 px per line, the frame 20 around the body and 17 per title
+  line. An alternative's head is `13 n + 39` high and wide enough that every line of the
+  condition, with its padding, fits between the diagonals at its baseline; spare width goes to
+  the TRUE branch. Case columns are as wide as their contents or labels plus 10, spare width
+  to the last; with more than 8 branches a branch of one simple element is turned by 90°
+  where that is narrower. Loops have a bar of 19 and a head or footer; try elements rows of
+  33 with bodies indented 20 (catch 40); parallel elements bands of 20. A sequence's last
+  element takes spare height, a structured one hands it to its branches. Every element box
+  has its path (element and branch indices), and `Layout::element_at` finds the innermost
+  one at a point.
+- **Drawing** (`draw`) turns a layout into areas, 1 px lines and texts, fills first. Colours
+  are roles (`Ink`) so that a painter can use its theme, except the elements' and branch heads'
+  own colours. The hatching of disabled elements repeats Structorizer's 5×10 pixel tile from
+  the image's origin. `svg::render` writes it as an SVG image as large as Structorizer's PNG
+  export; the app rasterizes it with `png::from_svg` like UML diagrams.
+- **In the app** (`umlcraft-app/src/nsd`), a structogram opens in a window of its own
+  (`nsd::open`); the main window only gets the menu item and a switch by extension where files
+  open (menu, command line, system, recent files). `NsdView` holds the diagram apart from the
+  window, so that an editor or a tab can build on it. It shows the SVG export rasterized with
+  resvg, made again when the zoom or the screen's scale changes, so the window holds exactly
+  what an export does; GPUI cannot turn text, which turned case branches need. The diagram stays
+  a white sheet in the dark theme; the area around it follows the theme. The window has a
+  toolbar instead of menus, because on macOS the menu bar belongs to the whole app.
+- Where the texts in triangular heads sit (an alternative's condition, a case's
+  discriminator) follows no rule we found; a fit to Structorizer's positions puts them within
+  a few pixels. Lines are exact.
+
+Every file Structorizer 3.32-35 wrote that we have reads and writes back byte for byte. The
+tests check our own diagrams, one feature each, as Structorizer saved them
+(`tests/fixtures/structorizer`), and a snapshot of a new diagram with every kind
+(`tests/fixtures/new`, `UPDATE_SNAPSHOTS=1` rewrites it). With `UMLCRAFT_NSD_REFS` pointing at a
+folder of further reference files kept outside the repository (Structorizer's samples and
+Java imports, our measuring diagrams, a file saved by Structorizer's GUI on Windows, which
+is byte for byte the Linux one; 258 files), `reference_files_round_trip` checks those too,
+and `structorizer_drawing` draws all diagrams Structorizer can draw (389), rasterizes them with
+resvg and compares their straight lines with Structorizer's PNG exports (`plain/…`, exported
+with the GUI's settings and highlighting off); with the Windows table it does the same for the
+exports made on Windows (`windows/…`, 187). Differences we understand are listed with their
+reason in `tests/structorizer_deviations.txt`. Snapshots of the fixtures' layout and of one
+SVG (`tests/drawing.rs`) guard the rest. `cargo run -p umlcraft-nsd --example nsd-svg --
+FILE.nsd` draws a file.

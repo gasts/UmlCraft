@@ -6673,6 +6673,7 @@ dependencies = [
  "anyhow",
  "embed-resource",
  "gpui-kit",
+ "image",
  "resvg 0.46.0",
  "rust-embed",
  "rust-i18n",
@@ -6684,6 +6685,7 @@ dependencies = [
  "umlcraft-format",
  "umlcraft-model",
  "umlcraft-notation",
+ "umlcraft-nsd",
  "umlcraft-reverse",
 ]
 
@@ -6742,6 +6744,16 @@ dependencies = [
  "indexmap",
  "pretty_assertions",
  "umlcraft-model",
+]
+
+[[package]]
+name = "umlcraft-nsd"
+version = "0.10.0"
+dependencies = [
+ "pretty_assertions",
+ "quick-xml",
+ "resvg 0.46.0",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

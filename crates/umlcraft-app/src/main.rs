@@ -5,6 +5,7 @@ mod errors;
 mod icons;
 mod labels;
 mod main_view;
+mod nsd;
 mod png;
 mod properties;
 mod ribbon;
@@ -31,6 +32,7 @@ actions!(
     [
         NewProject,
         OpenProject,
+        OpenStructogram,
         ImportAstah,
         ExportAstah,
         ExportSvg,

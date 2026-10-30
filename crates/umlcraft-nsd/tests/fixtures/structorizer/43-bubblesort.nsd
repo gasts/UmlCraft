@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root xmlns:nsd="https://structorizer.fisch.lu" version="3.32-35" preRepeat="until" postFor="to" preReturn="return" postForIn="in" preWhile="while" output="OUTPUT" input="INPUT" preFor="for" preExit="exit" preLeave="leave" ignoreCase="true" preThrow="throw" preForIn="foreach" stepFor="by" author="???" changedby="tester" changed="2026-10-29" origin="Structorizer 3.32-35" text="&#34;bubblesort(feld: array of int)&#34;" comment="" color="ffffff" type="program" style="nice">
+	<children>
+		<instruction text="&#34;n &#60;- length(feld)&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+		<repeat text="&#34;not getauscht&#34;" comment="" color="ffffff" disabled="0">
+			<qRepeat>
+				<instruction text="&#34;getauscht &#60;- false&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+				<for text="&#34;for i &#60;- 1 to n - 1&#34;" comment="" counterVar="i" startValue="1" endValue="n - 1" stepConst="1" style="COUNTER" color="ffffff" disabled="0">
+					<qFor>
+						<alternative text="&#34;feld[i - 1] &#62; feld[i]&#34;" comment="" color="ffffff" branch_colors="," disabled="0">
+							<qTrue>
+								<instruction text="&#34;h &#60;- feld[i - 1]&#34;,&#34;feld[i - 1] &#60;- feld[i]&#34;,&#34;feld[i] &#60;- h&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+								<instruction text="&#34;getauscht &#60;- true&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+							</qTrue>
+							<qFalse color="ffffff">
+							</qFalse>
+						</alternative>
+					</qFor>
+				</for>
+				<instruction text="&#34;n &#60;- n - 1&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qRepeat>
+		</repeat>
+		<for text="&#34;foreach x in feld&#34;" comment="" counterVar="x" startValue="" stepConst="" style="TRAVERSAL" insep="in" color="ffffff" disabled="0">
+			<qFor>
+				<instruction text="&#34;OUTPUT x&#34;" comment="" color="ffffff" rotated="0" disabled="0"></instruction>
+			</qFor>
+		</for>
+	</children>
+</root>
