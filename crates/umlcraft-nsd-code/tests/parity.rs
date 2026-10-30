@@ -1,5 +1,6 @@
 //! The same methods written in Java and in another language (`fixtures/java/X.java`,
-//! `fixtures/csharp/X.cs`, `fixtures/python/X.py`) become the same structograms: one mapping
+//! `fixtures/csharp/X.cs`, `fixtures/python/X.py`, `fixtures/cpp/X.cpp`) become the same
+//! structograms: one mapping
 //! for every language. Differences on purpose are listed in `parity_deviations.txt` as
 //! `folder/Class.method`.
 
@@ -40,7 +41,7 @@ fn every_language_gives_the_same_structograms_as_java() {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let listed = deviations();
     let (mut differing, mut unexpected) = (Vec::new(), Vec::new());
-    for (folder, extension) in [("csharp", "cs"), ("python", "py")] {
+    for (folder, extension) in [("csharp", "cs"), ("python", "py"), ("cpp", "cpp")] {
         let mut compared = 0;
         for entry in std::fs::read_dir(fixtures.join(folder)).unwrap() {
             let other = entry.unwrap().path();

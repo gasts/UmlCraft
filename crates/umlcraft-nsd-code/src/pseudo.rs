@@ -202,6 +202,7 @@ fn operand(expr: Node, src: &str, column: usize, outer: u8) -> Vec<String> {
         | "assignment_expression"
         | "lambda_expression"
         | "lambda"
+        | "comma_expression"
         | "switch_expression" => 0,
         _ => u8::MAX,
     };

@@ -1,0 +1,82 @@
+== Branches.simpleIf (line 3)
+| simpleIf(a)
+  alternative
+    | a > 0?
+    -
+      instruction
+        | a := 1
+    -
+  jump
+    | gib a
+
+== Branches.ifElse (line 10)
+| ifElse(a)
+  alternative
+    | a > 0?
+    -
+      instruction
+        | a := 1
+    -
+      instruction
+        | a := -1
+  jump
+    | gib a
+
+== Branches.elseIfChain (line 19)
+| elseIfChain(a)
+  alternative
+    | a < 0?
+    -
+      jump
+        | gib "negative"
+    -
+      alternative
+        | a == 0?
+        -
+          jump
+            | gib "zero"
+        -
+          alternative
+            | a < 10?
+            -
+              jump
+                | gib "small"
+            -
+              jump
+                | gib "large"
+
+== Branches.nested (line 31)
+| nested(a, b)
+  alternative
+    | a > 0?
+    -
+      alternative
+        | b > 0?
+        -
+          jump
+            | gib 1
+        -
+      jump
+        | gib 2
+    -
+  jump
+    | gib 3
+
+== Branches.logic (line 41)
+| logic(a, b)
+  alternative
+    | a > 0 && b > 0 || a < -10?
+    -
+      jump
+        | gib true
+    -
+  jump
+    | gib false
+
+== Branches.ternary (line 48)
+| ternary(a)
+  instruction
+    | b := a > 0 ? a : -a
+  jump
+    | gib b
+

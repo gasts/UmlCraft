@@ -610,7 +610,7 @@ nsd:
   source_hint: Methoden ankreuzen und öffnen, oder eine doppelt anklicken. Jede öffnet sich in einem eigenen Fenster, noch nicht gespeichert.
   source_open: Öffnen
   source_failed: Die Datei konnte nicht gelesen werden.
-  source_unknown: "Struktogramme lassen sich aus Java- (.java), C#- (.cs) und Python-Dateien (.py) erstellen."
+  source_unknown: "Struktogramme lassen sich aus Java- (.java), C#- (.cs), Python- (.py) und C++- oder C-Dateien (.cpp, .h, .c …) erstellen."
   source_no_methods: Die Datei enthält keine Methoden mit Rumpf.
   source_too_many: "Nur die ersten %{max} Methoden wurden geöffnet."
   notes: "%{count} Stellen sind nicht wie im Code dargestellt"

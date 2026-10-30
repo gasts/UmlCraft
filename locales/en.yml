@@ -610,7 +610,7 @@ nsd:
   source_hint: Tick methods and open them, or double-click one. Each opens in a window of its own, not saved yet.
   source_open: Open
   source_failed: The file could not be read.
-  source_unknown: "Structograms can be made from Java (.java), C# (.cs) and Python (.py) files."
+  source_unknown: "Structograms can be made from Java (.java), C# (.cs), Python (.py) and C++ or C files (.cpp, .h, .c …)."
   source_no_methods: The file contains no methods with a body.
   source_too_many: "Only the first %{max} methods were opened."
   notes: "%{count} places are not shown as written"

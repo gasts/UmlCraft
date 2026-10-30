@@ -1,0 +1,80 @@
+== Switches.classic (line 3)
+| classic(day)
+  case
+    | day?
+    | 1
+    | 2, 3
+    | default
+    -
+      instruction
+        | name := "Monday"
+    -
+      instruction
+        | name := "Midweek"
+    -
+      instruction
+        | name := "Other"
+  jump
+    | gib name
+
+== Switches.fallthrough (line 19)
+| fallthrough(a)
+  instruction
+    | r := 0
+  case
+    | a?
+    | 1
+    | 2
+    | default
+    -
+      instruction
+        | r := r + 1
+      instruction
+        | r := r + 2
+    -
+      instruction
+        | r := r + 2
+    -
+      instruction
+        | r := -1
+  jump
+    | gib r
+! line 22: Fallthrough
+
+== Switches.defaultInMiddle (line 34)
+| defaultInMiddle(a)
+  case
+    | a?
+    | 1
+    | 2
+    | default
+    -
+      instruction
+        | r := 10
+    -
+      instruction
+        | r := 20
+    -
+      instruction
+        | r := 0
+  jump
+    | gib r
+
+== Switches.noDefault (line 50)
+| noDefault(a)
+  case
+    | a?
+    | 1
+    | 2
+    | %
+    -
+      call
+        | work()
+    -
+      call
+        | work()
+    -
+
+== Switches.work (line 61)
+| work()
+
