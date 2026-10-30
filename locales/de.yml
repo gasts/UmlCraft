@@ -514,6 +514,7 @@ error:
   nsd_wrong_branches: "Zeile %{line}, Spalte %{column}: <%{element}> hat nicht die Zweige, die Structorizer schreibt."
   nsd_unexpected_text: "Zeile %{line}, Spalte %{column}: unerwarteter Text in <%{parent}>."
   nsd_encoding: "Die Datei ist als %{encoding} kodiert; Struktogramme sind UTF-8."
+  nsd_not_utf8: Die Datei ist nicht in UTF-8 kodiert; Struktogramme sind UTF-8.
   nsd_truncated: "Die Datei endet mitten in <%{element}>."
   named: "„%{name}“"
   unnamed: ein Element

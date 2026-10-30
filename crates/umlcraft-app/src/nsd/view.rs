@@ -100,9 +100,18 @@ impl NsdView {
 
     /// The diagram as an image at `scale` pixels per diagram pixel (less for a large diagram,
     /// see [`MAX_RASTER`]), its size in pixels and the scale it has.
-    fn raster(&mut self, scale: f32) -> Option<(Arc<RenderImage>, (u32, u32), f32)> {
+    fn raster(
+        &mut self,
+        scale: f32,
+        window: &mut Window,
+    ) -> Option<(Arc<RenderImage>, (u32, u32), f32)> {
         let scale = scale.min(MAX_RASTER / self.size.0.max(self.size.1));
         if self.raster.as_ref().is_none_or(|r| (r.scale - scale).abs() > 1e-4) {
+            // GPUI keeps every image it painted in the window's atlas until it is dropped
+            // there; without this each zoom step would leave its image behind.
+            if let Some(old) = self.raster.take() {
+                window.drop_image(old.image).ok();
+            }
             self.raster =
                 rasterize(&self.svg, scale).map(|(image, size)| Raster { scale, image, size });
         }
@@ -313,7 +322,7 @@ impl Render for NsdView {
                             move |bounds, _, window, cx| {
                                 let scale = window.scale_factor();
                                 let (pan, zoom, raster) = this.update(cx, |this, _| {
-                                    (this.pan, this.zoom, this.raster(this.zoom * scale))
+                                    (this.pan, this.zoom, this.raster(this.zoom * scale, window))
                                 });
                                 let Some((image, (w, h), raster_scale)) = raster else {
                                     return;

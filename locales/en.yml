@@ -514,6 +514,7 @@ error:
   nsd_wrong_branches: "Line %{line}, column %{column}: <%{element}> lacks the branches Structorizer writes."
   nsd_unexpected_text: "Line %{line}, column %{column}: unexpected text in <%{parent}>."
   nsd_encoding: "The file is encoded as %{encoding}; structograms are UTF-8."
+  nsd_not_utf8: The file is not encoded as UTF-8; structograms are UTF-8.
   nsd_truncated: "The file ends inside <%{element}>."
   named: "\"%{name}\""
   unnamed: an element

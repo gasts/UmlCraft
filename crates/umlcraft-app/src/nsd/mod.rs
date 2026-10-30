@@ -50,7 +50,8 @@ pub fn open(path: &Path, cx: &mut App) -> Result<(), String> {
     if shown {
         return Ok(());
     }
-    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let text = String::from_utf8(bytes).map_err(|_| t!("error.nsd_not_utf8").to_string())?;
     let diagram = umlcraft_nsd::read(&text).map_err(|e| crate::errors::nsd_error(&e))?;
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let (w, h) = view::window_size(&diagram);
