@@ -7,7 +7,7 @@
 /// place, so lines and columns stay as written, and declarations that the conditionals cut
 /// apart parse as one. In C++ a blanked line that ends in `\` blanks the next one too; C# has
 /// no line continuation. Lines inside block comments and multi-line strings are no directives.
-pub(crate) fn first_branches(text: &str, dialect: Dialect) -> (String, usize) {
+pub fn first_branches(text: &str, dialect: Dialect) -> (String, usize) {
     let mut out = String::with_capacity(text.len());
     // Per open `#if`: whether the branch read now is left out.
     let mut open: Vec<bool> = Vec::new();
@@ -60,7 +60,7 @@ pub(crate) fn first_branches(text: &str, dialect: Dialect) -> (String, usize) {
 
 /// The language whose preprocessor rules apply.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Dialect {
+pub enum Dialect {
     Cpp,
     CSharp,
 }

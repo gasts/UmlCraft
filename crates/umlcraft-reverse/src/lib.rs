@@ -16,7 +16,7 @@ pub mod java;
 pub mod lang;
 mod library;
 mod merge;
-mod preprocessor;
+pub mod preprocessor;
 pub mod python;
 pub mod report;
 mod resolve;
