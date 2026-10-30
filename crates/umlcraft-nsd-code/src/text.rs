@@ -38,8 +38,19 @@ pub fn lines_of(text: &str, column: usize) -> Vec<String> {
         .collect()
 }
 
-/// A condition without its outer parentheses: `(a > b)` → `a > b`.
+/// A condition without its outer parentheses: `(a > b)` → `a > b`. C++'s `condition_clause`
+/// gives its value; a declaration there (`if (Foo* p = get())`) the name it declares.
 pub fn condition(node: Node, src: &str) -> Vec<String> {
+    if node.kind() == "condition_clause"
+        && let Some(value) = node.child_by_field_name("value")
+    {
+        if value.kind() == "declaration"
+            && let Some(name) = value.child_by_field_name("declarator").and_then(declared_name)
+        {
+            return vec![node_text(name, src).to_owned()];
+        }
+        return condition(value, src);
+    }
     if node.kind() == "parenthesized_expression"
         && let Some(inner) = node.named_child(0)
     {
@@ -48,10 +59,25 @@ pub fn condition(node: Node, src: &str) -> Vec<String> {
     lines(node, src)
 }
 
-/// The text of a comment without its delimiters.
+/// The name a C++ declarator declares, through pointers, references, arrays and an
+/// initialization (`*p = …` → `p`).
+pub fn declared_name(declarator: Node) -> Option<Node> {
+    match declarator.kind() {
+        "identifier" | "field_identifier" | "structured_binding_declarator" => Some(declarator),
+        _ => {
+            let inner = declarator.child_by_field_name("declarator").or_else(|| {
+                let mut cursor = declarator.walk();
+                declarator.named_children(&mut cursor).find(|c| !c.kind().ends_with("qualifier"))
+            })?;
+            declared_name(inner)
+        }
+    }
+}
+
+/// The text of a comment without its delimiters (`//`, Python's `#`, `/* */`).
 pub fn comment(node: Node, src: &str) -> Vec<String> {
     let text = node_text(node, src);
-    if let Some(line) = text.strip_prefix("//") {
+    if let Some(line) = text.strip_prefix("//").or(text.strip_prefix('#')) {
         return vec![line.trim().to_owned()];
     }
     block_comment(text)

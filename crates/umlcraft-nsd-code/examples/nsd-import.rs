@@ -1,6 +1,6 @@
-//! Smoke test over real code: every method of every `.java` and `.cs` file under the given
-//! paths as a structogram, laid out, drawn, written and read back. Prints counts, time and what
-//! the reports name; with `-o DIR` writes the diagrams there (`Class.method-LINE.nsd`).
+//! Smoke test over real code: every method of every Java, C#, Python and C++ file under the
+//! given paths as a structogram, laid out, drawn, written and read back. Prints counts, time
+//! and what the reports name; with `-o DIR` writes the diagrams there (`Class.method-LINE.nsd`).
 //!
 //! `cargo run --release -p umlcraft-nsd-code --example nsd-import -- [-o DIR] PATH...`
 
@@ -24,8 +24,11 @@ fn main() {
         None => None,
     };
     let paths: Vec<PathBuf> = args.into_iter().map(PathBuf::from).collect();
-    let files =
-        umlcraft_reverse::source::collect_sources(&paths, &["java", "cs"]).expect("sources");
+    let files = umlcraft_reverse::source::collect_sources(
+        &paths,
+        &["java", "cs", "py", "pyw", "cpp", "cc", "cxx", "hpp", "hh", "hxx", "h", "c"],
+    )
+    .expect("sources");
     let made = Made { author: "smoke", date: "2026-10-29", origin: "UmlCraft smoke test" };
     let start = Instant::now();
     let (mut methods, mut elements, mut largest) = (0usize, 0usize, (0usize, String::new()));
@@ -60,7 +63,8 @@ fn main() {
                         *notes.entry(format!("{:?}", n.kind)).or_default() += 1;
                     }
                     if let Some(dir) = &out {
-                        let name = format!("{}.{}-{}.nsd", m.class_name(), m.name, m.line);
+                        let stem = m.file_name();
+                        let name = format!("{}-{}.nsd", stem.trim_end_matches(".nsd"), m.line);
                         std::fs::write(dir.join(name), written).expect("writable output");
                     }
                 }

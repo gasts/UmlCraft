@@ -1,0 +1,205 @@
+== .area (line 6)
+| area(width, height)
+# The area of a rectangle.
+  jump
+    | gib width * height
+
+== .scale (line 11)
+| scale(points, factor, *args, **kwargs)
+  instruction
+    | total := area(2, 3)
+  instruction
+    | a := 0
+  instruction
+    | b := 0
+  instruction
+    | a, b := b, a
+  instruction
+    | count := 0
+  instruction
+    | count := count ** 2
+  instruction
+    | count := count // 3
+  instruction
+    | print(total)
+  instruction
+    | squares := [p * factor for p in points if p > 0]
+  alternative
+    | (n := len(squares)) > 10?
+    -
+      instruction
+        | del squares[0]
+    -
+  instruction
+    | global LIMIT
+  instruction
+    | assert factor > 0, "positive"
+  jump
+    | gib a, b
+
+== Shop.__init__ (line 31)
+| __init__(name)
+  instruction
+    | self.name := name
+  instruction
+    | self.items := []
+
+== Shop.make (line 36)
+| make(name)
+  jump
+    | gib Shop(name)
+
+== Shop.load (line 40)
+| load(path)
+  instruction
+    | f := open(path)
+    # with
+  instruction
+    | lock
+  instruction
+    | data := f.read()
+  jump
+    | gib cls.make(data)
+! line 41: With
+
+== Shop.add (line 45)
+| add(item)
+  instruction
+    | self.items.append(item)
+  call
+    | self.check()
+
+== Shop.check (line 49)
+| check()
+  for style=COUNTER
+    | for i := len(self.items) - 1 to 0 by -1
+    -
+      alternative
+        | self.items[i] is None?
+        -
+          jump
+            | break
+        -
+  instruction
+    | print("all set")
+  while
+    | self.items?
+    -
+      instruction
+        | self.items.pop()
+! line 53: LoopElse
+! line 57: LoopElse
+
+== Shop.kind (line 60)
+| kind(value)
+  case
+    | value?
+    | Point(x=0) if value.y > 0
+    | [first, *rest]
+    | default
+    -
+      jump
+        | gib "axis"
+    -
+      jump
+        | gib "list"
+    -
+      jump
+        | raise ValueError("value") from None
+
+== Shop.risky (line 69)
+| risky()
+  try
+    | exception
+    -
+      call
+        | self.add(1)
+      call
+        | self.check()
+    -
+      case
+        | exception instanceof?
+        | TypeError, ValueError
+        | BaseException
+        | %
+        -
+          instruction
+            | group := exception
+          instruction
+            | print(group)
+        -
+          jump
+            | raise
+        -
+    -
+! line 76: TryElse
+
+== Shop.numbers (line 79)
+| numbers(n)
+  for style=COUNTER
+    | for i := 0 to n - 1
+    -
+      alternative
+        | i > 100?
+        -
+          jump
+            | return
+        -
+      instruction
+        | yield i
+! line 83: Yield
+
+== Shop.ranges (line 85)
+| ranges(n, m)
+  for style=COUNTER
+    | for j := 1 to (m if n else n + 1) - 1
+    -
+      instruction
+        | print(j)
+  try
+    | exception
+    -
+      call
+        | self.check()
+    -
+      case
+        | exception instanceof?
+        | ValueError
+        | %
+        -
+          instruction
+            | print("bad")
+        -
+    -
+
+== Shop.fetch (line 93)
+| fetch(url)
+  instruction
+    | response := await client.get(url)
+  instruction
+    | handler := lambda r: r.json()
+  jump
+    | gib handler(response)
+! line 94: NestedFunction
+! line 97: LocalClass
+
+== Shop.broken (line 104)
+| broken()
+  instruction color=ff0000 disabled
+    | x = = 1
+  jump
+    | gib x
+! line 105: SyntaxError
+
+== .__main__ (line 109)
+| __main__
+  instruction
+    | shop := Shop("demo")
+    # Run as a script.
+  alternative
+    | __name__ == "__main__"?
+    -
+      instruction
+        | shop.add(area(1, 2))
+    -
+

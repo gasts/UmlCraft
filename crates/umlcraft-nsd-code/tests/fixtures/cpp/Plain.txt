@@ -1,0 +1,119 @@
+== .simpleIf (line 5)
+| simpleIf(a)
+  alternative
+    | a > 0?
+    -
+      instruction
+        | a := 1
+    -
+  jump
+    | gib a
+
+== .elseIfChain (line 13)
+| elseIfChain(a)
+  alternative
+    | a < 0?
+    -
+      jump
+        | gib -1
+    -
+      alternative
+        | a == 0?
+        -
+          jump
+            | gib 0
+        -
+          jump
+            | gib 1
+
+== .counting (line 24)
+| counting(n)
+  instruction
+    | sum := 0
+  for style=COUNTER
+    | for i := 0 to n - 1
+    -
+      instruction
+        | sum := sum + i
+  for style=COUNTER
+    | for i := n to 1 by -1
+    -
+      instruction
+        | sum := sum - i
+  jump
+    | gib sum
+
+== .whileLoop (line 37)
+| whileLoop(n)
+  while
+    | n > 10?
+    -
+      instruction
+        | n := n / 2
+  repeat
+    | !(n > 0)?
+    -
+      instruction
+        | n := n - 1
+  jump
+    | gib n
+
+== .classic (line 48)
+| classic(day)
+  instruction
+    | r := 0
+  case
+    | day?
+    | 1
+    | 2, 3
+    | default
+    -
+      instruction
+        | r := 10
+    -
+      instruction
+        | r := 20
+    -
+      instruction
+        | r := 0
+  jump
+    | gib r
+
+== .fallthrough (line 65)
+| fallthrough(a)
+  instruction
+    | r := 0
+  case
+    | a?
+    | 1
+    | 2
+    | default
+    -
+      instruction
+        | r := r + 1
+      instruction
+        | r := r + 2
+    -
+      instruction
+        | r := r + 2
+    -
+      instruction
+        | r := -1
+  jump
+    | gib r
+! line 69: Fallthrough
+
+== .calls (line 81)
+| calls(n)
+  call
+    | helper(n, 1)
+  instruction
+    | total := helper(n, 2) + 1
+  instruction
+    | printf("%d\n", total)
+
+== .helper (line 88)
+| helper(a, b)
+  jump
+    | gib a + b
+

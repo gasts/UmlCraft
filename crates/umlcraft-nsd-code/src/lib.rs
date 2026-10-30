@@ -1,6 +1,7 @@
-//! Methods of source files as structograms: the methods and constructors of a `.java` or `.cs`
-//! file, and one of them as a Nassi-Shneiderman diagram in Structorizer's `.nsd` form. Each
-//! language reads its own nodes (`java`, `csharp`); what they share is in `core` and `pseudo`.
+//! Methods of source files as structograms: the methods and functions of a Java, C#, Python or
+//! C++ file, and one of them as a Nassi-Shneiderman diagram in Structorizer's `.nsd` form.
+//! Each language reads its own nodes (`java`, `csharp`, `python`, `cpp`); what they share is
+//! in `core` and `pseudo`.
 //!
 //! Texts are written as structograms write them: no types (the root is `name(a, b)`),
 //! assignments as `x := value` (`i++` as `i := i + 1`), no `;`, counting loops as
@@ -10,12 +11,14 @@
 //! become call elements, other statements instructions. What has no place in a structogram
 //! (`continue`, labels, local classes …) is named in the [`Report`]; nothing is left out
 //! silently. Structorizer's own Java import was only compared by its results, never by its
-//! code; Structorizer has no C# import.
+//! code (as was its C import); Structorizer has no C# or Python import.
 
 mod core;
+mod cpp;
 mod csharp;
 mod java;
 mod pseudo;
+mod python;
 mod text;
 
 use std::path::Path;
@@ -29,15 +32,20 @@ use umlcraft_reverse::preprocessor::{Dialect, first_branches};
 pub enum Language {
     Java,
     CSharp,
+    Python,
+    Cpp,
 }
 
 impl Language {
-    /// The language of a file by its extension (`.java`, `.cs`).
+    /// The language of a file by its extension (`.java`, `.cs`, `.py`, `.pyw`; C++ and C:
+    /// `.cpp`, `.cc`, `.cxx`, `.c++`, `.hpp`, `.hh`, `.hxx`, `.h`, `.c`).
     pub fn of(path: &Path) -> Option<Language> {
         let extension = path.extension()?.to_str()?.to_ascii_lowercase();
         match extension.as_str() {
             "java" => Some(Language::Java),
             "cs" => Some(Language::CSharp),
+            "py" | "pyw" => Some(Language::Python),
+            "cpp" | "cc" | "cxx" | "c++" | "hpp" | "hh" | "hxx" | "h" | "c" => Some(Language::Cpp),
             _ => None,
         }
     }
@@ -47,6 +55,8 @@ impl Language {
         match self {
             Language::Java => "Java",
             Language::CSharp => "C#",
+            Language::Python => "Python",
+            Language::Cpp => "C++",
         }
     }
 }
@@ -54,7 +64,8 @@ impl Language {
 /// A method or constructor with a body.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MethodRef {
-    /// The classes it is in, outermost first.
+    /// The classes it is in, outermost first; none for a Python function of the module or a
+    /// C++ function outside namespaces (in C++ one entry, `shop::Cart`, as written).
     pub class: Vec<String>,
     pub name: String,
     /// As written, on one line, without modifiers, annotations and `throws`:
@@ -73,10 +84,65 @@ impl MethodRef {
         self.class.join(".")
     }
 
-    /// A file name for its diagram: `Class.method.nsd`.
+    /// A file name for its diagram: `Class.method.nsd`, `function.nsd` outside classes;
+    /// `shop::Cart` as `shop.Cart`, characters no file system takes as `_`, at most 120
+    /// characters before `.nsd`.
     pub fn file_name(&self) -> String {
-        format!("{}.{}.nsd", self.class_name(), self.name)
+        let stem = match self.class.is_empty() {
+            true => self.name.clone(),
+            false => format!("{}.{}", self.class_name().replace("::", "."), self.name),
+        };
+        let stem: String = stem
+            .chars()
+            .map(|c| if c.is_whitespace() || "<>:\"/\\|?*".contains(c) { '_' } else { c })
+            .take(120)
+            .collect();
+        format!("{stem}.nsd")
     }
+}
+
+/// .NET's name of an operator (`op_Addition`), so that it makes a file name (C# and C++).
+fn operator_name(op: &str, binary: bool) -> String {
+    let name = match (op, binary) {
+        ("+", true) => "Addition",
+        ("-", true) => "Subtraction",
+        ("+", false) => "UnaryPlus",
+        ("-", false) => "UnaryNegation",
+        ("*", _) => "Multiply",
+        ("/", _) => "Division",
+        ("%", _) => "Modulus",
+        ("&", _) => "BitwiseAnd",
+        ("|", _) => "BitwiseOr",
+        ("^", _) => "ExclusiveOr",
+        ("<<", _) => "LeftShift",
+        (">>", _) => "RightShift",
+        (">>>", _) => "UnsignedRightShift",
+        ("==", _) => "Equality",
+        ("!=", _) => "Inequality",
+        ("<", _) => "LessThan",
+        (">", _) => "GreaterThan",
+        ("<=", _) => "LessThanOrEqual",
+        (">=", _) => "GreaterThanOrEqual",
+        ("!", _) => "LogicalNot",
+        ("~", _) => "OnesComplement",
+        ("++", _) => "Increment",
+        ("--", _) => "Decrement",
+        ("true", _) => "True",
+        ("=", _) => "Assign",
+        ("+=", _) => "AdditionAssignment",
+        ("-=", _) => "SubtractionAssignment",
+        ("*=", _) => "MultiplicationAssignment",
+        ("/=", _) => "DivisionAssignment",
+        ("()", _) => "Call",
+        ("[]", _) => "Index",
+        ("<<=", _) => "LeftShiftAssignment",
+        (">>=", _) => "RightShiftAssignment",
+        ("<=>", _) => "Comparison",
+        ("->", _) => "Arrow",
+        ("false", _) => "False",
+        _ => "Operator",
+    };
+    format!("op_{name}")
 }
 
 /// Who makes the diagram, when, and from which file (for the header).
@@ -121,6 +187,15 @@ pub enum NoteKind {
     LocalFunction,
     /// Of `#if` … `#else`, only the first branch is read.
     Conditional,
+    /// Python `with`: the context is assigned, the body stands in its place.
+    With,
+    /// Python `for`/`while … else`: the `else` body follows the loop (where it also runs
+    /// after a `break`).
+    LoopElse,
+    /// Python `try … else`: the `else` body ends the try body.
+    TryElse,
+    /// A function defined in the function is left out.
+    NestedFunction,
 }
 
 /// What the import of one method did not show as written.
@@ -150,6 +225,8 @@ impl Source {
     pub fn parse(language: Language, text: &str) -> Source {
         let (grammar, parsed) = match language {
             Language::Java => (tree_sitter_java::LANGUAGE, text.to_owned()),
+            Language::Python => (tree_sitter_python::LANGUAGE, text.to_owned()),
+            Language::Cpp => (tree_sitter_cpp::LANGUAGE, first_branches(text, Dialect::Cpp).0),
             Language::CSharp => {
                 (tree_sitter_c_sharp::LANGUAGE, first_branches(text, Dialect::CSharp).0)
             }
@@ -167,12 +244,16 @@ impl Source {
 
     /// The methods and constructors with a body, in file order, nested classes included
     /// (but not classes inside methods); in C# also accessors, operators, finalizers and the
-    /// top-level statements (as `Program.Main`).
+    /// top-level statements (as `Program.Main`); in Python also the functions of the module
+    /// and the code of the module (as `__main__`); in C++ also free functions, destructors,
+    /// operators and definitions outside the class (`void Cart::add(…)`).
     pub fn methods(&self) -> Vec<MethodRef> {
         let root = self.tree.root_node();
         match self.language {
             Language::Java => java::methods(root, &self.text),
             Language::CSharp => csharp::methods(root, &self.text),
+            Language::Python => python::methods(root, &self.text),
+            Language::Cpp => cpp::methods(root, &self.text),
         }
     }
 
@@ -187,6 +268,18 @@ impl Source {
             Language::CSharp => {
                 let member = csharp::find(root, &self.text, method)?;
                 let (d, mut report) = csharp::diagram(&member, &self.text, made);
+                if let Some(line) = self.left_out(member.range()) {
+                    report.notes.insert(0, Note { line, kind: NoteKind::Conditional });
+                }
+                Some((d, report))
+            }
+            Language::Python => {
+                let member = python::find(root, &self.text, method)?;
+                Some(python::diagram(&member, root, &self.text, made))
+            }
+            Language::Cpp => {
+                let member = cpp::find(root, &self.text, method)?;
+                let (d, mut report) = cpp::diagram(&member, root, &self.text, made);
                 if let Some(line) = self.left_out(member.range()) {
                     report.notes.insert(0, Note { line, kind: NoteKind::Conditional });
                 }

@@ -6764,7 +6764,9 @@ dependencies = [
  "pretty_assertions",
  "tree-sitter",
  "tree-sitter-c-sharp",
+ "tree-sitter-cpp",
  "tree-sitter-java",
+ "tree-sitter-python",
  "umlcraft-nsd",
  "umlcraft-reverse",
 ]

@@ -40,7 +40,7 @@ pub fn assign(name: &str, mut value: Vec<String>) -> Vec<String> {
 /// `var (a, b) = p` → `(a, b) := p`. Other expressions give `None`.
 pub fn assignment(expr: Node, src: &str) -> Option<Vec<String>> {
     match expr.kind() {
-        "assignment_expression" => {
+        "assignment_expression" | "augmented_assignment" => {
             let left = expr.child_by_field_name("left")?;
             let left = match left.child_by_field_name("type") {
                 // `var (a, b)`: what is declared, without its type.
@@ -175,7 +175,7 @@ fn increment(expr: Node, src: &str) -> Option<i64> {
 }
 
 /// `bound + by` on one line: a number is computed, an expression gets `- 1` or `+ 1`.
-fn offset(bound: Node, src: &str, by: i64) -> String {
+pub fn offset(bound: Node, src: &str, by: i64) -> String {
     if let Ok(n) = node_text(bound, src).parse::<i64>() {
         return (n + by).to_string();
     }
@@ -189,9 +189,11 @@ fn offset(bound: Node, src: &str, by: i64) -> String {
 /// precedence, in parentheses where it would otherwise bind differently.
 fn operand(expr: Node, src: &str, column: usize, outer: u8) -> Vec<String> {
     let inner = match expr.kind() {
-        "binary_expression" => {
+        "binary_expression" | "binary_operator" | "boolean_operator" => {
             expr.child_by_field_name("operator").map_or(0, |o| precedence(node_text(o, src)))
         }
+        "comparison_operator" => precedence("<"),
+        "not_operator" => precedence("and"),
         "instanceof_expression" | "is_expression" | "as_expression" | "is_pattern_expression" => {
             precedence("<")
         }
@@ -199,6 +201,8 @@ fn operand(expr: Node, src: &str, column: usize, outer: u8) -> Vec<String> {
         | "conditional_expression"
         | "assignment_expression"
         | "lambda_expression"
+        | "lambda"
+        | "comma_expression"
         | "switch_expression" => 0,
         _ => u8::MAX,
     };
@@ -212,10 +216,11 @@ fn operand(expr: Node, src: &str, column: usize, outer: u8) -> Vec<String> {
     text
 }
 
-/// How tightly a binary operator binds (Java's and C#'s order).
+/// How tightly a binary operator binds (Java's, C#'s and Python's order).
 fn precedence(op: &str) -> u8 {
     match op {
-        "*" | "/" | "%" => 12,
+        "**" => 13,
+        "*" | "/" | "%" | "//" | "@" => 12,
         "+" | "-" => 11,
         "<<" | ">>" | ">>>" => 10,
         "<" | ">" | "<=" | ">=" => 9,
@@ -223,8 +228,8 @@ fn precedence(op: &str) -> u8 {
         "&" => 7,
         "^" => 6,
         "|" => 5,
-        "&&" => 4,
-        "||" => 3,
+        "&&" | "and" => 4,
+        "||" | "or" => 3,
         "??" => 2,
         _ => 0,
     }

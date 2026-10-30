@@ -1,0 +1,188 @@
+== shop::Cart.Cart (line 13)
+| Cart(n)
+  instruction
+    | count_(n)
+  instruction
+    | Base(n)
+  call
+    | reset()
+
+== shop::Cart.~Cart (line 17)
+| ~Cart()
+  instruction
+    | delete items_
+
+== shop::Cart.reset (line 21)
+| reset()
+  instruction
+    | this->count_ := 0
+  instruction
+    | items_ := nullptr
+
+== shop::Cart.first (line 29)
+| first(xs)
+  jump
+    | gib xs[0]
+
+== shop::Cart.op_AdditionAssignment (line 39)
+| operator +=(other)
+# Adds another cart.
+  instruction
+    | count_ := count_ + other.count_
+  jump
+    | gib *this
+
+== shop::Cart.run (line 46)
+| run(n, m)
+  instruction
+    | x := 1
+  instruction
+    | y := 2
+  instruction
+    | z := 3
+  instruction
+    | f := Foo(x, y)
+  instruction
+    | w := std::vector<int>{1, 2, 3}
+  instruction
+    | a := {1, 2, 3}
+  instruction
+    | [p, q] := std::make_pair(1, 2)
+  instruction
+    | ptr := &x
+  instruction
+    | guard := std::lock_guard<std::mutex>(mutex_)
+  instruction
+    | it := m.find(n)
+  alternative
+    | it != m.end()?
+    -
+      instruction
+        | x := x + 1
+    -
+      alternative
+        | found?
+        -
+          instruction
+            | found->use()
+        -
+  for style=TRAVERSAL
+    | foreach e in v
+    -
+      instruction
+        | x := x - 1
+  for style=TRAVERSAL
+    | foreach [key, value] in m
+    -
+      instruction
+        | x := x + key * value
+  case
+    | x?
+    | 1, 2
+    | 3
+    | default
+    -
+      instruction
+        | x := 0
+      instruction
+        | x := 3
+    -
+      instruction
+        | x := 3
+    -
+  try
+    | exception
+    -
+      instruction
+        | risky()
+    -
+      case
+        | exception instanceof?
+        | std::exception
+        | ...
+        | %
+        -
+          instruction
+            | e := exception
+          jump
+            | throw
+        -
+          instruction
+            | printf("unknown\n")
+        -
+    -
+  instruction
+    | twice := [](int k) { return k * 2; }
+  instruction
+    | ASSERT(x > 0)
+  instruction
+    | printf("%d\n", twice(x))
+  instruction
+    | trace(x)
+  jump
+    | goto end
+  jump
+    | return
+! line 90: Conditional
+! line 68: Fallthrough
+! line 93: Goto
+! line 94: Label
+
+== .legacy (line 98)
+| legacy(argc, argv)
+  for style=COUNTER
+    | for i := 0 to argc - 1
+    -
+      alternative
+        | argv[i] == 0?
+        -
+          instruction color=ff0000 disabled
+            | continue;
+        -
+  forever
+    -
+      jump
+        | break
+  instruction color=ff0000 disabled
+    | int broken = = 2;
+  jump
+    | gib 0
+! line 102: Continue
+! line 107: LocalClass
+! line 108: SyntaxError
+
+== .fetch (line 112)
+| fetch(id)
+  instruction
+    | co_yield id
+  jump
+    | gib id * 2
+! line 113: Yield
+
+== .fractions (line 117)
+| fractions(v)
+  instruction
+    | x := 0
+  while
+    | x < 2.5?
+    -
+      instruction
+        | v.push_back(1)
+      instruction
+        | x := x + 1
+  try
+    | exception
+    -
+      instruction
+        | v.reserve(1000)
+    -
+      case
+        | exception instanceof?
+        | std::bad_alloc
+        | %
+        -
+          instruction
+            | v.clear()
+        -
+    -
+

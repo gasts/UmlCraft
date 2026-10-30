@@ -1,9 +1,10 @@
-//! Compares the structure of our diagrams with Structorizer's own Java import of the same
-//! fixture files: which elements, nested how. Texts differ by design (we keep the code's,
-//! Structorizer writes pseudocode). Structorizer's results live outside the repository; with
-//! `UMLCRAFT_NSD_REFS` pointing at them (`java/structorizer-default/Class.method-N.nsd`) the
-//! test runs, otherwise it is skipped. Methods whose structure differs on purpose are listed
-//! with the reason in `structorizer_deviations.txt`.
+//! Compares the structure of our diagrams with Structorizer's own Java and C imports of the
+//! same fixture files: which elements, nested how. Texts differ by design (Structorizer writes
+//! its own pseudocode). Structorizer's results live outside the repository; with
+//! `UMLCRAFT_NSD_REFS` pointing at them (`java/structorizer-default/Class.method-N.nsd`,
+//! `c/structorizer-default/File.function-N.nsd`) the test runs, otherwise it is skipped.
+//! Methods whose structure differs on purpose are listed with the reason in
+//! `structorizer_deviations.txt`.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -43,15 +44,23 @@ fn structure_matches_structorizers_import() {
         eprintln!("UMLCRAFT_NSD_REFS not set; skipped");
         return;
     };
-    let dir = Path::new(&refs).join("java/structorizer-default");
-    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/java");
     let made = Made { author: "t", date: "2026-10-29", origin: "t" };
     let expected_deviations = deviations();
     let mut compared = 0;
     let mut differing = Vec::new();
-    let mut entries: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).collect();
-    entries.sort();
-    for path in entries {
+    let mut entries = Vec::new();
+    for (refs_dir, folder, extension, language) in [
+        ("java/structorizer-default", "java", "java", Language::Java),
+        ("c/structorizer-default", "cpp", "c", Language::Cpp),
+    ] {
+        let dir = Path::new(&refs).join(refs_dir);
+        let mut found: Vec<_> =
+            std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).collect();
+        found.sort();
+        entries.extend(found.into_iter().map(|p| (p, folder, extension, language)));
+    }
+    for (path, folder, extension, language) in entries {
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(folder);
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         // `Class.method-N.nsd` (N = number of parameters); class diagrams have no `-`.
         let Some((qualified, _)) = name.strip_suffix(".nsd").and_then(|n| n.rsplit_once('-'))
@@ -59,11 +68,11 @@ fn structure_matches_structorizers_import() {
             continue;
         };
         let Some((class, method)) = qualified.split_once('.') else { continue };
-        let java = fixtures.join(format!("{class}.java"));
-        let Ok(text) = std::fs::read_to_string(&java) else { continue };
-        let source = Source::parse(Language::Java, &text);
+        let file = fixtures.join(format!("{class}.{extension}"));
+        let Ok(text) = std::fs::read_to_string(&file) else { continue };
+        let source = Source::parse(language, &text);
         let Some(m) = source.methods().into_iter().find(|m| m.name == method) else {
-            panic!("{qualified}: no such method in {}", java.display());
+            panic!("{qualified}: no such method in {}", file.display());
         };
         let (ours, _) = source.diagram(&m, &made).unwrap();
         let theirs = read(&std::fs::read_to_string(&path).unwrap()).unwrap();
@@ -83,5 +92,5 @@ fn structure_matches_structorizers_import() {
     eprintln!("{compared} methods compared, {} deviations as listed", differing.len());
     let stale: Vec<_> = expected_deviations.keys().filter(|k| !differing.contains(k)).collect();
     assert!(stale.is_empty(), "listed deviations that no longer differ: {stale:?}");
-    assert!(compared >= 30);
+    assert!(compared >= 38);
 }
