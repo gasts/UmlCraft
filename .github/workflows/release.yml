@@ -324,23 +324,15 @@ jobs:
           bash packaging/linux/install-desktop-files.sh dist/binary/umlcraft \
             packaging/linux/snap-root/usr
 
-      # What snapcore/action-build does, without the action: it still runs on Node.js 20.
-      - name: Set up LXD and snapcraft
-        run: |
-          sudo groupadd --force --system lxd
-          sudo usermod --append --groups lxd "$USER"
-          sudo snap refresh lxd || sudo snap install lxd
-          sudo lxd init --auto
-          # Docker on the runner drops forwarded packets, which cuts LXD's containers off.
-          sudo iptables -P FORWARD ACCEPT
-          sudo snap install --classic snapcraft
+      - name: Install snapcraft
+        run: sudo snap install --classic snapcraft
 
+      # Right on the runner instead of in an LXD container: the runner is Ubuntu 24.04 like
+      # the snap's base core24, and it is thrown away afterwards. That saves fetching an Ubuntu
+      # image and setting up LXD, which took most of the job.
       - name: Build the snap
         working-directory: packaging/linux
-        env:
-          SNAPCRAFT_BUILD_ENVIRONMENT: lxd
-        # Through sudo, so that the new lxd group applies.
-        run: sudo -u "$USER" -E snapcraft
+        run: sudo snapcraft --destructive-mode
 
       - name: Name the snap like the other packages
         run: |
