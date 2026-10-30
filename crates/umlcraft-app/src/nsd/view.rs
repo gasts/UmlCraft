@@ -158,8 +158,10 @@ impl NsdView {
         self.editor.is_dirty() && !self.discarded
     }
 
-    /// Lays out and draws the diagram again after a change.
+    /// Lays out and draws the diagram again after a change. Changes made after discarding
+    /// are asked about again.
     fn redraw(&mut self) {
+        self.discarded = false;
         let metrics = umlcraft_nsd::Metrics::for_platform();
         self.layout = Layout::of(self.editor.diagram(), metrics);
         self.svg = umlcraft_nsd::svg::render_layout(self.editor.diagram(), &self.layout, metrics);
@@ -365,7 +367,9 @@ impl NsdView {
                     return;
                 }
                 *moving = true;
-                *slot = layout.slot_at(target.0, target.1).filter(|s| drops_somewhere(span, s));
+                let copy = ev.modifiers.secondary();
+                *slot =
+                    layout.slot_at(target.0, target.1).filter(|s| drops_somewhere(span, s, copy));
                 cx.notify();
             }
             None => {}
@@ -373,13 +377,18 @@ impl NsdView {
     }
 
     fn on_mouse_up(&mut self, ev: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
+        // With Ctrl (Cmd) held the elements are copied, otherwise moved.
+        let copy = ev.modifiers.secondary();
         let Some(Drag::Elements { span, moving: true, slot: Some(slot), .. }) = self.drag.take()
         else {
             cx.notify();
             return;
         };
-        // With Ctrl (Cmd) held the elements are copied, otherwise moved.
-        if ev.modifiers.secondary() {
+        if !drops_somewhere(&span, &slot, copy) {
+            cx.notify();
+            return;
+        }
+        if copy {
             self.change(cx, |d| {
                 let copies = edit::copy(d, &span)?;
                 edit::insert(d, &slot, copies)
@@ -801,7 +810,6 @@ impl NsdView {
             Ok(()) => {
                 self.editor.saved(diagram);
                 self.path = Some(path.clone());
-                self.discarded = false;
                 self.redraw();
                 super::saved(&path, cx);
                 cx.notify();
@@ -1116,10 +1124,11 @@ impl NsdView {
     }
 }
 
-/// Whether dropping `span` at `slot` would change anything and is possible.
-fn drops_somewhere(span: &Span, slot: &Slot) -> bool {
+/// Whether dropping `span` at `slot` would change anything and is possible. A copy goes
+/// anywhere, also next to or into the elements it copies; they cannot move there.
+fn drops_somewhere(span: &Span, slot: &Slot, copy: bool) -> bool {
     let in_place = slot.seq == span.seq && (span.start..=span.end).contains(&slot.index);
-    !in_place && !span.covers(&slot.seq)
+    copy || (!in_place && !span.covers(&slot.seq))
 }
 
 fn rect(r: umlcraft_nsd::layout::Rect) -> [i32; 4] {

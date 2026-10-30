@@ -58,7 +58,8 @@ pub fn open(
     }
     let has_text = element_kind != Some(ElementKind::Forever);
     let text_value = start.text.join("\n");
-    let question = text_value.find('?');
+    // A new element's default text (ASCII) has its first gap selected, ready for typing.
+    let question = matches!(target, Target::New(..)).then(|| text_value.find('?')).flatten();
     let text = cx.new(|cx| TextareaState::new(window, cx).auto_grow(3, 12));
     let comment = cx.new(|cx| TextareaState::new(window, cx).auto_grow(2, 8));
     text.update(cx, |s, cx| s.set_value(text_value, window, cx));
