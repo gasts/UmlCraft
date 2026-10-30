@@ -91,12 +91,13 @@ fn declarations<'t>(node: Node<'t>, src: &str, scope: &mut Vec<String>, out: &mu
                     scope.pop();
                 }
             }
-            "linkage_specification" | "template_declaration" | "declaration_list" => {
-                match child.child_by_field_name("body") {
-                    Some(body) => declarations(body, src, scope, out),
-                    None => declarations(child, src, scope, out),
-                }
-            }
+            "linkage_specification"
+            | "template_declaration"
+            | "declaration_list"
+            | "friend_declaration" => match child.child_by_field_name("body") {
+                Some(body) => declarations(body, src, scope, out),
+                None => declarations(child, src, scope, out),
+            },
             kind if CLASSES.contains(&kind) => class(child, src, scope, out),
             "declaration" | "field_declaration" => {
                 if let Some(t) = child.child_by_field_name("type")
@@ -145,7 +146,11 @@ fn function<'t>(node: Node<'t>, src: &str, scope: &[String]) -> Option<Member<'t
     let (name, title) = match at.kind() {
         "operator_name" => {
             let op = written.trim_start_matches("operator").trim();
-            (operator_name(op, names.contains(',')), format!("operator {op}({names})"))
+            // A member operator (in its class or defined as `A::operator-`) has `this` as its
+            // first operand.
+            let member = named.kind() == "qualified_identifier" || in_class(node);
+            let operands = parameter_count(parameters, src) + usize::from(member);
+            (operator_name(op, operands == 2), format!("operator {op}({names})"))
         }
         "operator_cast" => ("op_Implicit".to_owned(), format!("{written}({names})")),
         "destructor_name" => (written.replace(' ', ""), format!("{}()", written.replace(' ', ""))),
@@ -170,6 +175,29 @@ fn function<'t>(node: Node<'t>, src: &str, scope: &[String]) -> Option<Member<'t
         initializers,
         range: node.byte_range(),
     })
+}
+
+/// Whether a definition stands in a class body (a template's too).
+fn in_class(node: Node) -> bool {
+    let mut parent = node.parent();
+    while let Some(p) = parent.filter(|p| p.kind() == "template_declaration") {
+        parent = p.parent();
+    }
+    parent.is_some_and(|p| p.kind() == "field_declaration_list")
+}
+
+/// How many parameters a parameter list has, named or not; `(void)` has none.
+fn parameter_count(parameters: Option<Node>, src: &str) -> usize {
+    let Some(parameters) = parameters else { return 0 };
+    let mut cursor = parameters.walk();
+    parameters
+        .named_children(&mut cursor)
+        .filter(|p| p.kind().ends_with("parameter_declaration"))
+        .filter(|p| {
+            p.child_by_field_name("declarator").is_some()
+                || p.child_by_field_name("type").is_none_or(|t| node_text(t, src) != "void")
+        })
+        .count()
 }
 
 /// The function declarator inside a definition's declarator (`Cart& operator+=(…)` wraps it
@@ -310,5 +338,30 @@ static int main(void) { return 0; }
         let (add, _) = s.diagram(&s.methods()[0], &made).unwrap();
         assert_eq!(add.comment(), ["Adds."]);
         assert_eq!(s.methods()[6].file_name(), "shop.Cart.run.nsd");
+    }
+
+    #[test]
+    fn operators_count_their_operands() {
+        let src = r#"
+struct Vec {
+    Vec operator-(const Vec& o) const { return o; }
+    Vec operator-() const { return *this; }
+    friend Vec operator+(const Vec& a, const Vec& b) { return a; }
+};
+Vec Vec::operator+(const Vec&) const { return *this; }
+Vec operator+(const Vec&, const Vec&) { return Vec(); }
+Vec operator-(const Vec&) { return Vec(); }
+"#;
+        let s = Source::parse(Language::Cpp, src);
+        let names: Vec<String> = s.methods().into_iter().map(|m| m.name).collect();
+        let expected = [
+            "op_Subtraction",
+            "op_UnaryNegation",
+            "op_Addition",
+            "op_Addition",
+            "op_Addition",
+            "op_UnaryNegation",
+        ];
+        assert_eq!(names, expected);
     }
 }

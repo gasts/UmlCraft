@@ -82,6 +82,14 @@ class Shop:
                 return
             yield i
 
+    def ranges(self, n, m):
+        for j in range(1, m if n else n + 1):
+            print(j)
+        try:
+            self.check()
+        except ValueError:
+            print("bad")
+
     async def fetch(self, url):
         def helper(x):
             return x * 2
