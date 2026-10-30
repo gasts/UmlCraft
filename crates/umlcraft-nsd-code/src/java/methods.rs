@@ -1,35 +1,9 @@
-//! The methods of a file, for choosing one.
+//! The methods of a Java file, for choosing one.
 
 use tree_sitter::Node;
 
+use crate::MethodRef;
 use crate::text::{node_text, one_line};
-
-/// A method or constructor with a body.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MethodRef {
-    /// The classes it is in, outermost first.
-    pub class: Vec<String>,
-    pub name: String,
-    /// As written, on one line, without modifiers, annotations and `throws`:
-    /// `double getSpeed(SpeedUnit unit)`, `<T> T first(List<T> list)`, `Point(int x, int y)`.
-    pub signature: String,
-    /// 1-based line of the declaration.
-    pub line: usize,
-    /// Where the declaration starts in the file (identifies it).
-    pub start: usize,
-}
-
-impl MethodRef {
-    /// `Outer.Inner`.
-    pub fn class_name(&self) -> String {
-        self.class.join(".")
-    }
-
-    /// A file name for its diagram: `Class.method.nsd`.
-    pub fn file_name(&self) -> String {
-        format!("{}.{}.nsd", self.class_name(), self.name)
-    }
-}
 
 const TYPES: [&str; 4] =
     ["class_declaration", "interface_declaration", "enum_declaration", "record_declaration"];

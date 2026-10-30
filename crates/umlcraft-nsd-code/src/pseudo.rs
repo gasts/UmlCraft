@@ -1,35 +1,10 @@
-//! Java in the notation of structograms: no types, assignments as `x := value`, no `;`, and
-//! loops as `for i := a to b by s` and `foreach x in c`.
+//! Code in the notation of structograms: no types, assignments as `x := value`, no `;`, and
+//! loops as `for i := a to b by s` and `foreach x in c`. Java and C# share the shapes of the
+//! nodes used here (assignments, binary expressions, for loops).
 
 use tree_sitter::Node;
 
-use crate::text::{lines, lines_at, node_text, one_line};
-
-/// `name(a, b)`: a method's or constructor's name and its parameters' names.
-pub fn signature(method: Node, src: &str) -> String {
-    let name = method.child_by_field_name("name").map(|n| node_text(n, src)).unwrap_or_default();
-    let Some(parameters) = method.child_by_field_name("parameters") else {
-        // A record's compact constructor has none.
-        return name.to_owned();
-    };
-    let mut cursor = parameters.walk();
-    let names: Vec<&str> = parameters
-        .named_children(&mut cursor)
-        .filter_map(|p| match p.kind() {
-            "formal_parameter" => p.child_by_field_name("name"),
-            "spread_parameter" => {
-                let mut cursor = p.walk();
-                let declarator =
-                    p.named_children(&mut cursor).find(|c| c.kind() == "variable_declarator");
-                declarator.and_then(|d| d.child_by_field_name("name"))
-            }
-            // `Outer this` only names the receiver's type.
-            _ => None,
-        })
-        .map(|n| node_text(n, src))
-        .collect();
-    format!("{name}({})", names.join(", "))
-}
+use crate::text::{lines_at, node_text, one_line};
 
 /// `name := value`, the value's further lines as they are.
 pub fn assign(name: &str, mut value: Vec<String>) -> Vec<String> {
@@ -38,19 +13,6 @@ pub fn assign(name: &str, mut value: Vec<String>) -> Vec<String> {
         None => value.push(format!("{name} :=")),
     }
     value
-}
-
-/// The assignments of a local variable declaration, one per variable with a value:
-/// `int a = 1, b;` → `a := 1`. A variable without a value has none.
-pub fn declaration(node: Node, src: &str) -> Vec<Vec<String>> {
-    let column = node.start_position().column;
-    let mut cursor = node.walk();
-    node.children_by_field_name("declarator", &mut cursor)
-        .filter_map(|d| {
-            let name = node_text(d.child_by_field_name("name")?, src);
-            Some(assign(name, lines_at(d.child_by_field_name("value")?, src, column)))
-        })
-        .collect()
 }
 
 /// An assignment or increment as `x := value`: `x = 1` → `x := 1`, `total += a + b` →
@@ -83,27 +45,9 @@ pub fn assignment(expr: Node, src: &str) -> Option<Vec<String>> {
     }
 }
 
-/// `for i := a to b by s` for a loop that counts one variable by a constant step:
+/// `for i := a to b by s` for a loop that counts `var` from `start` by a constant step:
 /// `for (int i = 0; i < n; i++)` → `for i := 0 to n - 1`. Other for loops give `None`.
-pub fn counting(node: Node, src: &str) -> Option<String> {
-    let mut cursor = node.walk();
-    let inits: Vec<Node> = node.children_by_field_name("init", &mut cursor).collect();
-    let (var, start) = match inits.as_slice() {
-        [init] if init.kind() == "local_variable_declaration" => {
-            let mut cursor = init.walk();
-            let declarators: Vec<Node> =
-                init.children_by_field_name("declarator", &mut cursor).collect();
-            let [d] = declarators.as_slice() else { return None };
-            (d.child_by_field_name("name")?, d.child_by_field_name("value")?)
-        }
-        [init] if init.kind() == "assignment_expression" => {
-            let op = node_text(init.child_by_field_name("operator")?, src);
-            let left = init.child_by_field_name("left")?;
-            (op == "=" && left.kind() == "identifier")
-                .then_some((left, init.child_by_field_name("right")?))?
-        }
-        _ => return None,
-    };
+pub fn counting(node: Node, var: Node, start: Node, src: &str) -> Option<String> {
     let var = node_text(var, src);
 
     let condition = node.child_by_field_name("condition")?;
@@ -115,7 +59,8 @@ pub fn counting(node: Node, src: &str) -> Option<String> {
     }
 
     let mut cursor = node.walk();
-    let updates: Vec<Node> = node.children_by_field_name("update", &mut cursor).collect();
+    let updates: Vec<Node> =
+        node.children_by_field_name("update", &mut cursor).filter(|n| n.is_named()).collect();
     let [update] = updates.as_slice() else { return None };
     let step = step(*update, var, src)?;
 
@@ -133,9 +78,7 @@ pub fn counting(node: Node, src: &str) -> Option<String> {
 }
 
 /// `foreach v in values` for `for (T v : values)`.
-pub fn traversal(node: Node, src: &str) -> Vec<String> {
-    let name = node.child_by_field_name("name").map(|n| node_text(n, src)).unwrap_or_default();
-    let mut value = node.child_by_field_name("value").map(|v| lines(v, src)).unwrap_or_default();
+pub fn traversal(name: &str, mut value: Vec<String>) -> Vec<String> {
     match value.first_mut() {
         Some(first) => first.insert_str(0, &format!("foreach {name} in ")),
         None => value.push(format!("foreach {name} in")),

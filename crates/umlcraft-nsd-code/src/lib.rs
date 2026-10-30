@@ -1,23 +1,50 @@
-//! Java methods as structograms: the methods and constructors of a `.java` file, and one of
-//! them as a Nassi-Shneiderman diagram in Structorizer's `.nsd` form.
+//! Methods of source files as structograms: the methods and constructors of a `.java` file,
+//! and one of them as a Nassi-Shneiderman diagram in Structorizer's `.nsd` form. Each language
+//! reads its own nodes (`java`); what they share is in `core` and `pseudo`.
 //!
 //! Texts are written as structograms write them: no types (the root is `name(a, b)`),
 //! assignments as `x := value` (`i++` as `i := i + 1`), no `;`, counting loops as
 //! `for i := 0 to n - 1` and `foreach x in c`; expressions and conditions stay as in the code
 //! (without their outer parentheses). Calls of the class's own methods (`f(x);`, `this.f(x);`)
-//! become call elements, other statements instructions. What has no place in a structogram (`continue`, labels, local classes …) is
-//! named in the [`Report`]; nothing is left out silently. Structorizer's own Java import was
-//! only compared by its results, never by its code.
+//! become call elements, other statements instructions. What has no place in a structogram
+//! (`continue`, labels, local classes …) is named in the [`Report`]; nothing is left out
+//! silently. Structorizer's own Java import was only compared by its results, never by its
+//! code.
 
-mod build;
-mod methods;
+mod core;
+mod java;
 mod pseudo;
 mod text;
 
 use tree_sitter::{Parser, Tree};
 use umlcraft_nsd::Diagram;
 
-pub use methods::MethodRef;
+/// A method or constructor with a body.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MethodRef {
+    /// The classes it is in, outermost first.
+    pub class: Vec<String>,
+    pub name: String,
+    /// As written, on one line, without modifiers, annotations and `throws`:
+    /// `double getSpeed(SpeedUnit unit)`, `<T> T first(List<T> list)`, `Point(int x, int y)`.
+    pub signature: String,
+    /// 1-based line of the declaration.
+    pub line: usize,
+    /// Where the declaration starts in the file (identifies it).
+    pub start: usize,
+}
+
+impl MethodRef {
+    /// `Outer.Inner`.
+    pub fn class_name(&self) -> String {
+        self.class.join(".")
+    }
+
+    /// A file name for its diagram: `Class.method.nsd`.
+    pub fn file_name(&self) -> String {
+        format!("{}.{}.nsd", self.class_name(), self.name)
+    }
+}
 
 /// Who makes the diagram, when, and from which file (for the header).
 pub struct Made<'a> {
@@ -82,13 +109,13 @@ impl Source {
     /// The methods and constructors with a body, in file order, nested classes included
     /// (but not classes inside methods).
     pub fn methods(&self) -> Vec<MethodRef> {
-        methods::methods(self.tree.root_node(), &self.text)
+        java::methods(self.tree.root_node(), &self.text)
     }
 
     /// The diagram of `method` (one of [`Source::methods`]).
     pub fn diagram(&self, method: &MethodRef, made: &Made) -> Option<(Diagram, Report)> {
-        let node = methods::find(self.tree.root_node(), method)?;
-        Some(build::diagram(node, &self.text, made))
+        let node = java::find(self.tree.root_node(), method)?;
+        Some(java::diagram(node, &self.text, made))
     }
 }
 
