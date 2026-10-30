@@ -82,6 +82,8 @@ pub struct MainView {
     ribbon_diagram: Option<Id>,
     /// The first click of a double click on a tab unfolded the ribbon.
     ribbon_unfolded_by_click: bool,
+    /// Pixels a touchpad scrolled over the ribbon that did not yet make a tab.
+    ribbon_wheel: f32,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -147,6 +149,7 @@ impl MainView {
             ribbon_tab: RibbonTab::Home,
             ribbon_diagram: None,
             ribbon_unfolded_by_click: false,
+            ribbon_wheel: 0.0,
             _subscriptions: subscriptions,
         };
         if !crate::canvas::choose_diagram_font(cx) {
@@ -1084,11 +1087,39 @@ impl MainView {
         let compact = ribbon::width(&groups) > room;
         let collapsed = self.settings.ribbon_collapsed;
         let focus = self.canvas.focus_handle(cx);
+        let order: Vec<RibbonTab> = tabs.iter().map(|(t, _)| *t).collect();
         h_flex()
+            .id("ribbon-area")
             .items_stretch()
             .gap(shell::GAP)
             .px(shell::GAP)
             .pt(shell::GAP)
+            // As in Word: the wheel over the ribbon steps through its tabs, down to the right.
+            .on_scroll_wheel(cx.listener(move |this, event: &ScrollWheelEvent, window, cx| {
+                if collapsed || !window.is_window_active() {
+                    return;
+                }
+                let steps = match event.delta {
+                    // One notch, however many lines the system scrolls for it, is one tab.
+                    ScrollDelta::Lines(lines) if lines.y == 0.0 => 0,
+                    ScrollDelta::Lines(lines) => -lines.y.signum() as i32,
+                    ScrollDelta::Pixels(pixels) => {
+                        // A touchpad scrolls in small steps: one tab per line's height.
+                        this.ribbon_wheel -= f32::from(pixels.y);
+                        let line = f32::from(window.line_height());
+                        let steps = (this.ribbon_wheel / line).trunc();
+                        this.ribbon_wheel -= steps * line;
+                        steps as i32
+                    }
+                };
+                let Some(ix) = order.iter().position(|t| *t == active) else { return };
+                let next = (ix as i32 + steps).clamp(0, order.len() as i32 - 1) as usize;
+                if next != ix {
+                    this.ribbon_tab = order[next];
+                    cx.notify();
+                }
+                cx.stop_propagation();
+            }))
             .child(ribbon::new_diagram_card(collapsed, &focus, cx))
             .child(ribbon::render(&tabs, active, &groups, compact, collapsed, &focus, cx))
     }
