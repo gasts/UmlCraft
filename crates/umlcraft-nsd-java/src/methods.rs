@@ -168,6 +168,6 @@ public class Outer {
         assert_eq!(ms[1].file_name(), "A.g.nsd");
         let made = crate::Made { author: "t", date: "2026-10-29", origin: "test" };
         let (d, _) = s.diagram(&ms[1], &made).unwrap();
-        assert_eq!(d.text(), ["void g()"]);
+        assert_eq!(d.text(), ["g()"]);
     }
 }

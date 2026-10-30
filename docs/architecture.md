@@ -519,11 +519,16 @@ writes, and none of its code is used.
 - **From Java** (`umlcraft-nsd-java`): tree-sitter-java reads the file; `Source::methods`
   lists methods and constructors with a body (nested types included, not classes inside
   methods) with their signatures as written, `Source::diagram` builds one with the elements
-  of `umlcraft-nsd` (`edit::new_element`, so every rule of the editor holds). Texts are the
-  code's (conditions without outer parentheses, jumps without their `;`); `f(x);` and
-  `this.f(x);` are calls, other statements instructions. A for loop with a condition is one
-  for element whose attributes follow its text as Structorizer reads it (free text); without
-  one, and `while (true)`, it is an endless loop. `switch` becomes a case element: labels
+  of `umlcraft-nsd` (`edit::new_element`, so every rule of the editor holds). Texts are
+  written as structograms write them (`pseudo`): no types (the root is `name(a, b)`, a
+  declaration without a value has no element), assignments as `x := value` (`total += a` as
+  `total := total + a`, `i++` as `i := i + 1`), no `;`; expressions and conditions stay as in
+  the code, conditions without their outer parentheses. `f(x)` and `this.f(x)` are calls,
+  other statements instructions. A for loop that counts one variable by a constant step is a
+  counting loop (`for i := 0 to n - 1`, `by 2`), `for (T x : c)` a traversal
+  (`foreach x in c`); Structorizer reads both with the attributes we write. Any other for loop
+  becomes its initialization and a while loop with the update at the end of its body;
+  without a condition, and `while (true)`, it is an endless loop. `switch` becomes a case element: labels
   sharing a body are joined, the default goes last (`%` without one), a case that runs on gets
   the following statements copied, and a switch expression's values are assigned or returned
   where the expression stood. Several catches become a case on the exception's type. Comments

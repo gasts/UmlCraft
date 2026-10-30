@@ -4,8 +4,10 @@ use tree_sitter::Node;
 use umlcraft_nsd::edit::new_element;
 use umlcraft_nsd::{Color, Diagram, Element, ElementKind, Provenance, RootKind, Sequence};
 
-use crate::methods::signature;
-use crate::text::{block_comment, comment, condition, lines, node_text, without_semicolon};
+use crate::pseudo;
+use crate::text::{
+    block_comment, comment, condition, lines, lines_at, node_text, without_semicolon,
+};
 use crate::{Made, Note, NoteKind, Report};
 
 /// Structorizer's colour for what its import could not express.
@@ -25,7 +27,7 @@ const LOCAL_TYPES: [&str; 4] =
 
 pub fn diagram(method: Node, src: &str, made: &Made) -> (Diagram, Report) {
     let provenance = Provenance { author: made.author, date: made.date, origin: made.origin };
-    let mut d = Diagram::new(RootKind::Sub, &[signature(method, src)], &provenance);
+    let mut d = Diagram::new(RootKind::Sub, &[pseudo::signature(method, src)], &provenance);
     if let Some(doc) = javadoc(method, src) {
         d.set_comment(&doc);
     }
@@ -69,13 +71,25 @@ impl Builder<'_> {
         new_element(&self.header, kind, text)
     }
 
+    /// A statement as written, without its `;`.
     fn instruction(&self, node: Node) -> Element {
-        self.element(ElementKind::Instruction, &lines(node, self.src))
+        self.element(ElementKind::Instruction, &without_semicolon(lines(node, self.src)))
     }
 
-    /// A stand-in for what cannot be shown: red and disabled, as Structorizer marks it.
+    /// A declaration or expression without its statement: one instruction per assignment
+    /// (`x := 1`, none for `int x;`), other expressions as written.
+    fn simple(&self, node: Node) -> Vec<Element> {
+        let texts = match node.kind() {
+            "local_variable_declaration" => pseudo::declaration(node, self.src),
+            _ => vec![pseudo::assignment(node, self.src).unwrap_or_else(|| lines(node, self.src))],
+        };
+        texts.iter().map(|text| self.element(ElementKind::Instruction, text)).collect()
+    }
+
+    /// A stand-in for what cannot be shown, as written: red and disabled, as Structorizer
+    /// marks it.
     fn stand_in(&self, node: Node) -> Element {
-        let mut e = self.instruction(node);
+        let mut e = self.element(ElementKind::Instruction, &lines(node, self.src));
         e.set_color(RED);
         e.set_disabled(true);
         e
@@ -142,11 +156,12 @@ impl Builder<'_> {
             ";" | "empty_statement" => {}
             "local_variable_declaration" => {
                 if let Some((name, switch)) = declared_switch(node, src) {
-                    let declaration = format!("{} {name};", type_text(node, src));
-                    out.push(self.element(ElementKind::Instruction, &[declaration]));
                     out.extend(self.switch(switch, Some(Sink::Assign(name))));
+                } else if node.has_error() {
+                    self.note(node, NoteKind::SyntaxError);
+                    out.push(self.stand_in(node));
                 } else {
-                    out.push(self.instruction(node));
+                    out.extend(self.simple(node));
                 }
             }
             "expression_statement" => out.extend(self.expression_statement(node)),
@@ -154,7 +169,7 @@ impl Builder<'_> {
             "if_statement" => out.push(self.if_statement(node)),
             "for_statement" => self.for_statement(node, out),
             "enhanced_for_statement" => {
-                let mut e = self.element(ElementKind::For, &self.head(node));
+                let mut e = self.element(ElementKind::For, &pseudo::traversal(node, src));
                 e.branches[0] = self.body(node);
                 out.push(e);
             }
@@ -232,7 +247,7 @@ impl Builder<'_> {
     }
 
     /// Calls of the class's own methods (`f(x);`, `this.f(x);`) become call elements; a
-    /// `switch` assigned to a variable becomes a case element.
+    /// `switch` assigned to a variable becomes a case element; assignments read `x := value`.
     fn expression_statement(&mut self, node: Node) -> Vec<Element> {
         let src = self.src;
         let Some(expr) = node.named_child(0) else { return vec![self.instruction(node)] };
@@ -241,7 +256,7 @@ impl Builder<'_> {
                 let object = expr.child_by_field_name("object");
                 let own = object.is_none_or(|o| o.kind() == "this");
                 if own {
-                    return vec![self.element(ElementKind::Call, &lines(node, src))];
+                    return vec![self.element(ElementKind::Call, &lines(expr, src))];
                 }
             }
             "assignment_expression" => {
@@ -261,7 +276,7 @@ impl Builder<'_> {
             self.note(node, NoteKind::SyntaxError);
             return vec![self.stand_in(node)];
         }
-        vec![self.instruction(node)]
+        self.simple(expr)
     }
 
     fn if_statement(&mut self, node: Node) -> Element {
@@ -279,46 +294,33 @@ impl Builder<'_> {
         e
     }
 
-    /// A loop's head as written, up to its body: `for (int i = 0; i < n; i++)`.
-    fn head(&self, node: Node) -> Vec<String> {
-        let end = node.child_by_field_name("body").map_or(node.end_byte(), |b| b.start_byte());
-        let text = self.src[node.start_byte()..end].trim_end();
-        crate::text::lines_of(text, node.start_position().column)
-    }
-
     fn body(&mut self, node: Node) -> Sequence {
         Sequence::new(node.child_by_field_name("body").map(|b| self.block(b)).unwrap_or_default())
     }
 
-    /// A for loop with a condition is a for element with its head as text; without one it is
-    /// endless: its initialization goes before it, its update at the end of its body.
+    /// A for loop that counts one variable by a constant step is a for element
+    /// (`for i := 0 to n - 1`). Any other is a while loop, or endless without a condition: its
+    /// initialization goes before it, its update at the end of its body.
     fn for_statement(&mut self, node: Node, out: &mut Vec<Element>) {
         let src = self.src;
-        if node.child_by_field_name("condition").is_some() {
-            let mut e = self.element(ElementKind::For, &self.head(node));
+        if let Some(text) = pseudo::counting(node, src) {
+            let mut e = self.element(ElementKind::For, &[text]);
             e.branches[0] = self.body(node);
             out.push(e);
             return;
         }
         let mut cursor = node.walk();
         for init in node.children_by_field_name("init", &mut cursor) {
-            let mut text = lines(init, src);
-            if !text.last().is_some_and(|l| l.ends_with(';'))
-                && let Some(last) = text.last_mut()
-            {
-                last.push(';');
-            }
-            out.push(self.element(ElementKind::Instruction, &text));
+            out.extend(self.simple(init));
         }
-        let mut e = self.element(ElementKind::Forever, &[]);
+        let mut e = match node.child_by_field_name("condition") {
+            Some(c) => self.element(ElementKind::While, &condition(c, src)),
+            None => self.element(ElementKind::Forever, &[]),
+        };
         let mut body = node.child_by_field_name("body").map(|b| self.block(b)).unwrap_or_default();
         let mut cursor = node.walk();
         for update in node.children_by_field_name("update", &mut cursor) {
-            let mut text = lines(update, src);
-            if let Some(last) = text.last_mut() {
-                last.push(';');
-            }
-            body.push(self.element(ElementKind::Instruction, &text));
+            body.extend(self.simple(update));
         }
         e.branches[0] = Sequence::new(body);
         out.push(e);
@@ -333,13 +335,7 @@ impl Builder<'_> {
     fn valued(&mut self, mut value: Vec<String>, node: Node) -> Element {
         match self.sinks.last().cloned() {
             Some(Sink::Assign(name)) => {
-                if let Some(first) = value.first_mut() {
-                    first.insert_str(0, &format!("{name} = "));
-                }
-                if let Some(last) = value.last_mut() {
-                    last.push(';');
-                }
-                self.element(ElementKind::Instruction, &value)
+                self.element(ElementKind::Instruction, &pseudo::assign(&name, value))
             }
             Some(Sink::Return) => {
                 if let Some(first) = value.first_mut() {
@@ -488,10 +484,14 @@ impl Builder<'_> {
         if let Some(resources) = node.child_by_field_name("resources") {
             let mut cursor = resources.walk();
             for r in resources.named_children(&mut cursor).filter(|r| r.kind() == "resource") {
-                let mut text = lines(r, src);
-                if let Some(last) = text.last_mut() {
-                    last.push(';');
-                }
+                // `Reader r = open()` assigns; `r` alone names a variable from before.
+                let text = match (r.child_by_field_name("name"), r.child_by_field_name("value")) {
+                    (Some(name), Some(value)) => {
+                        let column = r.start_position().column;
+                        pseudo::assign(node_text(name, src), lines_at(value, src, column))
+                    }
+                    _ => lines(r, src),
+                };
                 tried.push(self.element(ElementKind::Instruction, &text));
             }
         }
@@ -523,7 +523,7 @@ impl Builder<'_> {
                 text.push("%".to_owned());
                 let mut case = self.element(ElementKind::Case, &text);
                 for (i, c) in several.iter().enumerate() {
-                    let rename = format!("{} = exception;", catch_name(*c, src));
+                    let rename = format!("{} := exception", catch_name(*c, src));
                     let mut body = vec![self.element(ElementKind::Instruction, &[rename])];
                     body.extend(self.catch_body(*c));
                     case.branches[i] = Sequence::new(body);
@@ -616,10 +616,6 @@ fn declared_switch<'t>(node: Node<'t>, src: &str) -> Option<(String, Node<'t>)> 
     let value = declarator.child_by_field_name("value")?;
     let name = declarator.child_by_field_name("name")?;
     (value.kind() == "switch_expression").then(|| (node_text(name, src).to_owned(), value))
-}
-
-fn type_text(node: Node, src: &str) -> String {
-    node.child_by_field_name("type").map(|t| node_text(t, src).to_owned()).unwrap_or_default()
 }
 
 fn catch_parameter(clause: Node) -> Option<Node> {

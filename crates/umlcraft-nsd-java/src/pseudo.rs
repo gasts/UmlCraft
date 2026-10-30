@@ -1,0 +1,292 @@
+//! Java in the notation of structograms: no types, assignments as `x := value`, no `;`, and
+//! loops as `for i := a to b by s` and `foreach x in c`.
+
+use tree_sitter::Node;
+
+use crate::text::{lines, lines_at, node_text, one_line};
+
+/// `name(a, b)`: a method's or constructor's name and its parameters' names.
+pub fn signature(method: Node, src: &str) -> String {
+    let name = method.child_by_field_name("name").map(|n| node_text(n, src)).unwrap_or_default();
+    let Some(parameters) = method.child_by_field_name("parameters") else {
+        // A record's compact constructor has none.
+        return name.to_owned();
+    };
+    let mut cursor = parameters.walk();
+    let names: Vec<&str> = parameters
+        .named_children(&mut cursor)
+        .filter_map(|p| match p.kind() {
+            "formal_parameter" => p.child_by_field_name("name"),
+            "spread_parameter" => {
+                let mut cursor = p.walk();
+                let declarator =
+                    p.named_children(&mut cursor).find(|c| c.kind() == "variable_declarator");
+                declarator.and_then(|d| d.child_by_field_name("name"))
+            }
+            // `Outer this` only names the receiver's type.
+            _ => None,
+        })
+        .map(|n| node_text(n, src))
+        .collect();
+    format!("{name}({})", names.join(", "))
+}
+
+/// `name := value`, the value's further lines as they are.
+pub fn assign(name: &str, mut value: Vec<String>) -> Vec<String> {
+    match value.first_mut() {
+        Some(first) => first.insert_str(0, &format!("{name} := ")),
+        None => value.push(format!("{name} :=")),
+    }
+    value
+}
+
+/// The assignments of a local variable declaration, one per variable with a value:
+/// `int a = 1, b;` → `a := 1`. A variable without a value has none.
+pub fn declaration(node: Node, src: &str) -> Vec<Vec<String>> {
+    let column = node.start_position().column;
+    let mut cursor = node.walk();
+    node.children_by_field_name("declarator", &mut cursor)
+        .filter_map(|d| {
+            let name = node_text(d.child_by_field_name("name")?, src);
+            Some(assign(name, lines_at(d.child_by_field_name("value")?, src, column)))
+        })
+        .collect()
+}
+
+/// An assignment or increment as `x := value`: `x = 1` → `x := 1`, `total += a + b` →
+/// `total := total + (a + b)`, `i++` → `i := i + 1`. Other expressions give `None`.
+pub fn assignment(expr: Node, src: &str) -> Option<Vec<String>> {
+    match expr.kind() {
+        "assignment_expression" => {
+            let left = node_text(expr.child_by_field_name("left")?, src);
+            let op = node_text(expr.child_by_field_name("operator")?, src);
+            let right = expr.child_by_field_name("right")?;
+            let column = expr.start_position().column;
+            let value = match op.strip_suffix('=').filter(|o| !o.is_empty()) {
+                None => lines_at(right, src, column),
+                Some(op) => {
+                    let mut value = operand(right, src, column, precedence(op));
+                    value[0].insert_str(0, &format!("{left} {op} "));
+                    value
+                }
+            };
+            Some(assign(left, value))
+        }
+        "update_expression" => {
+            let operand = expr.named_child(0)?;
+            let text = node_text(expr, src);
+            let op = if text.contains("++") { "+" } else { "-" };
+            let name = one_line(node_text(operand, src));
+            Some(vec![format!("{name} := {name} {op} 1")])
+        }
+        _ => None,
+    }
+}
+
+/// `for i := a to b by s` for a loop that counts one variable by a constant step:
+/// `for (int i = 0; i < n; i++)` → `for i := 0 to n - 1`. Other for loops give `None`.
+pub fn counting(node: Node, src: &str) -> Option<String> {
+    let mut cursor = node.walk();
+    let inits: Vec<Node> = node.children_by_field_name("init", &mut cursor).collect();
+    let (var, start) = match inits.as_slice() {
+        [init] if init.kind() == "local_variable_declaration" => {
+            let mut cursor = init.walk();
+            let declarators: Vec<Node> =
+                init.children_by_field_name("declarator", &mut cursor).collect();
+            let [d] = declarators.as_slice() else { return None };
+            (d.child_by_field_name("name")?, d.child_by_field_name("value")?)
+        }
+        [init] if init.kind() == "assignment_expression" => {
+            let op = node_text(init.child_by_field_name("operator")?, src);
+            let left = init.child_by_field_name("left")?;
+            (op == "=" && left.kind() == "identifier")
+                .then_some((left, init.child_by_field_name("right")?))?
+        }
+        _ => return None,
+    };
+    let var = node_text(var, src);
+
+    let condition = node.child_by_field_name("condition")?;
+    let op = node_text(condition.child_by_field_name("operator")?, src);
+    let left = condition.child_by_field_name("left")?;
+    let bound = condition.child_by_field_name("right")?;
+    if condition.kind() != "binary_expression" || node_text(left, src) != var {
+        return None;
+    }
+
+    let mut cursor = node.walk();
+    let updates: Vec<Node> = node.children_by_field_name("update", &mut cursor).collect();
+    let [update] = updates.as_slice() else { return None };
+    let step = step(*update, var, src)?;
+
+    let end = match (op, step > 0) {
+        ("<", true) => offset(bound, src, -1),
+        (">", false) => offset(bound, src, 1),
+        ("<=", true) | (">=", false) => one_line(node_text(bound, src)),
+        _ => return None,
+    };
+    let start = one_line(node_text(start, src));
+    Some(match step {
+        1 => format!("for {var} := {start} to {end}"),
+        _ => format!("for {var} := {start} to {end} by {step}"),
+    })
+}
+
+/// `foreach v in values` for `for (T v : values)`.
+pub fn traversal(node: Node, src: &str) -> Vec<String> {
+    let name = node.child_by_field_name("name").map(|n| node_text(n, src)).unwrap_or_default();
+    let mut value = node.child_by_field_name("value").map(|v| lines(v, src)).unwrap_or_default();
+    match value.first_mut() {
+        Some(first) => first.insert_str(0, &format!("foreach {name} in ")),
+        None => value.push(format!("foreach {name} in")),
+    }
+    value
+}
+
+/// The constant a counting loop's update adds to `var`: `i++` 1, `i -= 2` -2.
+fn step(update: Node, var: &str, src: &str) -> Option<i64> {
+    match update.kind() {
+        "update_expression" => {
+            let operand = update.named_child(0)?;
+            if node_text(operand, src) != var {
+                return None;
+            }
+            Some(if node_text(update, src).contains("++") { 1 } else { -1 })
+        }
+        "assignment_expression" => {
+            if node_text(update.child_by_field_name("left")?, src) != var {
+                return None;
+            }
+            let right = update.child_by_field_name("right")?;
+            let n: i64 = node_text(right, src).parse().ok().filter(|&n| n > 0)?;
+            match node_text(update.child_by_field_name("operator")?, src) {
+                "+=" => Some(n),
+                "-=" => Some(-n),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// `bound + by` on one line: a number is computed, an expression gets `- 1` or `+ 1`.
+fn offset(bound: Node, src: &str, by: i64) -> String {
+    if let Ok(n) = node_text(bound, src).parse::<i64>() {
+        return (n + by).to_string();
+    }
+    // As the left operand of `-`/`+`, a sum needs no parentheses.
+    let text = operand(bound, src, 0, precedence("+") - 1).join(" ");
+    let text = one_line(&text);
+    if by < 0 { format!("{text} - {}", -by) } else { format!("{text} + {by}") }
+}
+
+/// An expression's lines (see [`lines_at`]) as the operand of an operator of `outer`
+/// precedence, in parentheses where it would otherwise bind differently.
+fn operand(expr: Node, src: &str, column: usize, outer: u8) -> Vec<String> {
+    let inner = match expr.kind() {
+        "binary_expression" => {
+            expr.child_by_field_name("operator").map_or(0, |o| precedence(node_text(o, src)))
+        }
+        "instanceof_expression" => precedence("<"),
+        "ternary_expression" | "assignment_expression" | "lambda_expression" => 0,
+        _ => u8::MAX,
+    };
+    let mut text = lines_at(expr, src, column);
+    if inner <= outer {
+        text[0].insert(0, '(');
+        if let Some(last) = text.last_mut() {
+            last.push(')');
+        }
+    }
+    text
+}
+
+/// How tightly a binary operator binds (Java's order).
+fn precedence(op: &str) -> u8 {
+    match op {
+        "*" | "/" | "%" => 12,
+        "+" | "-" => 11,
+        "<<" | ">>" | ">>>" => 10,
+        "<" | ">" | "<=" | ">=" => 9,
+        "==" | "!=" => 8,
+        "&" => 7,
+        "^" => 6,
+        "|" => 5,
+        "&&" => 4,
+        "||" => 3,
+        _ => 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Source;
+
+    /// The first statement of `body` as the notation gives it.
+    fn first(body: &str) -> Vec<String> {
+        let source = Source::parse(&format!("class A {{ void f(int n) {{ {body} }} }}"));
+        let m = &source.methods()[0];
+        let made = crate::Made { author: "t", date: "2026-10-30", origin: "test" };
+        let (d, _) = source.diagram(m, &made).unwrap();
+        d.children.elements[0].text()
+    }
+
+    #[test]
+    fn assignments_lose_types_and_semicolons() {
+        assert_eq!(first("int y = n + 1;"), ["y := n + 1"]);
+        assert_eq!(first("var s = \"x\";"), ["s := \"x\""]);
+        assert_eq!(first("n = 2;"), ["n := 2"]);
+        assert_eq!(first("n++;"), ["n := n + 1"]);
+        assert_eq!(first("--n;"), ["n := n - 1"]);
+        assert_eq!(first("n += 3;"), ["n := n + 3"]);
+        assert_eq!(first("n -= a - b;"), ["n := n - (a - b)"]);
+        assert_eq!(first("n *= a + b;"), ["n := n * (a + b)"]);
+        assert_eq!(first("n += a * b;"), ["n := n + a * b"]);
+        assert_eq!(first("a[n] <<= 1;"), ["a[n] := a[n] << 1"]);
+        assert_eq!(first("list.clear();"), ["list.clear()"]);
+    }
+
+    #[test]
+    fn values_over_several_lines_keep_their_indentation() {
+        let body =
+            "\n        Runnable r = new Runnable() {\n            void run() { }\n        };\n";
+        assert_eq!(first(body), ["r := new Runnable() {", "    void run() { }", "}"]);
+    }
+
+    #[test]
+    fn declarations_without_a_value_vanish() {
+        assert_eq!(first("int x; int a = 1, b, c = 2;"), ["a := 1"]);
+    }
+
+    #[test]
+    fn counting_loops() {
+        assert_eq!(first("for (int i = 0; i < n; i++) { }"), ["for i := 0 to n - 1"]);
+        assert_eq!(first("for (int i = 0; i < 10; i++) { }"), ["for i := 0 to 9"]);
+        assert_eq!(first("for (int i = 0; i < n + 1; i++) { }"), ["for i := 0 to n + 1 - 1"]);
+        assert_eq!(first("for (int i = 1; i <= n; i += 2) { }"), ["for i := 1 to n by 2"]);
+        assert_eq!(first("for (int i = n; i > 0; i--) { }"), ["for i := n to 1 by -1"]);
+        assert_eq!(first("for (i = n; i >= a; i -= 3) { }"), ["for i := n to a by -3"]);
+        assert_eq!(first("for (int i = 0; i < n << 1; i++) { }"), ["for i := 0 to (n << 1) - 1"]);
+        assert_eq!(first("for (int v : values) { }"), ["foreach v in values"]);
+    }
+
+    #[test]
+    fn other_for_loops_become_while_loops() {
+        // Wrong direction, a step that is no constant, two variables.
+        assert_eq!(first("for (int i = 0; i < n; i--) { }"), ["i := 0"]);
+        assert_eq!(first("for (int i = 0; i < n; i += k) { }"), ["i := 0"]);
+        assert_eq!(first("for (int i = 0, j = n; i < j; i++, j--) { }"), ["i := 0"]);
+    }
+
+    #[test]
+    fn signatures_name_only_the_parameters() {
+        let source = Source::parse(
+            "class A { <T> int f(final java.util.List<T> xs, int[] a, String... rest) { return 0; }
+                       void g(A this, int x) { } record P(int x) { P { } } }",
+        );
+        let made = crate::Made { author: "t", date: "2026-10-30", origin: "test" };
+        let texts: Vec<Vec<String>> =
+            source.methods().iter().map(|m| source.diagram(m, &made).unwrap().0.text()).collect();
+        assert_eq!(texts, [vec!["f(xs, a, rest)"], vec!["g(x)"], vec!["P"]]);
+    }
+}

@@ -1,7 +1,5 @@
 == Switches.classic (line 2)
-| String classic(int day)
-  instruction
-    | String name;
+| classic(day)
   case
     | day
     | 1
@@ -9,20 +7,20 @@
     | default
     -
       instruction
-        | name = "Monday";
+        | name := "Monday"
     -
       instruction
-        | name = "Midweek";
+        | name := "Midweek"
     -
       instruction
-        | name = "Other";
+        | name := "Other"
   jump
     | return name
 
 == Switches.fallthrough (line 18)
-| int fallthrough(int a)
+| fallthrough(a)
   instruction
-    | int r = 0;
+    | r := 0
   case
     | a
     | 1
@@ -30,23 +28,21 @@
     | default
     -
       instruction
-        | r += 1;
+        | r := r + 1
       instruction
-        | r += 2;
+        | r := r + 2
     -
       instruction
-        | r += 2;
+        | r := r + 2
     -
       instruction
-        | r = -1;
+        | r := -1
   jump
     | return r
 ! line 21: Fallthrough
 
 == Switches.defaultInMiddle (line 33)
-| int defaultInMiddle(int a)
-  instruction
-    | int r;
+| defaultInMiddle(a)
   case
     | a
     | 1
@@ -54,18 +50,18 @@
     | default
     -
       instruction
-        | r = 10;
+        | r := 10
     -
       instruction
-        | r = 20;
+        | r := 20
     -
       instruction
-        | r = 0;
+        | r := 0
   jump
     | return r
 
 == Switches.noDefault (line 49)
-| void noDefault(int a)
+| noDefault(a)
   case
     | a
     | 1
@@ -73,12 +69,12 @@
     | %
     -
       call
-        | work();
+        | work()
     -
       call
-        | work();
+        | work()
     -
 
 == Switches.work (line 60)
-| void work()
+| work()
 

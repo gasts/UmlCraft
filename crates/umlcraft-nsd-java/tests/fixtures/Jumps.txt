@@ -1,5 +1,5 @@
 == Jumps.plainReturn (line 2)
-| void plainReturn(int a)
+| plainReturn(a)
   alternative
     | a > 0
     -
@@ -7,14 +7,14 @@
         | return
     -
   call
-    | work();
+    | work()
 
 == Jumps.loops (line 9)
-| int loops(int[] values)
+| loops(values)
   instruction
-    | int sum = 0;
-  for style=FREETEXT
-    | for (int v : values)
+    | sum := 0
+  for style=TRAVERSAL
+    | foreach v in values
     -
       alternative
         | v < 0
@@ -29,26 +29,26 @@
             | break
         -
       instruction
-        | sum += v;
+        | sum := sum + v
   jump
     | return sum
 ! line 13: Continue
 
 == Jumps.labels (line 23)
-| int labels(int[][] grid)
+| labels(grid)
   instruction
-    | int found = -1;
-  for style=FREETEXT
-    | for (int i = 0; i < grid.length; i++)
+    | found := -1
+  for style=COUNTER
+    | for i := 0 to grid.length - 1
     -
-      for style=FREETEXT
-        | for (int j = 0; j < grid[i].length; j++)
+      for style=COUNTER
+        | for j := 0 to grid[i].length - 1
         -
           alternative
             | grid[i][j] == 0
             -
               instruction
-                | found = i;
+                | found := i
               jump
                 | break outer
             -
@@ -64,10 +64,10 @@
 ! line 33: Continue
 
 == Jumps.fail (line 40)
-| void fail(String message)
+| fail(message)
   jump
     | throw new IllegalStateException(message)
 
 == Jumps.work (line 44)
-| void work()
+| work()
 

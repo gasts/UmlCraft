@@ -17,6 +17,12 @@ pub fn lines(node: Node, src: &str) -> Vec<String> {
     lines_of(node_text(node, src), node.start_position().column)
 }
 
+/// A node's text as lines, the following ones without the indentation of `column` (where the
+/// statement the node is part of starts).
+pub fn lines_at(node: Node, src: &str, column: usize) -> Vec<String> {
+    lines_of(node_text(node, src), column)
+}
+
 pub fn lines_of(text: &str, column: usize) -> Vec<String> {
     text.split('\n')
         .enumerate()

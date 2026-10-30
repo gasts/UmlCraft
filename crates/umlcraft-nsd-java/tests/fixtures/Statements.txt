@@ -1,41 +1,39 @@
 == Statements.declarations (line 5)
-| int declarations(int a)
+| declarations(a)
 # Declarations, assignments and expressions.
   instruction
-    | int x;
+    | y := a + 1
   instruction
-    | int y = a + 1;
+    | x := y * 2
   instruction
-    | x = y * 2;
+    | y := y + 1
   instruction
-    | y++;
-  instruction
-    | total += x;
+    | total := total + x
   jump
     | return x
 
 == Statements.calls (line 14)
-| void calls(java.util.List<String> list)
+| calls(list)
   instruction
-    | list.clear();
+    | list.clear()
   call
-    | helper(1, 2);
+    | helper(1, 2)
   instruction
-    | int n = list.size();
+    | n := list.size()
   instruction
-    | String s = list.toString().trim();
+    | s := list.toString().trim()
   instruction
-    | System.out.println(n + s);
+    | System.out.println(n + s)
   instruction
-    | new StringBuilder();
+    | new StringBuilder()
 
 == Statements.blocks (line 23)
-| void blocks()
+| blocks()
   instruction
-    | int inner = 1;
+    | inner := 1
   call
-    | helper(inner, 0);
+    | helper(inner, 0)
 
 == Statements.helper (line 31)
-| void helper(int a, int b)
+| helper(a, b)
 

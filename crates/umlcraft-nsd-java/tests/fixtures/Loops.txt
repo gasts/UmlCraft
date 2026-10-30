@@ -1,36 +1,44 @@
 == Loops.counting (line 2)
-| int counting(int n)
+| counting(n)
   instruction
-    | int sum = 0;
-  for style=FREETEXT
-    | for (int i = 0; i < n; i++)
+    | sum := 0
+  for style=COUNTER
+    | for i := 0 to n - 1
     -
       instruction
-        | sum += i;
-  for style=FREETEXT
-    | for (int i = 0; i <= n; i += 2)
+        | sum := sum + i
+  for style=COUNTER
+    | for i := 0 to n by 2
     -
       instruction
-        | sum += i;
-  for style=FREETEXT
-    | for (int i = n; i > 0; i--)
+        | sum := sum + i
+  for style=COUNTER
+    | for i := n to 1 by -1
     -
       instruction
-        | sum -= i;
+        | sum := sum - i
   jump
     | return sum
 
 == Loops.free (line 16)
-| int free(int n)
+| free(n)
   instruction
-    | int sum = 0;
-  for style=FREETEXT
-    | for (int i = 0, j = n; i < j; i++, j--)
+    | sum := 0
+  instruction
+    | i := 0
+  instruction
+    | j := n
+  while
+    | i < j
     -
       instruction
-        | sum += j - i;
+        | sum := sum + (j - i)
+      instruction
+        | i := i + 1
+      instruction
+        | j := j - 1
   instruction
-    | int i = 0;
+    | i := 0
   forever
     -
       alternative
@@ -40,56 +48,56 @@
             | break
         -
       instruction
-        | i++;
+        | i := i + 1
   jump
     | return sum
 
 == Loops.enhanced (line 29)
-| int enhanced(int[] values)
+| enhanced(values)
   instruction
-    | int sum = 0;
-  for style=FREETEXT
-    | for (int v : values)
+    | sum := 0
+  for style=TRAVERSAL
+    | foreach v in values
     -
       instruction
-        | sum += v;
+        | sum := sum + v
   jump
     | return sum
 
 == Loops.whileLoop (line 37)
-| int whileLoop(int n)
+| whileLoop(n)
   while
     | n > 10
     -
       instruction
-        | n = n / 2;
+        | n := n / 2
   jump
     | return n
 
 == Loops.doWhile (line 44)
-| int doWhile(int n)
+| doWhile(n)
   repeat
     | !(n > 0)
     -
       instruction
-        | n--;
+        | n := n - 1
   jump
     | return n
 
 == Loops.endless (line 51)
-| void endless()
+| endless()
   forever
     -
       call
-        | work();
+        | work()
 
 == Loops.endlessFor (line 57)
-| void endlessFor()
+| endlessFor()
   forever
     -
       call
-        | work();
+        | work()
 
 == Loops.work (line 63)
-| void work()
+| work()
 

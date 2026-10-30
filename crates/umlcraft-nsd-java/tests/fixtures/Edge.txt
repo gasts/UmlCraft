@@ -1,5 +1,5 @@
 == Edge.kind (line 4)
-| int kind(int day)
+| kind(day)
   case
     | day
     | 6, 7
@@ -22,24 +22,24 @@
         | throw new IllegalArgumentException("day")
 
 == Edge.calls (line 17)
-| void calls()
+| calls()
   call
-    | this.reset();
+    | this.reset()
   instruction
-    | super.toString();
+    | super.toString()
   call
-    | reset();
+    | reset()
   instruction
-    | value = compute(1) + compute(2);
+    | value := compute(1) + compute(2)
 
 == Edge.comments (line 24)
-| void comments()
+| comments()
   while
     | value < 10
     # only a comment at the start
     -
       instruction
-        | value++;
+        | value := value + 1
         # a comment at the end of a block
   alternative
     | value > 0
@@ -47,49 +47,49 @@
     -
 
 == Edge.broken (line 35)
-| void broken()
+| broken()
   instruction
-    | int a = 1;
+    | a := 1
   instruction color=ff0000 disabled
     | a = = 2;
   instruction
-    | a++;
+    | a := a + 1
 ! line 37: SyntaxError
 
 == Edge.caseDefaultWithLabel (line 41)
-| void caseDefaultWithLabel(int a)
+| caseDefaultWithLabel(a)
   case
     | a
     | 1
     | default
     -
       instruction
-        | value = 1;
+        | value := 1
     -
       instruction
-        | value = 0;
+        | value := 0
 
 == Edge.chain (line 52)
-| String chain(StringBuilder sb)
+| chain(sb)
   instruction
     | sb.append("a")
     |   .append("b")
-    |   .append("c");
+    |   .append("c")
   jump
     | return sb.toString()
 
 == Edge.reset (line 59)
-| void reset()
+| reset()
   instruction
-    | value = 0;
+    | value := 0
 
 == Edge.compute (line 63)
-| int compute(int x)
+| compute(x)
   jump
     | return x
 
 == Edge.braced (line 68)
-| void braced(int a)
+| braced(a)
   case
     | a
     | 1
@@ -97,26 +97,26 @@
     | %
     -
       instruction
-        | value = 1;
+        | value := 1
     -
       instruction
-        | value = 2;
+        | value := 2
     -
 
 == Edge.onlyDefault (line 80)
-| void onlyDefault(int a)
+| onlyDefault(a)
   instruction
-    | value = a;
+    | value := a
   instruction
-    | value = 3;
+    | value := 3
 
 == Edge.unions (line 92)
-| void unions(java.io.Reader r)
+| unions(r)
   try
     | exception
     -
       instruction
-        | r.read();
+        | r.read()
     -
       case
         | exception instanceof
@@ -125,27 +125,27 @@
         | %
         -
           instruction
-            | e = exception;
+            | e := exception
           call
-            | reset();
+            | reset()
         -
           instruction
-            | e = exception;
+            | e := exception
           call
-            | reset();
+            | reset()
         -
     -
 
 == Edge.Nested.Mode.on (line 106)
-| boolean on()
+| on()
   jump
     | return this == ON
 
 == Edge.Nested.Nested (line 111)
 | Nested()
   instruction
-    | this(1);
+    | this(1)
 
 == Edge.Nested.Nested (line 115)
-| Nested(int x)
+| Nested(x)
 

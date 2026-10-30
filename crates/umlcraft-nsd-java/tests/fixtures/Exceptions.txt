@@ -1,5 +1,5 @@
 == Exceptions.tryCatch (line 5)
-| int tryCatch(String s)
+| tryCatch(s)
   try
     | e
     -
@@ -11,12 +11,12 @@
     -
 
 == Exceptions.multiCatch (line 13)
-| void multiCatch(Reader r)
+| multiCatch(r)
   try
     | exception
     -
       instruction
-        | r.read();
+        | r.read()
     -
       case
         | exception instanceof
@@ -25,24 +25,24 @@
         | %
         -
           instruction
-            | e = exception;
+            | e := exception
           call
-            | log(e);
+            | log(e)
         -
           instruction
-            | e = exception;
+            | e := exception
           call
-            | log(e);
+            | log(e)
         -
     -
 
 == Exceptions.unionCatch (line 23)
-| void unionCatch(Reader r)
+| unionCatch(r)
   try
     | e
     -
       instruction
-        | r.read();
+        | r.read()
     -
       case
         | e instanceof
@@ -50,46 +50,46 @@
         | %
         -
           call
-            | log(e);
+            | log(e)
         -
     -
 
 == Exceptions.tryFinally (line 31)
-| void tryFinally(Reader r)
+| tryFinally(r)
   try
     | e
     -
       instruction
-        | r.read();
+        | r.read()
     -
       call
-        | log(e);
+        | log(e)
     -
       instruction
-        | r.close();
+        | r.close()
 
 == Exceptions.onlyFinally (line 41)
-| void onlyFinally(Reader r)
+| onlyFinally(r)
   try
     -
       instruction
-        | r.read();
+        | r.read()
     -
     -
       instruction
-        | r.close();
+        | r.close()
 
 == Exceptions.withResources (line 49)
-| void withResources(java.io.File f)
+| withResources(f)
   try
     -
       instruction
-        | Reader r = new java.io.FileReader(f);
+        | r := new java.io.FileReader(f)
       instruction
-        | r.read();
+        | r.read()
     -
     -
 
 == Exceptions.log (line 55)
-| void log(Exception e)
+| log(e)
 
