@@ -44,10 +44,10 @@ Diagrams imported from `.asta` files keep their layout, sizes and colors.
   highlighting off), and export as SVG or PNG. They are edited as in Structorizer: insert
   elements before or after the selection, edit text and comment in a dialog, cut, copy, paste,
   drag, colour, disable and delete them, add and remove branches, undo and redo. Files are read
-  and written byte for byte as Structorizer 3.32-35 writes them. Methods of a Java, C# or Python
-  file become structograms without types, with assignments as `x := 42 + a`, conditions as
-  `a > 0?` and returns as `gib x`; what has no place in a structogram (`continue`, labels …) is
-  listed.
+  and written byte for byte as Structorizer 3.32-35 writes them. Methods of a Java, C#, Python
+  or C++ file become structograms without types, with assignments as `x := 42 + a`, conditions
+  as `a > 0?` and returns as `gib x`; what has no place in a structogram (`continue`, labels …)
+  is listed.
 
 ## Importing source code
 
@@ -174,7 +174,7 @@ keeps them as workflow artifacts.
 | `crates/umlcraft-reverse` | Source import (Java, C#, C++, Python): tree-sitter front-ends, a language-neutral IR, resolution and merging into the model |
 | `tools/jdk-types` | The Java tool that writes the table of JDK types used by the Java import |
 | `crates/umlcraft-nsd` | Structorizer's `.nsd` structograms: model, reading and writing, layout, drawing, SVG, editing |
-| `crates/umlcraft-nsd-code` | Methods of source files as structograms (Java, C#, Python; tree-sitter) |
+| `crates/umlcraft-nsd-code` | Methods of source files as structograms (Java, C#, Python, C++; tree-sitter) |
 | `tools/nsd-metrics` | The Java tool that writes the text metrics `umlcraft-nsd` lays structograms out with |
 | `crates/umlcraft-app` | GPUI application (`gpui-kit` 0.8) |
 
