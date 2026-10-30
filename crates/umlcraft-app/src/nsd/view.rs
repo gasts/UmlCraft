@@ -22,6 +22,9 @@ use crate::{ExportPng, ExportSvg, ResetZoom, ZoomIn, ZoomOut, ZoomToFit};
 
 const MIN_ZOOM: f32 = 0.25;
 const MAX_ZOOM: f32 = 4.0;
+/// The longest side of the image a diagram is rasterized to, within GPU texture limits; a
+/// larger diagram at a high zoom is scaled up from it.
+const MAX_RASTER: f32 = 8192.0;
 /// Space around the diagram at the start and when fitted.
 const MARGIN: f32 = 20.0;
 
@@ -95,13 +98,15 @@ impl NsdView {
         }
     }
 
-    /// The diagram as an image at `scale` pixels per diagram pixel.
-    fn raster(&mut self, scale: f32) -> Option<(Arc<RenderImage>, (u32, u32))> {
+    /// The diagram as an image at `scale` pixels per diagram pixel (less for a large diagram,
+    /// see [`MAX_RASTER`]), its size in pixels and the scale it has.
+    fn raster(&mut self, scale: f32) -> Option<(Arc<RenderImage>, (u32, u32), f32)> {
+        let scale = scale.min(MAX_RASTER / self.size.0.max(self.size.1));
         if self.raster.as_ref().is_none_or(|r| (r.scale - scale).abs() > 1e-4) {
             self.raster =
                 rasterize(&self.svg, scale).map(|(image, size)| Raster { scale, image, size });
         }
-        self.raster.as_ref().map(|r| (r.image.clone(), r.size))
+        self.raster.as_ref().map(|r| (r.image.clone(), r.size, r.scale))
     }
 
     fn set_zoom(&mut self, zoom: f32, anchor: Point<Pixels>, cx: &mut Context<Self>) {
@@ -310,13 +315,16 @@ impl Render for NsdView {
                                 let (pan, zoom, raster) = this.update(cx, |this, _| {
                                     (this.pan, this.zoom, this.raster(this.zoom * scale))
                                 });
-                                let Some((image, (w, h))) = raster else { return };
-                                let size = size(px(w as f32 / scale), px(h as f32 / scale));
+                                let Some((image, (w, h), raster_scale)) = raster else {
+                                    return;
+                                };
+                                // The image covers the diagram at the zoom, whatever its scale.
+                                let shown = zoom / raster_scale;
+                                let size = size(px(w as f32 * shown), px(h as f32 * shown));
                                 let image_bounds = Bounds::new(
                                     point(bounds.origin.x + pan.x, bounds.origin.y + pan.y),
                                     size,
                                 );
-                                let _ = zoom;
                                 window.with_content_mask(Some(ContentMask { bounds }), |window| {
                                     window
                                         .paint_image(
