@@ -3,7 +3,8 @@
 //! A `text` or `comment` attribute holds lines as quoted strings separated by commas,
 //! `"first","second"`, with quotes inside a line doubled. No lines is the empty value.
 //! In the file, Structorizer escapes `"` as `&#34;`, `<` as `&#60;`, `>` as `&#62;`, `&` as
-//! `&amp;` and line feeds as `&#10;`; everything else, tabs included, stays as it is.
+//! `&amp;` and line feeds as `&#10;`; everything else, tabs included, stays as it is. Control
+//! characters that XML does not allow, not even escaped, are written as U+FFFD.
 
 /// The lines of a list, or where it stops being one.
 pub fn decode_lines(value: &str) -> Result<Vec<String>, usize> {
@@ -50,7 +51,9 @@ pub fn encode_lines(lines: &[String]) -> String {
     quoted.join(",")
 }
 
-/// An attribute value as Structorizer writes it between double quotes.
+/// An attribute value as Structorizer writes it between double quotes. Characters XML 1.0
+/// does not allow (control characters but tab, line feed and carriage return; U+FFFE and
+/// U+FFFF) become U+FFFD, so that the file stays XML: strings in source code can hold them.
 pub fn escape_attr(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for c in value.chars() {
@@ -60,6 +63,8 @@ pub fn escape_attr(value: &str) -> String {
             '>' => out.push_str("&#62;"),
             '&' => out.push_str("&amp;"),
             '\n' => out.push_str("&#10;"),
+            '\t' | '\r' => out.push(c),
+            '\0'..='\u{1F}' | '\u{FFFE}' | '\u{FFFF}' => out.push('\u{FFFD}'),
             _ => out.push(c),
         }
     }
@@ -120,5 +125,10 @@ mod tests {
             escape_attr("\"a\" < b & c > d\nnext\t'x' ä"),
             "&#34;a&#34; &#60; b &amp; c &#62; d&#10;next\t'x' ä"
         );
+    }
+
+    #[test]
+    fn characters_xml_forbids_are_replaced() {
+        assert_eq!(escape_attr("a\u{2}b\0c\rd\u{FFFF}"), "a\u{FFFD}b\u{FFFD}c\rd\u{FFFD}");
     }
 }
