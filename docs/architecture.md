@@ -530,30 +530,31 @@ writes, and none of its code is used.
   Texts are written as structograms write them (`pseudo`): no types (the root is `name(a, b)`, a
   declaration without a value has no element), assignments as `x := value` (`total += a` as
   `total := total + a`, `i++` as `i := i + 1`), no `;`; expressions and conditions stay as in
-  the code, conditions without their outer parentheses. `f(x)` and `this.f(x)` are calls, other
-  statements instructions; an expression body (`=> a + b`) is a `return` or, where nothing is
-  returned, a statement. A for loop that counts one variable by a constant step is a counting
-  loop (`for i := 0 to n - 1`, `by 2`), `for (T x : c)` a traversal (`foreach x in c`);
-  Structorizer reads both with the attributes we write. Any other for loop becomes its
-  initialization and a while loop with the update at the end of its body; without a condition,
-  and `while (true)`, it is an endless loop. `switch` becomes a case element: labels sharing a
-  body are joined, the default goes last (`%` without one), a case that runs on gets the
-  following statements copied (Java only: C# forbids it, so a C# case never runs on), and a
-  switch expression's values (C#'s arms too, `_` as the default, `throw` as a jump) are assigned
-  or returned where the expression stood. Several catches become a case on the exception's type,
-  C#'s `when` filters in its labels. Comments go to the element of the next statement, or of the
-  one they end on. What has no element is kept as near as possible (`continue` and unreadable
-  code as red, disabled instructions, a `synchronized` or `lock` body in place with the lock as
-  a comment, a `using` resource assigned with `using` as a comment, `yield` and `goto` as
-  written; labels and local functions left out) and named in the `Report`. `tests/snapshots.rs`
-  holds every fixture method as a readable tree; `tests/structorizer_structure.rs` compares the
-  nesting with Structorizer's own import of the same files (with `UMLCRAFT_NSD_REFS`), the
-  deliberate differences listed in `tests/structorizer_deviations.txt`; the `nsd-import` example
-  runs a whole source tree. Structorizer has no C# import to compare with; besides the parity
-  test, the example ran over Newtonsoft.Json (951 files, 8438 methods), and Structorizer read
-  the diagrams back as written. In the app, `nsd/source.rs` holds the menu command (the
-  extension picks the language) and the dialog that picks methods; each opens unsaved, with the
-  report in a bar at the bottom.
+  the code, conditions without their outer parentheses and ending in `?` (`a > 0?`, also a
+  case's discriminator and a loop's condition); a returned value reads `gib x` (`return;` stays
+  `return`). `f(x)` and `this.f(x)` are calls, other statements instructions; an expression body
+  (`=> a + b`) is a `return` or, where nothing is returned, a statement. A for loop that counts
+  one variable by a constant step is a counting loop (`for i := 0 to n - 1`, `by 2`),
+  `for (T x : c)` a traversal (`foreach x in c`); Structorizer reads both with the attributes we
+  write. Any other for loop becomes its initialization and a while loop with the update at the
+  end of its body; without a condition, and `while (true)`, it is an endless loop. `switch`
+  becomes a case element: labels sharing a body are joined, the default goes last (`%` without
+  one), a case that runs on gets the following statements copied (Java only: C# forbids it, so a
+  C# case never runs on), and a switch expression's values (C#'s arms too, `_` as the default,
+  `throw` as a jump) are assigned or returned where the expression stood. Several catches become
+  a case on the exception's type, C#'s `when` filters in its labels. Comments go to the element
+  of the next statement, or of the one they end on. What has no element is kept as near as
+  possible (`continue` and unreadable code as red, disabled instructions, a `synchronized` or
+  `lock` body in place with the lock as a comment, a `using` resource assigned with `using` as a
+  comment, `yield` and `goto` as written; labels and local functions left out) and named in the
+  `Report`. `tests/snapshots.rs` holds every fixture method as a readable tree;
+  `tests/structorizer_structure.rs` compares the nesting with Structorizer's own import of the
+  same files (with `UMLCRAFT_NSD_REFS`), the deliberate differences listed in
+  `tests/structorizer_deviations.txt`; the `nsd-import` example runs a whole source tree.
+  Structorizer has no C# import to compare with; besides the parity test, the example ran over
+  Newtonsoft.Json (951 files, 8438 methods), and Structorizer read the diagrams back as written.
+  In the app, `nsd/source.rs` holds the menu command (the extension picks the language) and the
+  dialog that picks methods; each opens unsaved, with the report in a bar at the bottom.
 
 Every file Structorizer 3.32-35 wrote that we have reads and writes back byte for byte. The
 tests check our own diagrams, one feature each, as Structorizer saved them

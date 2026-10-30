@@ -1,10 +1,30 @@
-//! Code in the notation of structograms: no types, assignments as `x := value`, no `;`, and
-//! loops as `for i := a to b by s` and `foreach x in c`. Java and C# share the shapes of the
+//! Code in the notation of structograms: no types, assignments as `x := value`, no `;`,
+//! conditions as questions (`a > 0?`), values handed back as `gib x`, and loops as
+//! `for i := a to b by s` and `foreach x in c`. Java and C# share the shapes of the
 //! nodes used here (assignments, binary expressions, for loops).
 
 use tree_sitter::Node;
 
 use crate::text::{lines_at, node_text, one_line};
+
+/// A condition as a question: `a > 0` → `a > 0?`.
+pub fn question(mut text: Vec<String>) -> Vec<String> {
+    if let Some(last) = text.last_mut()
+        && !last.is_empty()
+    {
+        last.push('?');
+    }
+    text
+}
+
+/// A value handed back: `x` → `gib x`.
+pub fn give(mut value: Vec<String>) -> Vec<String> {
+    match value.first_mut() {
+        Some(first) => first.insert_str(0, "gib "),
+        None => value.push("return".to_owned()),
+    }
+    value
+}
 
 /// `name := value`, the value's further lines as they are.
 pub fn assign(name: &str, mut value: Vec<String>) -> Vec<String> {

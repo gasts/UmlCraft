@@ -1,7 +1,7 @@
 == Modern.arrow (line 2)
 | arrow(day)
   case
-    | day
+    | day?
     | 1
     | 2, 3
     | default
@@ -15,12 +15,12 @@
       instruction
         | name := "Other"
   jump
-    | return name
+    | gib name
 
 == Modern.expression (line 12)
 | expression(day)
   case
-    | day
+    | day?
     | 1
     | 2
     | default
@@ -36,7 +36,7 @@
       instruction
         | len := 0
   jump
-    | return len
+    | gib len
 
 == Modern.work (line 24)
 | work()

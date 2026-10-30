@@ -1,7 +1,7 @@
 == Switches.classic (line 2)
 | classic(day)
   case
-    | day
+    | day?
     | 1
     | 2, 3
     | default
@@ -15,14 +15,14 @@
       instruction
         | name := "Other"
   jump
-    | return name
+    | gib name
 
 == Switches.fallthrough (line 18)
 | fallthrough(a)
   instruction
     | r := 0
   case
-    | a
+    | a?
     | 1
     | 2
     | default
@@ -38,13 +38,13 @@
       instruction
         | r := -1
   jump
-    | return r
+    | gib r
 ! line 21: Fallthrough
 
 == Switches.defaultInMiddle (line 33)
 | defaultInMiddle(a)
   case
-    | a
+    | a?
     | 1
     | 2
     | default
@@ -58,12 +58,12 @@
       instruction
         | r := 0
   jump
-    | return r
+    | gib r
 
 == Switches.noDefault (line 49)
 | noDefault(a)
   case
-    | a
+    | a?
     | 1
     | 2
     | %

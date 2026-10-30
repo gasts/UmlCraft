@@ -4,8 +4,9 @@
 //!
 //! Texts are written as structograms write them: no types (the root is `name(a, b)`),
 //! assignments as `x := value` (`i++` as `i := i + 1`), no `;`, counting loops as
-//! `for i := 0 to n - 1` and `foreach x in c`; expressions and conditions stay as in the code
-//! (without their outer parentheses). Calls of the class's own methods (`f(x);`, `this.f(x);`)
+//! `for i := 0 to n - 1` and `foreach x in c`, conditions as questions (`a > 0?`), returned
+//! values as `gib x`; expressions and conditions stay as in the code otherwise (without their
+//! outer parentheses). Calls of the class's own methods (`f(x);`, `this.f(x);`)
 //! become call elements, other statements instructions. What has no place in a structogram
 //! (`continue`, labels, local classes …) is named in the [`Report`]; nothing is left out
 //! silently. Structorizer's own Java import was only compared by its results, never by its

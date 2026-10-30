@@ -1,18 +1,18 @@
 == Branches.simpleIf (line 3)
 | simpleIf(a)
   alternative
-    | a > 0
+    | a > 0?
     -
       instruction
         | a := 1
     -
   jump
-    | return a
+    | gib a
 
 == Branches.ifElse (line 12)
 | ifElse(a)
   alternative
-    | a > 0
+    | a > 0?
     -
       instruction
         | a := 1
@@ -20,63 +20,63 @@
       instruction
         | a := -1
   jump
-    | return a
+    | gib a
 
 == Branches.elseIfChain (line 25)
 | elseIfChain(a)
   alternative
-    | a < 0
+    | a < 0?
     -
       jump
-        | return "negative"
+        | gib "negative"
     -
       alternative
-        | a == 0
+        | a == 0?
         -
           jump
-            | return "zero"
+            | gib "zero"
         -
           alternative
-            | a < 10
+            | a < 10?
             -
               jump
-                | return "small"
+                | gib "small"
             -
               jump
-                | return "large"
+                | gib "large"
 
 == Branches.nested (line 45)
 | nested(a, b)
   alternative
-    | a > 0
+    | a > 0?
     -
       alternative
-        | b > 0
+        | b > 0?
         -
           jump
-            | return 1
+            | gib 1
         -
       jump
-        | return 2
+        | gib 2
     -
   jump
-    | return 3
+    | gib 3
 
 == Branches.logic (line 58)
 | logic(a, b)
   alternative
-    | a > 0 && b > 0 || a < -10
+    | a > 0 && b > 0 || a < -10?
     -
       jump
-        | return true
+        | gib true
     -
   jump
-    | return false
+    | gib false
 
 == Branches.ternary (line 67)
 | ternary(a)
   instruction
     | b := a > 0 ? a : -a
   jump
-    | return b
+    | gib b
 

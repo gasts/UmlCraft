@@ -63,7 +63,8 @@ pub fn statement(b: &mut Builder<CSharp>, node: Node, out: &mut Vec<Element>) {
             let switch = node.named_child(0).expect("checked above");
             out.extend(b.switch_expression(switch, Some(Sink::Return)));
         }
-        "return_statement" | "throw_statement" | "break_statement" => out.push(b.jump(node)),
+        "return_statement" => out.push(b.returned(node)),
+        "throw_statement" | "break_statement" => out.push(b.jump(node)),
         "continue_statement" => {
             b.note(node, NoteKind::Continue);
             out.push(b.stand_in(node));
@@ -164,9 +165,7 @@ impl Builder<'_, CSharp> {
             "switch_expression" if returns => self.switch_expression(value, Some(Sink::Return)),
             "throw_expression" => vec![self.jump(value)],
             _ if returns => {
-                let mut text = lines(value, self.src);
-                text[0].insert_str(0, "return ");
-                vec![self.element(ElementKind::Jump, &text)]
+                vec![self.element(ElementKind::Jump, &pseudo::give(lines(value, self.src)))]
             }
             _ => self.expression(value),
         }

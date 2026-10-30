@@ -9,7 +9,7 @@ use umlcraft_nsd::edit::new_element;
 use umlcraft_nsd::{Color, Diagram, Element, ElementKind, Sequence};
 
 use crate::pseudo;
-use crate::text::{comment, condition, lines, without_semicolon};
+use crate::text::{comment, condition, lines, lines_at, without_semicolon};
 use crate::{Note, NoteKind};
 
 /// Structorizer's colour for what its import could not express.
@@ -183,7 +183,7 @@ impl<'a, G: Grammar> Builder<'a, G> {
             .child_by_field_name("condition")
             .map(|c| condition(c, self.src))
             .unwrap_or_default();
-        let mut e = self.element(ElementKind::Alternative, &text);
+        let mut e = self.element(ElementKind::Alternative, &pseudo::question(text));
         if let Some(then) = node.child_by_field_name("consequence") {
             e.branches[0] = Sequence::new(self.block(then));
         }
@@ -198,13 +198,13 @@ impl<'a, G: Grammar> Builder<'a, G> {
         let cond = node.child_by_field_name("condition").map(|c| condition(c, self.src));
         let mut e = match cond {
             Some(text) if text == ["true"] => self.element(ElementKind::Forever, &[]),
-            text => self.element(ElementKind::While, &text.unwrap_or_default()),
+            text => self.element(ElementKind::While, &pseudo::question(text.unwrap_or_default())),
         };
         e.branches[0] = self.body(node);
         e
     }
 
-    /// `do … while (c)` as a repeat loop until `!(c)`.
+    /// `do … while (c)` as a repeat loop until `!(c)?`.
     pub fn do_statement(&mut self, node: Node) -> Element {
         let cond = node.child_by_field_name("condition").map(|c| condition(c, self.src));
         let mut text = cond.unwrap_or_default();
@@ -214,7 +214,7 @@ impl<'a, G: Grammar> Builder<'a, G> {
         if let Some(last) = text.last_mut() {
             last.push(')');
         }
-        let mut e = self.element(ElementKind::Repeat, &text);
+        let mut e = self.element(ElementKind::Repeat, &pseudo::question(text));
         e.branches[0] = self.body(node);
         e
     }
@@ -234,7 +234,7 @@ impl<'a, G: Grammar> Builder<'a, G> {
             out.extend(G::simple(self, init));
         }
         let mut e = match node.child_by_field_name("condition") {
-            Some(c) => self.element(ElementKind::While, &condition(c, self.src)),
+            Some(c) => self.element(ElementKind::While, &pseudo::question(condition(c, self.src))),
             None => self.element(ElementKind::Forever, &[]),
         };
         let mut body = node.child_by_field_name("body").map(|b| self.block(b)).unwrap_or_default();
@@ -279,19 +279,23 @@ impl<'a, G: Grammar> Builder<'a, G> {
     }
 
     /// A value of a switch expression (`yield v;`, `case 1 -> v;`) where it goes.
-    pub fn valued(&mut self, mut value: Vec<String>, node: Node) -> Element {
+    pub fn valued(&mut self, value: Vec<String>, node: Node) -> Element {
         match self.sinks.last().cloned() {
             Some(Sink::Assign(name)) => {
                 self.element(ElementKind::Instruction, &pseudo::assign(&name, value))
             }
-            Some(Sink::Return) => {
-                if let Some(first) = value.first_mut() {
-                    first.insert_str(0, "return ");
-                }
-                self.element(ElementKind::Jump, &value)
-            }
+            Some(Sink::Return) => self.element(ElementKind::Jump, &pseudo::give(value)),
             None => self.instruction(node),
         }
+    }
+
+    /// `return x;` as a jump `gib x`; `return;` stays `return` (the method is left).
+    pub fn returned(&self, node: Node) -> Element {
+        let mut cursor = node.walk();
+        let value = node.named_children(&mut cursor).find(|c| !G::COMMENTS.contains(&c.kind()));
+        let column = node.start_position().column;
+        let value = value.map(|v| lines_at(v, self.src, column)).unwrap_or_default();
+        self.element(ElementKind::Jump, &pseudo::give(value))
     }
 
     /// A switch statement or expression as a case element: one branch per case (labels of a
@@ -356,7 +360,7 @@ impl<'a, G: Grammar> Builder<'a, G> {
             let rule = merged[i].rule;
             return self.with_sink(sink, |b| b.case_body(&bodies[i], rule && valued));
         }
-        let mut text = vec![discriminator];
+        let mut text = pseudo::question(vec![discriminator]);
         text.extend(order.iter().map(|&i| merged[i].labels.join(", ")));
         match default {
             Some(i) => {
@@ -412,13 +416,13 @@ impl<'a, G: Grammar> Builder<'a, G> {
             }
             [only] => {
                 let name = if only.name.is_empty() { "exception" } else { &only.name };
-                let text = vec![format!("{name} instanceof"), only.label(), "%".into()];
+                let text = vec![format!("{name} instanceof?"), only.label(), "%".into()];
                 let mut case = self.element(ElementKind::Case, &text);
                 case.branches[0] = Sequence::new(self.catch_body(only));
                 (name.to_owned(), vec![case])
             }
             several => {
-                let mut text = vec!["exception instanceof".to_owned()];
+                let mut text = vec!["exception instanceof?".to_owned()];
                 text.extend(several.iter().map(Catch::label));
                 text.push("%".to_owned());
                 let mut case = self.element(ElementKind::Case, &text);

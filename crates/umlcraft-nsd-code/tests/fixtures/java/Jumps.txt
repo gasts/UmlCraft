@@ -1,7 +1,7 @@
 == Jumps.plainReturn (line 2)
 | plainReturn(a)
   alternative
-    | a > 0
+    | a > 0?
     -
       jump
         | return
@@ -17,13 +17,13 @@
     | foreach v in values
     -
       alternative
-        | v < 0
+        | v < 0?
         -
           instruction color=ff0000 disabled
             | continue;
         -
       alternative
-        | v > 100
+        | v > 100?
         -
           jump
             | break
@@ -31,7 +31,7 @@
       instruction
         | sum := sum + v
   jump
-    | return sum
+    | gib sum
 ! line 13: Continue
 
 == Jumps.labels (line 23)
@@ -45,7 +45,7 @@
         | for j := 0 to grid[i].length - 1
         -
           alternative
-            | grid[i][j] == 0
+            | grid[i][j] == 0?
             -
               instruction
                 | found := i
@@ -53,13 +53,13 @@
                 | break outer
             -
           alternative
-            | grid[i][j] < 0
+            | grid[i][j] < 0?
             -
               instruction color=ff0000 disabled
                 | continue outer;
             -
   jump
-    | return found
+    | gib found
 ! line 25: Label
 ! line 33: Continue
 

@@ -69,7 +69,8 @@ pub fn statement(b: &mut Builder<Java>, node: Node, out: &mut Vec<Element>) {
             let switch = node.named_child(0).expect("checked above");
             out.extend(b.switch(switch, Some(Sink::Return)));
         }
-        "return_statement" | "throw_statement" | "break_statement" => {
+        "return_statement" => out.push(b.returned(node)),
+        "throw_statement" | "break_statement" => {
             out.push(b.element(ElementKind::Jump, &without_semicolon(lines(node, src))));
         }
         "yield_statement" => {

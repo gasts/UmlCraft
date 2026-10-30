@@ -4,7 +4,7 @@
 # Adds two numbers.
 # </summary>
   jump
-    | return a + b
+    | gib a + b
 
 == Features.Log (line 18)
 | Log(message)
@@ -25,7 +25,7 @@
 | get_Count()
 # <summary>The number of items.</summary>
   jump
-    | return count
+    | gib count
 
 == Features.set_Count (line 33)
 | set_Count(value)
@@ -36,17 +36,17 @@
 == Features.get_Twice (line 38)
 | get_Twice()
   jump
-    | return count * 2
+    | gib count * 2
 
 == Features.get_Item (line 42)
 | get_Item(i)
   jump
-    | return i * 2
+    | gib i * 2
 
 == Features.op_Addition (line 45)
 | operator +(a, b)
   jump
-    | return a
+    | gib a
 
 == Features.~Features (line 50)
 | ~Features()
@@ -56,7 +56,7 @@
 == Features.Name (line 55)
 | Name(day)
   case
-    | day
+    | day?
     | 1
     | 2 or 3
     | default
@@ -70,12 +70,12 @@
       instruction
         | name := "Other"
   jump
-    | return name
+    | gib name
 
 == Features.Size (line 66)
 | Size(n)
   case
-    | n
+    | n?
     | < 0
     | 0
     | default
@@ -84,27 +84,27 @@
         | throw new ArgumentException("n")
     -
       jump
-        | return "zero"
+        | gib "zero"
     -
       jump
-        | return "many"
+        | gib "many"
 
 == Features.Patterns (line 73)
 | Patterns(o)
   case
-    | o
+    | o?
     | int n when n > 0
     | string s
     | default
     -
       jump
-        | return n
+        | gib n
     -
       jump
-        | return s.Length
+        | gib s.Length
     -
       jump
-        | return 0
+        | gib 0
 
 == Features.Assignments (line 86)
 | Assignments(s)
@@ -149,7 +149,7 @@
     | for i := 0 to n - 1
     -
       alternative
-        | i > 100
+        | i > 100?
         -
           jump
             | yield break
@@ -162,7 +162,7 @@
 == Features.Jumps (line 125)
 | Jumps(a)
   case
-    | a
+    | a?
     | 1
     | 2
     | %
@@ -176,7 +176,7 @@
         | count := 2
     -
   alternative
-    | count > 0
+    | count > 0?
     -
       instruction
         | count := count - 1
@@ -196,7 +196,7 @@
         | r.Read()
     -
       case
-        | exception instanceof
+        | exception instanceof?
         | IOException when e.Message != null
         | Exception
         | %
@@ -220,7 +220,7 @@
         | r.Read()
     -
       case
-        | exception instanceof
+        | exception instanceof?
         | IOException when count > 0
         | %
         -
@@ -234,7 +234,7 @@
   instruction
     | await Task.Delay(n)
   jump
-    | return Square(n)
+    | gib Square(n)
 ! line 174: LocalFunction
 
 == Features.Open (line 180)
@@ -242,13 +242,13 @@
   call
     | Log(path)
   jump
-    | return null
+    | gib null
 ! line 184: Conditional
 
 == Features.Pairs (line 191)
 | Pairs()
   jump
-    | return null
+    | gib null
 
 == Features.Trace (line 193)
 | Trace(path)
@@ -263,10 +263,10 @@
 == Features.Pair.Sum (line 213)
 | Sum()
   jump
-    | return A + B
+    | gib A + B
 
 == Features.IShape.Area (line 218)
 | Area()
   jump
-    | return 0
+    | gib 0
 

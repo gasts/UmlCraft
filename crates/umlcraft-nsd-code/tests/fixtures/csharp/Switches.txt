@@ -1,7 +1,7 @@
 == Switches.classic (line 3)
 | classic(day)
   case
-    | day
+    | day?
     | 1
     | 2, 3
     | default
@@ -15,12 +15,12 @@
       instruction
         | name := "Other"
   jump
-    | return name
+    | gib name
 
 == Switches.defaultInMiddle (line 22)
 | defaultInMiddle(a)
   case
-    | a
+    | a?
     | 1
     | 2
     | default
@@ -34,12 +34,12 @@
       instruction
         | r := 0
   jump
-    | return r
+    | gib r
 
 == Switches.noDefault (line 40)
 | noDefault(a)
   case
-    | a
+    | a?
     | 1
     | 2
     | %

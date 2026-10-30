@@ -4,10 +4,10 @@
     | e
     -
       jump
-        | return Integer.parseInt(s)
+        | gib Integer.parseInt(s)
     -
       jump
-        | return 0
+        | gib 0
     -
 
 == Exceptions.multiCatch (line 18)
@@ -19,7 +19,7 @@
         | r.read()
     -
       case
-        | exception instanceof
+        | exception instanceof?
         | IOException
         | RuntimeException
         | %

@@ -1,22 +1,22 @@
 == Edge.kind (line 4)
 | kind(day)
   case
-    | day
+    | day?
     | 6, 7
     | 1
     | default
     -
       jump
-        | return 0
+        | gib 0
     -
       alternative
-        | value > 0
+        | value > 0?
         -
           jump
-            | return 2
+            | gib 2
         -
       jump
-        | return 1
+        | gib 1
     -
       jump
         | throw new IllegalArgumentException("day")
@@ -35,14 +35,14 @@
 == Edge.comments (line 24)
 | comments()
   while
-    | value < 10
+    | value < 10?
     # only a comment at the start
     -
       instruction
         | value := value + 1
         # a comment at the end of a block
   alternative
-    | value > 0
+    | value > 0?
     -
     -
 
@@ -59,7 +59,7 @@
 == Edge.caseDefaultWithLabel (line 41)
 | caseDefaultWithLabel(a)
   case
-    | a
+    | a?
     | 1
     | default
     -
@@ -76,7 +76,7 @@
     |   .append("b")
     |   .append("c")
   jump
-    | return sb.toString()
+    | gib sb.toString()
 
 == Edge.reset (line 59)
 | reset()
@@ -86,12 +86,12 @@
 == Edge.compute (line 63)
 | compute(x)
   jump
-    | return x
+    | gib x
 
 == Edge.braced (line 68)
 | braced(a)
   case
-    | a
+    | a?
     | 1
     | 2
     | %
@@ -119,7 +119,7 @@
         | r.read()
     -
       case
-        | exception instanceof
+        | exception instanceof?
         | java.io.IOException, IllegalStateException
         | RuntimeException
         | %
@@ -139,7 +139,7 @@
 == Edge.Nested.Mode.on (line 106)
 | on()
   jump
-    | return this == ON
+    | gib this == ON
 
 == Edge.Nested.Nested (line 111)
 | Nested()

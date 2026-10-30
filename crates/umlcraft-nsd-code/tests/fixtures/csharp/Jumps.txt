@@ -1,7 +1,7 @@
 == Jumps.plainReturn (line 3)
 | plainReturn(a)
   alternative
-    | a > 0
+    | a > 0?
     -
       jump
         | return
@@ -17,13 +17,13 @@
     | foreach v in values
     -
       alternative
-        | v < 0
+        | v < 0?
         -
           instruction color=ff0000 disabled
             | continue;
         -
       alternative
-        | v > 100
+        | v > 100?
         -
           jump
             | break
@@ -31,7 +31,7 @@
       instruction
         | sum := sum + v
   jump
-    | return sum
+    | gib sum
 ! line 19: Continue
 
 == Jumps.fail (line 30)
