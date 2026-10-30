@@ -30,6 +30,7 @@ pub enum Target {
 }
 
 /// What the dialog hands back on OK.
+#[derive(Clone)]
 pub struct Edited {
     pub text: Vec<String>,
     pub comment: Vec<String>,
@@ -43,8 +44,19 @@ const ROOT_KINDS: [(RootKind, &str); 3] = [
     (RootKind::Includable, "nsd.root_includable"),
 ];
 
+/// What the open dialog would hand back on OK, or `None` while it holds what it started with.
+pub type Pending = Rc<dyn Fn(&App) -> Option<(Target, Edited)>>;
+
+/// A field's text as lines, without the line breaks it ends with.
+fn lines(value: &str) -> Vec<String> {
+    let v = value.replace("\r\n", "\n");
+    v.trim_end_matches('\n').split('\n').map(str::to_owned).collect()
+}
+
 /// Opens the dialog for `target` (an element of `element_kind`, or the diagram for `None`)
 /// with the values it starts from. `focus` is the structogram's, which gets the focus back.
+/// Gives what the dialog holds, for closing and quitting while it is open; `None` when
+/// another dialog is open already.
 pub fn open(
     view: WeakEntity<NsdView>,
     focus: &FocusHandle,
@@ -53,9 +65,9 @@ pub fn open(
     start: Edited,
     window: &mut Window,
     cx: &mut App,
-) {
+) -> Option<Pending> {
     if window.has_active_dialog(cx) {
-        return;
+        return None;
     }
     let has_text = element_kind != Some(ElementKind::Forever);
     let text_value = start.text.join("\n");
@@ -73,6 +85,30 @@ pub fn open(
     let (first_text, first_comment) = (text.clone(), comment.clone());
     let disabled = Rc::new(Cell::new(start.disabled));
     let kind = Rc::new(Cell::new(start.kind));
+    let collect: Rc<dyn Fn(&App) -> Edited> = {
+        let (text, comment, disabled, kind) =
+            (text.clone(), comment.clone(), disabled.clone(), kind.clone());
+        Rc::new(move |cx| Edited {
+            text: lines(&text.read(cx).value()),
+            comment: lines(&comment.read(cx).value()),
+            disabled: disabled.get(),
+            kind: kind.get(),
+        })
+    };
+    let pending: Pending = {
+        let (collect, target) = (collect.clone(), target.clone());
+        // Compared as the fields hold them, so that an untouched dialog counts as unchanged.
+        let (text, comment) = (lines(&start.text.join("\n")), lines(&start.comment.join("\n")));
+        let (was_disabled, was_kind) = (start.disabled, start.kind);
+        Rc::new(move |cx| {
+            let now = collect(cx);
+            let changed = now.text != text
+                || now.comment != comment
+                || now.disabled != was_disabled
+                || now.kind != was_kind;
+            changed.then(|| (target.clone(), now))
+        })
+    };
 
     let title = match (&target, element_kind) {
         (Target::Root, _) => t!("nsd.edit_diagram").to_string(),
@@ -91,22 +127,9 @@ pub fn open(
     window.open_dialog(cx, move |dialog, _, cx| {
         let muted = cx.theme().muted_foreground;
         let ok = {
-            let (view, target, text, comment) =
-                (view.clone(), target.clone(), text.clone(), comment.clone());
-            let (disabled, kind) = (disabled.clone(), kind.clone());
+            let (view, target, collect) = (view.clone(), target.clone(), collect.clone());
             move |window: &mut Window, cx: &mut App| {
-                let lines = |s: &Entity<TextareaState>, cx: &App| -> Vec<String> {
-                    let v = s.read(cx).value().to_string();
-                    let v = v.replace("\r\n", "\n");
-                    let v = v.trim_end_matches('\n');
-                    v.split('\n').map(str::to_owned).collect()
-                };
-                let edited = Edited {
-                    text: lines(&text, cx),
-                    comment: lines(&comment, cx),
-                    disabled: disabled.get(),
-                    kind: kind.get(),
-                };
+                let edited = collect(cx);
                 let target = target.clone();
                 view.update(cx, |v, cx| v.apply_dialog(target, edited, window, cx)).ok();
                 window.close_dialog(cx);
@@ -189,4 +212,5 @@ pub fn open(
     } else {
         first_comment.update(cx, |s, cx| s.focus(window, cx));
     }
+    Some(pending)
 }

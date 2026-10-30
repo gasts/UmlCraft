@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu};
-use gpui_kit::component::{ActiveTheme, Disableable, Sizable, Theme, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme, Disableable, Sizable, Theme, WindowExt, h_flex, v_flex};
 use gpui_kit::*;
 use resvg::{tiny_skia, usvg};
 use rust_i18n::t;
@@ -126,6 +126,8 @@ pub struct NsdView {
     drag: Option<Drag>,
     /// Unsaved changes were discarded on closing or quitting: don't ask again.
     discarded: bool,
+    /// What the open element dialog holds, taken over on closing and quitting.
+    dialog: Option<dialog::Pending>,
     focus: FocusHandle,
     _theme: Subscription,
 }
@@ -162,6 +164,7 @@ impl NsdView {
             area: Rc::default(),
             drag: None,
             discarded: false,
+            dialog: None,
             focus,
             // The area around the diagram follows the theme the main window switches.
             _theme: cx.observe_global::<Theme>(|_, cx| cx.notify()),
@@ -506,7 +509,12 @@ impl NsdView {
             kind: self.editor.diagram().kind(),
         };
         let target = Target::New(slot, kind);
-        dialog::open(cx.entity().downgrade(), &self.focus, target, Some(kind), start, window, cx);
+        let view = cx.entity().downgrade();
+        if let Some(pending) =
+            dialog::open(view, &self.focus, target, Some(kind), start, window, cx)
+        {
+            self.dialog = Some(pending);
+        }
     }
 
     fn edit_element(&mut self, _: &EditElement, window: &mut Window, cx: &mut Context<Self>) {
@@ -529,7 +537,10 @@ impl NsdView {
                 (Target::Element(p), Some(e.kind), start)
             }
         };
-        dialog::open(cx.entity().downgrade(), &self.focus, target, kind, start, window, cx);
+        let view = cx.entity().downgrade();
+        if let Some(pending) = dialog::open(view, &self.focus, target, kind, start, window, cx) {
+            self.dialog = Some(pending);
+        }
     }
 
     /// Takes what the element dialog hands back.
@@ -540,6 +551,7 @@ impl NsdView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.dialog = None;
         let Edited { text, comment, disabled, kind } = edited;
         match target {
             Target::New(slot, element_kind) => self.change(cx, |d| {
@@ -954,7 +966,22 @@ impl NsdView {
         .detach();
     }
 
+    /// Takes over what the open element dialog holds, as OK would, so that closing and
+    /// quitting ask about it instead of losing it. An untouched dialog just closes.
+    pub fn flush_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(pending) = self.dialog.take() else { return };
+        if !window.has_active_dialog(cx) {
+            return;
+        }
+        let edited = pending(cx);
+        window.close_dialog(cx);
+        if let Some((target, edited)) = edited {
+            self.apply_dialog(target, edited, window, cx);
+        }
+    }
+
     fn should_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        self.flush_dialog(window, cx);
         if !self.needs_saving() {
             return true;
         }
