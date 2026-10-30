@@ -610,7 +610,7 @@ nsd:
   source_hint: Tick methods and open them, or double-click one. Each opens in a window of its own, not saved yet.
   source_open: Open
   source_failed: The file could not be read.
-  source_unknown: "Structograms can be made from Java (.java) and C# (.cs) files."
+  source_unknown: "Structograms can be made from Java (.java), C# (.cs) and Python (.py) files."
   source_no_methods: The file contains no methods with a body.
   source_too_many: "Only the first %{max} methods were opened."
   notes: "%{count} places are not shown as written"
@@ -627,3 +627,7 @@ nsd:
   note_goto: goto has no element; kept as a jump with its text
   note_local_function: a function declared in the method is left out
   note_conditional: "#if: only the first branch is read, the others are left out"
+  note_with: with – the context is assigned, the body stands in its place
+  note_loop_else: the else of the loop follows it; it also runs there after a break
+  note_try_else: the else of try ends the try block
+  note_nested_function: a function defined in the function is left out

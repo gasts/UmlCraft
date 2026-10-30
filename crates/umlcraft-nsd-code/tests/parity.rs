@@ -1,6 +1,7 @@
-//! The same methods written in Java and in C# (`fixtures/java/X.java`, `fixtures/csharp/X.cs`)
-//! become the same structograms: one mapping for both languages. Differences on purpose are
-//! listed in `parity_deviations.txt`.
+//! The same methods written in Java and in another language (`fixtures/java/X.java`,
+//! `fixtures/csharp/X.cs`, `fixtures/python/X.py`) become the same structograms: one mapping
+//! for every language. Differences on purpose are listed in `parity_deviations.txt` as
+//! `folder/Class.method`.
 
 mod common;
 
@@ -35,30 +36,35 @@ fn deviations() -> BTreeMap<String, String> {
 }
 
 #[test]
-fn java_and_csharp_give_the_same_structograms() {
+fn every_language_gives_the_same_structograms_as_java() {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let listed = deviations();
-    let (mut compared, mut differing, mut unexpected) = (0, Vec::new(), Vec::new());
-    for entry in std::fs::read_dir(fixtures.join("csharp")).unwrap() {
-        let cs = entry.unwrap().path();
-        let java = fixtures.join("java").join(cs.with_extension("java").file_name().unwrap());
-        if cs.extension().is_none_or(|e| e != "cs") || !java.exists() {
-            continue;
-        }
-        let (java, cs) = (trees(&java), trees(&cs));
-        for (method, expected) in &java {
-            let Some(got) = cs.get(method) else { continue };
-            compared += 1;
-            if got != expected {
-                differing.push(method.clone());
-                if !listed.contains_key(method) {
-                    unexpected.push(format!("{method}\n--- Java\n{expected}--- C#\n{got}"));
+    let (mut differing, mut unexpected) = (Vec::new(), Vec::new());
+    for (folder, extension) in [("csharp", "cs"), ("python", "py")] {
+        let mut compared = 0;
+        for entry in std::fs::read_dir(fixtures.join(folder)).unwrap() {
+            let other = entry.unwrap().path();
+            let java =
+                fixtures.join("java").join(other.with_extension("java").file_name().unwrap());
+            if other.extension().is_none_or(|e| e != extension) || !java.exists() {
+                continue;
+            }
+            let (java, other) = (trees(&java), trees(&other));
+            for (method, expected) in &java {
+                let Some(got) = other.get(method) else { continue };
+                compared += 1;
+                let key = format!("{folder}/{method}");
+                if got != expected {
+                    if !listed.contains_key(&key) {
+                        unexpected.push(format!("{key}\n--- Java\n{expected}--- {folder}\n{got}"));
+                    }
+                    differing.push(key);
                 }
             }
         }
+        assert!(compared >= 15, "{folder}: only {compared} methods compared");
     }
-    assert!(compared >= 20, "only {compared} methods compared");
-    assert!(unexpected.is_empty(), "C# differs from Java:\n{}", unexpected.join("\n"));
+    assert!(unexpected.is_empty(), "differs from Java:\n{}", unexpected.join("\n"));
     let stale: Vec<&String> = listed.keys().filter(|k| !differing.contains(k)).collect();
     assert!(stale.is_empty(), "listed deviations that no longer differ: {stale:?}");
 }

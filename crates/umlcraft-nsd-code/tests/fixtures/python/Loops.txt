@@ -1,0 +1,54 @@
+== Loops.counting (line 2)
+| counting(n)
+  instruction
+    | sum := 0
+  for style=COUNTER
+    | for i := 0 to n - 1
+    -
+      instruction
+        | sum := sum + i
+  for style=COUNTER
+    | for i := 0 to n by 2
+    -
+      instruction
+        | sum := sum + i
+  for style=COUNTER
+    | for i := n to 1 by -1
+    -
+      instruction
+        | sum := sum - i
+  jump
+    | gib sum
+
+== Loops.enhanced (line 12)
+| enhanced(values)
+  instruction
+    | sum := 0
+  for style=TRAVERSAL
+    | foreach v in values
+    -
+      instruction
+        | sum := sum + v
+  jump
+    | gib sum
+
+== Loops.whileLoop (line 18)
+| whileLoop(n)
+  while
+    | n > 10?
+    -
+      instruction
+        | n := n / 2
+  jump
+    | gib n
+
+== Loops.endless (line 23)
+| endless()
+  forever
+    -
+      call
+        | work()
+
+== Loops.work (line 27)
+| work()
+

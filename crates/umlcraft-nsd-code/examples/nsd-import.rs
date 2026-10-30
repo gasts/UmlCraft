@@ -1,6 +1,6 @@
-//! Smoke test over real code: every method of every `.java` and `.cs` file under the given
-//! paths as a structogram, laid out, drawn, written and read back. Prints counts, time and what
-//! the reports name; with `-o DIR` writes the diagrams there (`Class.method-LINE.nsd`).
+//! Smoke test over real code: every method of every `.java`, `.cs` and `.py` file under the
+//! given paths as a structogram, laid out, drawn, written and read back. Prints counts, time
+//! and what the reports name; with `-o DIR` writes the diagrams there (`Class.method-LINE.nsd`).
 //!
 //! `cargo run --release -p umlcraft-nsd-code --example nsd-import -- [-o DIR] PATH...`
 
@@ -24,8 +24,8 @@ fn main() {
         None => None,
     };
     let paths: Vec<PathBuf> = args.into_iter().map(PathBuf::from).collect();
-    let files =
-        umlcraft_reverse::source::collect_sources(&paths, &["java", "cs"]).expect("sources");
+    let files = umlcraft_reverse::source::collect_sources(&paths, &["java", "cs", "py", "pyw"])
+        .expect("sources");
     let made = Made { author: "smoke", date: "2026-10-29", origin: "UmlCraft smoke test" };
     let start = Instant::now();
     let (mut methods, mut elements, mut largest) = (0usize, 0usize, (0usize, String::new()));

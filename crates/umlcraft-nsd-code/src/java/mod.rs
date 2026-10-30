@@ -28,6 +28,8 @@ impl Grammar for Java {
         "yield_statement",
     ];
     const RUNS_ON: bool = true;
+    const BREAK_ENDS_CASE: bool = true;
+    const TRUE: &'static str = "true";
 
     fn statement(b: &mut Builder<'_, Self>, node: Node, out: &mut Vec<Element>) {
         build::statement(b, node, out);

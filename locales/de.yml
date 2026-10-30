@@ -610,7 +610,7 @@ nsd:
   source_hint: Methoden ankreuzen und öffnen, oder eine doppelt anklicken. Jede öffnet sich in einem eigenen Fenster, noch nicht gespeichert.
   source_open: Öffnen
   source_failed: Die Datei konnte nicht gelesen werden.
-  source_unknown: "Struktogramme lassen sich aus Java- (.java) und C#-Dateien (.cs) erstellen."
+  source_unknown: "Struktogramme lassen sich aus Java- (.java), C#- (.cs) und Python-Dateien (.py) erstellen."
   source_no_methods: Die Datei enthält keine Methoden mit Rumpf.
   source_too_many: "Nur die ersten %{max} Methoden wurden geöffnet."
   notes: "%{count} Stellen sind nicht wie im Code dargestellt"
@@ -627,3 +627,7 @@ nsd:
   note_goto: goto hat kein Element; als Sprung mit seinem Text behalten
   note_local_function: eine in der Methode deklarierte Funktion ist weggelassen
   note_conditional: "#if: nur der erste Zweig ist gelesen, die anderen sind weggelassen"
+  note_with: with – der Kontext wird zugewiesen, der Rumpf steht an seiner Stelle
+  note_loop_else: das else der Schleife folgt ihr; dort läuft es auch nach einem break
+  note_try_else: das else von try steht am Ende des try-Blocks
+  note_nested_function: eine in der Funktion definierte Funktion ist weggelassen

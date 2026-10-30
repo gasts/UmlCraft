@@ -6765,6 +6765,7 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-c-sharp",
  "tree-sitter-java",
+ "tree-sitter-python",
  "umlcraft-nsd",
  "umlcraft-reverse",
 ]

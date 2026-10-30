@@ -1,0 +1,84 @@
+== Exceptions.tryCatch (line 2)
+| tryCatch(s)
+  try
+    | e
+    -
+      jump
+        | gib Integer.parseInt(s)
+    -
+      jump
+        | gib 0
+    -
+
+== Exceptions.multiCatch (line 8)
+| multiCatch(r)
+  try
+    | exception
+    -
+      instruction
+        | r.read()
+    -
+      case
+        | exception instanceof?
+        | IOException
+        | RuntimeException
+        | %
+        -
+          instruction
+            | e := exception
+          call
+            | log(e)
+        -
+          instruction
+            | e := exception
+          call
+            | log(e)
+        -
+    -
+
+== Exceptions.unionCatch (line 16)
+| unionCatch(r)
+  try
+    | e
+    -
+      instruction
+        | r.read()
+    -
+      case
+        | e instanceof?
+        | IOException, RuntimeException
+        | %
+        -
+          call
+            | log(e)
+        -
+    -
+
+== Exceptions.tryFinally (line 22)
+| tryFinally(r)
+  try
+    | e
+    -
+      instruction
+        | r.read()
+    -
+      call
+        | log(e)
+    -
+      instruction
+        | r.close()
+
+== Exceptions.onlyFinally (line 30)
+| onlyFinally(r)
+  try
+    -
+      instruction
+        | r.read()
+    -
+    -
+      instruction
+        | r.close()
+
+== Exceptions.log (line 36)
+| log(e)
+

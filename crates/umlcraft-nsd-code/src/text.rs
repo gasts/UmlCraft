@@ -48,10 +48,10 @@ pub fn condition(node: Node, src: &str) -> Vec<String> {
     lines(node, src)
 }
 
-/// The text of a comment without its delimiters.
+/// The text of a comment without its delimiters (`//`, Python's `#`, `/* */`).
 pub fn comment(node: Node, src: &str) -> Vec<String> {
     let text = node_text(node, src);
-    if let Some(line) = text.strip_prefix("//") {
+    if let Some(line) = text.strip_prefix("//").or(text.strip_prefix('#')) {
         return vec![line.trim().to_owned()];
     }
     block_comment(text)

@@ -13,6 +13,7 @@ umlcraft-reverse.workspace = true
 tree-sitter.workspace = true
 tree-sitter-java.workspace = true
 tree-sitter-c-sharp.workspace = true
+tree-sitter-python.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

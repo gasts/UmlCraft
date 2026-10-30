@@ -28,6 +28,11 @@ pub trait Grammar: Sized {
     /// Whether a case that does not end runs on into the next (Java); C# forbids it, so a
     /// case there never runs on, whatever its last statement.
     const RUNS_ON: bool;
+    /// Whether a `break` at the end of a case only ends the case (Java, C#); in Python it
+    /// leaves the loop around the `match`.
+    const BREAK_ENDS_CASE: bool;
+    /// The literal that makes `while (…)` endless: `true`, Python's `True`.
+    const TRUE: &'static str;
 
     /// Appends the elements of one statement.
     fn statement(b: &mut Builder<'_, Self>, node: Node, out: &mut Vec<Element>);
@@ -87,12 +92,22 @@ pub struct Builder<'a, G> {
     pub notes: Vec<Note>,
     /// The switch expressions being built, innermost last (for `yield`).
     sinks: Vec<Sink>,
+    /// The names of the functions the file defines, where a call without an object only is
+    /// a call of the program's own when it names one of them (Python).
+    pub own_functions: std::collections::BTreeSet<String>,
     grammar: PhantomData<G>,
 }
 
 impl<'a, G: Grammar> Builder<'a, G> {
     pub fn new(src: &'a str, header: Diagram) -> Self {
-        Builder { src, header, notes: Vec::new(), sinks: Vec::new(), grammar: PhantomData }
+        Builder {
+            src,
+            header,
+            notes: Vec::new(),
+            sinks: Vec::new(),
+            own_functions: Default::default(),
+            grammar: PhantomData,
+        }
     }
 
     pub fn note(&mut self, node: Node, kind: NoteKind) {
@@ -201,7 +216,7 @@ impl<'a, G: Grammar> Builder<'a, G> {
     pub fn while_statement(&mut self, node: Node) -> Element {
         let cond = node.child_by_field_name("condition").map(|c| condition(c, self.src));
         let mut e = match cond {
-            Some(text) if text == ["true"] => self.element(ElementKind::Forever, &[]),
+            Some(text) if text == [G::TRUE] => self.element(ElementKind::Forever, &[]),
             text => self.element(ElementKind::While, &pseudo::question(text.unwrap_or_default())),
         };
         e.branches[0] = self.body(node);
@@ -348,9 +363,10 @@ impl<'a, G: Grammar> Builder<'a, G> {
                 self.note(g.node, NoteKind::Fallthrough);
             }
             // The last unlabelled `break` only ends the case.
-            if body
-                .last()
-                .is_some_and(|s| s.kind() == "break_statement" && s.named_child(0).is_none())
+            if G::BREAK_ENDS_CASE
+                && body
+                    .last()
+                    .is_some_and(|s| s.kind() == "break_statement" && s.named_child(0).is_none())
             {
                 body.pop();
             }
