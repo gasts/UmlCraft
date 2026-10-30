@@ -99,12 +99,18 @@ pub struct NsdView {
     layout: Layout,
     /// The diagram as SVG, drawn again after each change.
     svg: String,
+    /// The SVG parsed, again only after a change.
+    tree: Option<Arc<usvg::Tree>>,
+    /// Counts the changes, so that an image rasterized meanwhile in the background is dropped.
+    generation: u64,
     /// The diagram's size at 100 %.
     size: (f32, f32),
     zoom: f32,
     /// Where the diagram's top left corner is in the drawing area.
     pan: Point<Pixels>,
     raster: Option<Raster>,
+    /// An image for another zoom is being rasterized in the background.
+    rasterizing: bool,
     /// The drawing area, as painted last.
     area: Rc<Cell<Bounds<Pixels>>>,
     drag: Option<Drag>,
@@ -136,10 +142,13 @@ impl NsdView {
             layout: Layout::of(editor.diagram(), metrics),
             editor,
             svg: String::new(),
+            tree: None,
+            generation: 0,
             size: (0.0, 0.0),
             zoom: 1.0,
             pan: point(px(MARGIN), px(MARGIN)),
             raster: None,
+            rasterizing: false,
             area: Rc::default(),
             drag: None,
             discarded: false,
@@ -167,6 +176,9 @@ impl NsdView {
         let metrics = umlcraft_nsd::Metrics::for_platform();
         self.layout = Layout::of(self.editor.diagram(), metrics);
         self.svg = umlcraft_nsd::svg::render_layout(self.editor.diagram(), &self.layout, metrics);
+        self.tree =
+            OPTIONS.with(|options| usvg::Tree::from_str(&self.svg, options)).ok().map(Arc::new);
+        self.generation += 1;
         let (w, h) = self.layout.size;
         self.size = ((w + 1) as f32, (h + 1) as f32);
         if let Some(raster) = &mut self.raster {
@@ -196,26 +208,67 @@ impl NsdView {
 
     /// The diagram as an image at `scale` pixels per diagram pixel (less for a large diagram,
     /// see [`MAX_RASTER`]), its size in pixels and the scale it has.
+    ///
+    /// After a change, and for the first paint, the image is made right away, so that it
+    /// matches the selection painted over it. Another zoom only scales the image there is
+    /// until one for the new zoom is rasterized in the background, one at a time: a large
+    /// diagram takes long enough to make zooming stutter.
     fn raster(
         &mut self,
         scale: f32,
         window: &mut Window,
+        cx: &mut Context<Self>,
     ) -> Option<(Arc<RenderImage>, (u32, u32), f32)> {
         let scale = scale.min(MAX_RASTER / self.size.0.max(self.size.1));
-        if self.raster.as_ref().is_none_or(|r| r.outdated || (r.scale - scale).abs() > 1e-4) {
-            // GPUI keeps every image it painted in the window's atlas until it is dropped
-            // there; without this each zoom step and each change would leave its image behind.
-            if let Some(old) = self.raster.take() {
-                window.drop_image(old.image).ok();
+        // Whether the image there is shows the diagram as it is, and at this scale.
+        match self.raster.as_ref().filter(|r| !r.outdated).map(|r| (r.scale - scale).abs() <= 1e-4)
+        {
+            Some(true) => {}
+            Some(false) => self.rasterize_later(scale, window, cx),
+            None => {
+                let image = self.tree.as_deref().and_then(|tree| rasterize(tree, scale));
+                self.replace_raster(image, scale, window);
             }
-            self.raster = rasterize(&self.svg, scale).map(|(image, size)| Raster {
-                scale,
-                image,
-                size,
-                outdated: false,
-            });
         }
         self.raster.as_ref().map(|r| (r.image.clone(), r.size, r.scale))
+    }
+
+    fn rasterize_later(&mut self, scale: f32, window: &mut Window, cx: &mut Context<Self>) {
+        if self.rasterizing {
+            return;
+        }
+        let Some(tree) = self.tree.clone() else { return };
+        self.rasterizing = true;
+        let generation = self.generation;
+        cx.spawn_in(window, async move |this, cx| {
+            let image =
+                cx.background_executor().spawn(async move { rasterize(&tree, scale) }).await;
+            this.update_in(cx, |this, window, cx| {
+                this.rasterizing = false;
+                // A change meanwhile has made an image of its own.
+                if this.generation == generation {
+                    this.replace_raster(image, scale, window);
+                }
+                // Paints again, which asks for the zoom of now if it has moved on.
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn replace_raster(
+        &mut self,
+        image: Option<(Arc<RenderImage>, (u32, u32))>,
+        scale: f32,
+        window: &mut Window,
+    ) {
+        // GPUI keeps every image it painted in the window's atlas until it is dropped there;
+        // without this each zoom step and each change would leave its image behind.
+        if let Some(old) = self.raster.take() {
+            window.drop_image(old.image).ok();
+        }
+        self.raster = image.map(|(image, size)| Raster { scale, image, size, outdated: false });
     }
 
     fn set_zoom(&mut self, zoom: f32, anchor: Point<Pixels>, cx: &mut Context<Self>) {
@@ -1143,16 +1196,21 @@ fn rect(r: umlcraft_nsd::layout::Rect) -> [i32; 4] {
     [r.x, r.y, r.w, r.h]
 }
 
-/// The SVG rasterized at `scale`, as GPUI takes images (BGRA, not premultiplied).
-fn rasterize(svg: &str, scale: f32) -> Option<(Arc<RenderImage>, (u32, u32))> {
-    let tree = OPTIONS.with(|options| usvg::Tree::from_str(svg, options)).ok()?;
+/// The parsed SVG rasterized at `scale`, as GPUI takes images (BGRA, not premultiplied).
+fn rasterize(tree: &usvg::Tree, scale: f32) -> Option<(Arc<RenderImage>, (u32, u32))> {
     let size = tree.size().to_int_size().scale_by(scale)?;
     let mut pixmap = tiny_skia::Pixmap::new(size.width(), size.height())?;
-    resvg::render(&tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
+    resvg::render(tree, tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut());
     let (w, h) = (pixmap.width(), pixmap.height());
     let mut buffer = image::ImageBuffer::from_raw(w, h, pixmap.take())?;
     for pixel in buffer.as_chunks_mut::<4>().0 {
-        swap_rgba_pa_to_bgra(pixel);
+        // The sheet is opaque nearly everywhere, and there premultiplied is straight already:
+        // swapping red and blue is enough and several times faster than dividing.
+        if pixel[3] == 255 {
+            pixel.swap(0, 2);
+        } else {
+            swap_rgba_pa_to_bgra(pixel);
+        }
     }
     Some((Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])), (w, h)))
 }
@@ -1225,8 +1283,8 @@ impl Render for NsdView {
                             move |bounds, _, window, cx| {
                                 let scale = window.scale_factor();
                                 let (pan, zoom, raster, (boxes, drop)) =
-                                    this.update(cx, |this, _| {
-                                        let raster = this.raster(this.zoom * scale, window);
+                                    this.update(cx, |this, cx| {
+                                        let raster = this.raster(this.zoom * scale, window, cx);
                                         (this.pan, this.zoom, raster, this.overlay())
                                     });
                                 let Some((image, (w, h), raster_scale)) = raster else {
