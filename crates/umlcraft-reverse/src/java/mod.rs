@@ -16,14 +16,14 @@
 mod jdk;
 pub(crate) mod rules;
 
-use tree_sitter::{Node, Parser};
+use tree_sitter::Node;
 use umlcraft_model::{ParameterDirection, Visibility};
 
 use crate::ir::{
     Field, Import, Item, Literal, Member, Operation, Param, Relation, Scope, Supertype,
     TemplateParam, TypeDecl, TypeExpr, TypeKind, TypeName,
 };
-use crate::lang::{Frontend, Skip, Skipped, SyntaxError, first_error};
+use crate::lang::{Frontend, Skip, Skipped};
 
 /// Tag holding a declaration's annotations as written, one per line.
 pub const ANNOTATIONS_TAG: &str = "java.annotations";
@@ -35,23 +35,9 @@ const TAGGED_MODIFIERS: [&str; 5] = ["strictfp", "transient", "volatile", "nativ
 pub struct Java;
 
 impl Frontend for Java {
-    fn parse(
-        &self,
-        text: &str,
-        _module: &[String],
-        skipped: &mut Skipped,
-    ) -> Result<Scope, SyntaxError> {
-        let mut parser = Parser::new();
-        parser
-            .set_language(&tree_sitter_java::LANGUAGE.into())
-            .expect("the Java grammar matches the tree-sitter version");
-        let tree = parser.parse(text, None).expect("parsing without a timeout always finishes");
-        let root = tree.root_node();
-        if let Some(error) = first_error(root, text) {
-            return Err(error);
-        }
+    fn lower(&self, root: Node, text: &str, _module: &[String], skipped: &mut Skipped) -> Scope {
         let mut reader = Reader { src: text, skipped };
-        Ok(reader.program(root))
+        reader.program(root)
     }
 }
 
@@ -581,7 +567,12 @@ mod tests {
 
     fn parse(text: &str) -> (String, Skipped) {
         let mut skipped = Skipped::new();
-        let scope = Java.parse(text, &[], &mut skipped).unwrap();
+        let scope = crate::lower_scope(
+            &crate::parse_tree(crate::SourceLanguage::Java, text),
+            &[],
+            &mut skipped,
+        )
+        .unwrap();
         let unit = crate::ir::Unit { path: Default::default(), scope };
         (unit.dump(), skipped)
     }
@@ -602,7 +593,12 @@ mod tests {
     #[test]
     fn reports_the_first_syntax_error() {
         let mut skipped = Skipped::new();
-        let error = Java.parse("class A {\n  int x = ;\n}\n", &[], &mut skipped).unwrap_err();
+        let error = crate::lower_scope(
+            &crate::parse_tree(crate::SourceLanguage::Java, "class A {\n  int x = ;\n}\n"),
+            &[],
+            &mut skipped,
+        )
+        .unwrap_err();
         assert_eq!((error.line, error.column, error.token.as_str()), (2, 9, "="));
     }
 }

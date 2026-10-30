@@ -27,14 +27,14 @@
 
 pub(crate) mod rules;
 
-use tree_sitter::{Node, Parser};
+use tree_sitter::Node;
 use umlcraft_model::{ParameterDirection, Visibility};
 
 use crate::ir::{
     Field, Import, Item, Literal, Member, Operation, Param, Relation, Scope, Supertype,
     TemplateParam, TypeDecl, TypeExpr, TypeKind, TypeName,
 };
-use crate::lang::{Frontend, Skip, Skipped, SyntaxError, first_error};
+use crate::lang::{Frontend, Skip, Skipped};
 
 const DECORATORS_TAG: &str = "umlcraft.python.decorators";
 const ASYNC_TAG: &str = "umlcraft.python.async";
@@ -45,17 +45,7 @@ const ENUM_BASES: &[&str] = &["Enum", "IntEnum", "StrEnum", "Flag", "IntFlag"];
 pub struct Python;
 
 impl Frontend for Python {
-    fn parse(
-        &self,
-        text: &str,
-        module: &[String],
-        skipped: &mut Skipped,
-    ) -> Result<Scope, SyntaxError> {
-        let tree = parse(text);
-        let root = tree.root_node();
-        if let Some(error) = first_error(root, text) {
-            return Err(error);
-        }
+    fn lower(&self, root: Node, text: &str, module: &[String], skipped: &mut Skipped) -> Scope {
         // A package's `__init__` file is the package; relative imports start there.
         let (module, package) = match module.split_last() {
             Some((last, package)) if last == "__init__" => (package, package),
@@ -66,21 +56,10 @@ impl Frontend for Python {
         let mut scope = Scope::default();
         reader.module(&named_children(root), &mut scope);
         if module.is_empty() {
-            return Ok(scope);
+            return scope;
         }
-        Ok(Scope {
-            imports: Vec::new(),
-            items: vec![Item::Namespace { path: module.to_vec(), scope }],
-        })
+        Scope { imports: Vec::new(), items: vec![Item::Namespace { path: module.to_vec(), scope }] }
     }
-}
-
-fn parse(text: &str) -> tree_sitter::Tree {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_python::LANGUAGE.into())
-        .expect("the Python grammar matches the tree-sitter version");
-    parser.parse(text, None).expect("parsing without a timeout always finishes")
 }
 
 struct Reader<'a> {
@@ -698,16 +677,16 @@ impl<'a> Reader<'a> {
             // `"Order"`: the annotation inside the string.
             "string" => {
                 let content = self.string_content(node);
-                let source = format!("_: {content}\n");
-                let tree = parse(&source);
+                let tree =
+                    crate::parse_tree(crate::SourceLanguage::Python, format!("_: {content}\n"));
                 let annotation = tree
-                    .root_node()
+                    .root()
                     .named_child(0)
                     .and_then(|s| s.named_child(0))
                     .and_then(|a| a.child_by_field_name("type"));
                 let mut inner =
-                    Reader { src: &source, package: self.package, skipped: self.skipped };
-                match annotation.filter(|_| !tree.root_node().has_error()) {
+                    Reader { src: tree.text(), package: self.package, skipped: self.skipped };
+                match annotation.filter(|_| !tree.root().has_error()) {
                     Some(a) => {
                         inner.type_expr(a).unwrap_or_else(|| TypeExpr::builtin(squeeze(&content)))
                     }
@@ -735,7 +714,12 @@ mod tests {
     fn parse(text: &str, module: &[&str]) -> (String, Skipped) {
         let mut skipped = Skipped::new();
         let module: Vec<String> = module.iter().map(|s| s.to_string()).collect();
-        let scope = Python.parse(text, &module, &mut skipped).unwrap();
+        let scope = crate::lower_scope(
+            &crate::parse_tree(crate::SourceLanguage::Python, text),
+            &module,
+            &mut skipped,
+        )
+        .unwrap();
         let unit = crate::ir::Unit { path: Default::default(), scope };
         (unit.dump(), skipped)
     }
@@ -764,7 +748,12 @@ mod tests {
     #[test]
     fn reports_the_first_syntax_error() {
         let mut skipped = Skipped::new();
-        let error = Python.parse("class A:\n    x = = 1\n", &[], &mut skipped).unwrap_err();
+        let error = crate::lower_scope(
+            &crate::parse_tree(crate::SourceLanguage::Python, "class A:\n    x = = 1\n"),
+            &[],
+            &mut skipped,
+        )
+        .unwrap_err();
         assert_eq!(error.line, 2);
     }
 }

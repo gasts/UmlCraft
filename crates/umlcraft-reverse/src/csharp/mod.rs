@@ -27,40 +27,21 @@
 
 pub(crate) mod rules;
 
-use tree_sitter::{Node, Parser};
+use tree_sitter::Node;
 use umlcraft_model::{ParameterDirection, Visibility};
 
 use crate::ir::{
     Field, Import, Item, Literal, Member, Operation, Param, Relation, Scope, Supertype,
     TemplateParam, TypeDecl, TypeExpr, TypeKind, TypeName,
 };
-use crate::lang::{Frontend, Skip, Skipped, SyntaxError, first_error};
-use crate::preprocessor;
+use crate::lang::{Frontend, Skip, Skipped};
 
 pub struct CSharp;
 
 impl Frontend for CSharp {
-    fn parse(
-        &self,
-        text: &str,
-        _module: &[String],
-        skipped: &mut Skipped,
-    ) -> Result<Scope, SyntaxError> {
-        let mut parser = Parser::new();
-        parser
-            .set_language(&tree_sitter_c_sharp::LANGUAGE.into())
-            .expect("the C# grammar matches the tree-sitter version");
-        let (text, branches) = preprocessor::first_branches(text, preprocessor::Dialect::CSharp);
-        let tree = parser.parse(&text, None).expect("parsing without a timeout always finishes");
-        let root = tree.root_node();
-        if let Some(error) = first_error(root, &text) {
-            return Err(error);
-        }
-        if branches > 0 {
-            *skipped.entry(Skip::PreprocessorBranch).or_default() += branches;
-        }
-        let mut reader = Reader { src: &text, skipped };
-        Ok(reader.scope(&named_children(root)))
+    fn lower(&self, root: Node, text: &str, _module: &[String], skipped: &mut Skipped) -> Scope {
+        let mut reader = Reader { src: text, skipped };
+        reader.scope(&named_children(root))
     }
 }
 
@@ -724,7 +705,12 @@ mod tests {
 
     fn parse(text: &str) -> (String, Skipped) {
         let mut skipped = Skipped::new();
-        let scope = CSharp.parse(text, &[], &mut skipped).unwrap();
+        let scope = crate::lower_scope(
+            &crate::parse_tree(crate::SourceLanguage::CSharp, text),
+            &[],
+            &mut skipped,
+        )
+        .unwrap();
         let unit = crate::ir::Unit { path: Default::default(), scope };
         (unit.dump(), skipped)
     }
@@ -753,7 +739,12 @@ mod tests {
     #[test]
     fn reports_the_first_syntax_error() {
         let mut skipped = Skipped::new();
-        let error = CSharp.parse("class A {\n  int x = ;\n}\n", &[], &mut skipped).unwrap_err();
+        let error = crate::lower_scope(
+            &crate::parse_tree(crate::SourceLanguage::CSharp, "class A {\n  int x = ;\n}\n"),
+            &[],
+            &mut skipped,
+        )
+        .unwrap_err();
         assert_eq!((error.line, error.column, error.token.as_str()), (2, 9, "="));
     }
 }

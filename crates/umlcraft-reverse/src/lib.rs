@@ -2,10 +2,12 @@
 //! model, as
 //! Astah's "Import Java" does.
 //!
-//! A front-end per language parses each file into a language-neutral IR ([`ir`]); one mapping
-//! for all languages resolves names and merges the declarations into the model. Parsing needs
-//! nothing but the files and may run in the background ([`parse_sources`]); the mapping runs in
-//! a single edit of the document ([`apply`]), so one undo takes the whole import back.
+//! Each file is read ([`source::read`]) and parsed with tree-sitter once ([`parse_tree`]); a
+//! front-end per language lowers the tree into a language-neutral IR ([`ir`], [`lower`]); one
+//! mapping for all languages resolves names and merges the declarations into the model. Parsing
+//! needs nothing but the files and may run in the background ([`parse_sources`]); the mapping
+//! runs in a single edit of the document ([`apply`]), so one undo takes the whole import back.
+//! The structograms of `umlcraft-nsd-code` read method bodies from the same [`SourceTree`].
 
 pub mod associations;
 mod comment;
@@ -21,6 +23,7 @@ pub mod python;
 pub mod report;
 mod resolve;
 pub mod source;
+mod tree;
 
 use std::path::{Path, PathBuf};
 
@@ -28,6 +31,7 @@ use lang::{Frontend, Rules, Skipped, SyntaxError};
 use umlcraft_model::{Document, Result, Tx};
 
 pub use report::Report;
+pub use tree::{SourceTree, parse_tree};
 
 /// The languages the import reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -200,38 +204,56 @@ pub fn parse_text(
     text: &str,
     skipped: &mut Skipped,
 ) -> Result<ir::Unit, SyntaxError> {
-    let scope = language.frontend().parse(text, &language.module_path(path), skipped)?;
+    lower(&parse_tree(language, text), path, skipped)
+}
+
+/// The declarations of a parsed file, counting what is left out in `skipped`; `path` also tells
+/// the module a Python file is. A file with a syntax error has none.
+pub fn lower(
+    source: &SourceTree,
+    path: &Path,
+    skipped: &mut Skipped,
+) -> Result<ir::Unit, SyntaxError> {
+    let module = source.language().module_path(path);
+    let scope = lower_scope(source, &module, skipped)?;
     Ok(ir::Unit { path: path.to_owned(), scope })
 }
 
-/// Larger files are not read: no source of a model is that large, generated data may be.
-const MAX_FILE_SIZE: u64 = 16 << 20;
+/// [`lower`] for the file that is `module`.
+pub(crate) fn lower_scope(
+    source: &SourceTree,
+    module: &[String],
+    skipped: &mut Skipped,
+) -> Result<ir::Scope, SyntaxError> {
+    if let Some(error) = source.syntax_error() {
+        return Err(error);
+    }
+    let branches = source.left_out_branches();
+    if branches > 0 {
+        *skipped.entry(lang::Skip::PreprocessorBranch).or_default() += branches;
+    }
+    Ok(source.language().frontend().lower(source.root(), source.text(), module, skipped))
+}
 
 /// Reads and parses `files`. Files that cannot be read or parsed are reported in
 /// [`Parsed::failed`]; the others are imported anyway.
 pub fn parse_sources(language: SourceLanguage, files: &[PathBuf]) -> Parsed {
     let mut parsed = Parsed::default();
     for path in files {
-        if std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.len() > MAX_FILE_SIZE) {
-            let problem = Problem::Read(format!("larger than {} MB", MAX_FILE_SIZE >> 20));
-            parsed.failed.push(FileProblem { path: path.clone(), problem });
-            continue;
-        }
-        let bytes = match std::fs::read(path) {
-            Ok(bytes) => bytes,
+        let decoded = match source::read(path) {
+            Ok(decoded) => decoded,
             Err(err) => {
                 let problem = Problem::Read(err.to_string());
                 parsed.failed.push(FileProblem { path: path.clone(), problem });
                 continue;
             }
         };
-        let decoded = source::decode(&bytes);
         if let Some(encoding) = decoded.guessed {
             parsed.guessed_encodings.push((path.clone(), encoding));
         }
         // Counted only for files that are imported.
         let mut skipped = Skipped::new();
-        match parse_text(language, path, &decoded.text, &mut skipped) {
+        match lower(&parse_tree(language, decoded.text), path, &mut skipped) {
             Ok(unit) => {
                 parsed.units.push(unit);
                 for (skip, n) in skipped {

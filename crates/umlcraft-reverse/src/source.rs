@@ -94,6 +94,26 @@ pub fn python_module(path: &Path) -> Vec<String> {
     module
 }
 
+/// Larger files are not read: no source of a model is that large, generated data may be.
+pub const MAX_FILE_SIZE: u64 = 16 << 20;
+
+/// Why a source file could not be read.
+#[derive(Debug, thiserror::Error)]
+pub enum ReadError {
+    #[error("larger than {} MB", MAX_FILE_SIZE >> 20)]
+    TooLarge,
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
+/// Reads a source file as text ([`decode`]), unless it is larger than [`MAX_FILE_SIZE`].
+pub fn read(path: &Path) -> Result<Decoded, ReadError> {
+    if std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.len() > MAX_FILE_SIZE) {
+        return Err(ReadError::TooLarge);
+    }
+    Ok(decode(&std::fs::read(path)?))
+}
+
 /// A source file as text, with line ends normalized to `\n`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Decoded {

@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use tree_sitter::Node;
+
 use crate::ir::{Scope, TypeKind};
 
 /// How a library type holds other values, which decides how an attribute of that type becomes
@@ -148,20 +150,16 @@ pub struct SyntaxError {
     pub missing: bool,
 }
 
-/// Parses one language. Implementations hold no state between files.
+/// Lowers one language's syntax tree to the IR. Implementations hold no state between files.
 pub trait Frontend: Sync {
-    /// The declarations of one file, counting what is left out in `skipped`. `module` is the
-    /// module the file is, for languages whose files are modules (Python), else empty.
-    fn parse(
-        &self,
-        text: &str,
-        module: &[String],
-        skipped: &mut Skipped,
-    ) -> Result<Scope, SyntaxError>;
+    /// The declarations of one file, parsed without syntax errors into the tree at `root` from
+    /// `text` (see [`crate::parse_tree`]), counting what is left out in `skipped`. `module` is
+    /// the module the file is, for languages whose files are modules (Python), else empty.
+    fn lower(&self, root: Node, text: &str, module: &[String], skipped: &mut Skipped) -> Scope;
 }
 
 /// The first syntax error in a tree-sitter tree, if any.
-pub(crate) fn first_error(root: tree_sitter::Node, text: &str) -> Option<SyntaxError> {
+pub(crate) fn first_error(root: Node, text: &str) -> Option<SyntaxError> {
     if !root.has_error() {
         return None;
     }
