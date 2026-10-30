@@ -633,21 +633,27 @@ impl NsdView {
     }
 
     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
+        self.copy_selection(cx);
+    }
+
+    /// Puts the selection on the clipboard; whether there was something to put there.
+    fn copy_selection(&self, cx: &mut Context<Self>) -> bool {
         let d = self.editor.diagram();
         let text = match self.editor.selection() {
             Selection::Root => clip::copy_diagram(d),
             Selection::Elements(span) => match edit::copy(d, span) {
                 Ok(elements) => clip::copy(d, elements),
-                Err(_) => return,
+                Err(_) => return false,
             },
-            _ => return,
+            _ => return false,
         };
         cx.write_to_clipboard(ClipboardItem::new_string(text));
+        true
     }
 
     fn cut(&mut self, _: &Cut, window: &mut Window, cx: &mut Context<Self>) {
-        if self.span().is_some() {
-            self.copy(&Copy, window, cx);
+        // Only what is safe on the clipboard goes.
+        if self.span().is_some() && self.copy_selection(cx) {
             self.delete(&DeleteSelection, window, cx);
         }
     }
