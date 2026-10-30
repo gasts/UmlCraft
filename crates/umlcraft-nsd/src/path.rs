@@ -83,9 +83,30 @@ impl Span {
             && (self.start..self.end).contains(&path[self.seq.len()])
     }
 
-    /// The span from `self.start` stretched to the element `to` of the same sequence.
-    pub fn to(&self, to: usize) -> Span {
-        Span { seq: self.seq.clone(), start: self.start.min(to), end: (self.start + 1).max(to + 1) }
+    /// The element that stays put when the span is stretched: `anchor` (where a selection
+    /// extended with Shift began) if that is one of the span's two ends, else the first.
+    pub fn fixed(&self, anchor: Option<&[usize]>) -> usize {
+        anchor
+            .filter(|a| a.len() == self.seq.len() + 1 && a.starts_with(&self.seq))
+            .map(|a| a[self.seq.len()])
+            .filter(|&i| i == self.start || i + 1 == self.end)
+            .unwrap_or(self.start)
+    }
+
+    /// The span from its fixed element (see [`Span::fixed`]) to the element `to` of the same
+    /// sequence.
+    pub fn to(&self, anchor: Option<&[usize]>, to: usize) -> Span {
+        let fixed = self.fixed(anchor);
+        Span { seq: self.seq.clone(), start: fixed.min(to), end: fixed.max(to) + 1 }
+    }
+
+    /// The span with its loose end (the one that is not fixed) moved one element up or down
+    /// in a sequence of `len` elements, growing or shrinking it; `None` at the sequence's ends.
+    pub fn step(&self, anchor: Option<&[usize]>, up: bool, len: usize) -> Option<Span> {
+        let fixed = self.fixed(anchor);
+        let loose = if fixed == self.start { self.end - 1 } else { self.start };
+        let to = if up { loose.checked_sub(1)? } else { Some(loose + 1).filter(|&i| i < len)? };
+        Some(self.to(anchor, to))
     }
 }
 
@@ -178,8 +199,30 @@ mod tests {
         assert!(s.covers(&[1, 0, 0]));
         assert!(!s.covers(&[2]));
         assert!(!s.covers(&[]));
-        assert_eq!(s.to(0), Span { seq: vec![], start: 0, end: 2 });
-        assert_eq!(s.to(2), Span { seq: vec![], start: 1, end: 3 });
+        assert_eq!(s.to(None, 0), Span { seq: vec![], start: 0, end: 2 });
+        assert_eq!(s.to(None, 2), Span { seq: vec![], start: 1, end: 3 });
+    }
+
+    #[test]
+    fn stretching_keeps_the_anchor() {
+        let span = |start, end| Span { seq: vec![1, 0], start, end };
+        let anchor: &[usize] = &[1, 0, 2];
+        // Shift+click [0], then [4]: from 2 both times.
+        let up = span(2, 3).to(Some(anchor), 0);
+        assert_eq!(up, span(0, 3));
+        assert_eq!(up.to(Some(anchor), 4), span(2, 5));
+        // Shift+Up, then Shift+Down: back to the anchor alone.
+        let grown = span(2, 3).step(Some(anchor), true, 5).unwrap();
+        assert_eq!(grown, span(1, 3));
+        assert_eq!(grown.step(Some(anchor), false, 5), Some(span(2, 3)));
+        assert_eq!(span(2, 3).step(Some(anchor), false, 5), Some(span(2, 4)));
+        // At the sequence's ends nothing moves.
+        assert_eq!(span(0, 3).step(Some(anchor), true, 5), None);
+        assert_eq!(span(2, 5).step(Some(anchor), false, 5), None);
+        // An anchor that is no end of the span (or elsewhere) leaves the first element fixed.
+        assert_eq!(span(0, 5).fixed(Some(anchor)), 0);
+        assert_eq!(span(2, 3).fixed(Some(&[0])), 2);
+        assert_eq!(span(2, 4).step(None, true, 5), Some(span(2, 3)));
     }
 
     #[test]

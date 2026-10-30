@@ -128,6 +128,8 @@ pub struct NsdView {
     discarded: bool,
     /// What the open element dialog holds, taken over on closing and quitting.
     dialog: Option<dialog::Pending>,
+    /// Where a selection extended with Shift began; that end stays put.
+    anchor: Option<NsdPath>,
     focus: FocusHandle,
     _theme: Subscription,
 }
@@ -165,6 +167,7 @@ impl NsdView {
             drag: None,
             discarded: false,
             dialog: None,
+            anchor: None,
             focus,
             // The area around the diagram follows the theme the main window switches.
             _theme: cx.observe_global::<Theme>(|_, cx| cx.notify()),
@@ -186,6 +189,8 @@ impl NsdView {
     /// are asked about again.
     fn redraw(&mut self) {
         self.discarded = false;
+        // The change has made a selection of its own.
+        self.anchor = None;
         let metrics = umlcraft_nsd::Metrics::for_platform();
         self.layout = Layout::of(self.editor.diagram(), metrics);
         self.svg = umlcraft_nsd::svg::render_layout(self.editor.diagram(), &self.layout, metrics);
@@ -213,7 +218,15 @@ impl NsdView {
     }
 
     fn select(&mut self, selection: Selection, cx: &mut Context<Self>) {
+        self.anchor = None;
         self.editor.select(selection);
+        cx.notify();
+    }
+
+    /// Selects `span`, stretched with Shift from its end at `anchor`.
+    fn stretch(&mut self, span: Span, anchor: NsdPath, cx: &mut Context<Self>) {
+        self.editor.select(Selection::Elements(span));
+        self.anchor = Some(anchor);
         cx.notify();
     }
 
@@ -381,7 +394,9 @@ impl NsdView {
             && path.starts_with(&span.seq)
         {
             let to = *path.last().unwrap_or(&0);
-            self.select(Selection::Elements(span.to(to)), cx);
+            let anchor = span.element(span.fixed(self.anchor.as_deref()));
+            let span = span.to(Some(&anchor), to);
+            self.stretch(span, anchor, cx);
             return;
         }
         // Pressing on what is selected keeps it, so that several elements can be dragged.
@@ -810,12 +825,10 @@ impl NsdView {
     fn extend(&mut self, up: bool, cx: &mut Context<Self>) {
         let Some(span) = self.span() else { return };
         let len = path::sequence(self.editor.diagram(), &span.seq).map_or(0, |s| s.elements.len());
-        let span = match up {
-            true if span.start > 0 => Span { start: span.start - 1, ..span },
-            false if span.end < len => Span { end: span.end + 1, ..span },
-            _ => return,
-        };
-        self.select(Selection::Elements(span), cx);
+        let anchor = span.element(span.fixed(self.anchor.as_deref()));
+        if let Some(span) = span.step(Some(&anchor), up, len) {
+            self.stretch(span, anchor, cx);
+        }
     }
 
     fn extend_up(&mut self, _: &ExtendUp, _: &mut Window, cx: &mut Context<Self>) {
