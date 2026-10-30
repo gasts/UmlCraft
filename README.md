@@ -7,8 +7,9 @@ and writes `.asta` project files and imports Java, C#, C++ and Python source cod
 
 ## Download
 
-Releases for Windows (x64), macOS (universal) and Linux (x64: `.deb`, `.rpm`, AppImage, Flatpak,
-Snap and `.tar.gz`) are on the [releases page](https://github.com/udvlp/UmlCraft/releases).
+Releases for Windows (x64: installer and `.zip`), macOS (universal) and Linux (x64: `.deb`,
+`.rpm`, AppImage, Flatpak, Snap and `.tar.gz`) are on the
+[releases page](https://github.com/udvlp/UmlCraft/releases).
 The builds are not signed yet; the release notes explain how to start them anyway. What changed
 between releases is in the [changelog](CHANGELOG.md).
 
@@ -139,7 +140,9 @@ On Debian/Ubuntu, GPUI needs some system libraries first:
    `packaging/linux/com.umlcraft.app.metainfo.xml`, and commit.
 2. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
 3. The [release workflow](.github/workflows/release.yml) checks that the tag and the metainfo
-   match the version, builds the Windows `.zip`, the Linux `.tar.gz`, `.deb`, `.rpm`,
+   match the version, builds the Windows `.zip` and installer (Inno Setup 7,
+   `packaging/windows/umlcraft.iss`, tried out by installing and uninstalling it), the Linux
+   `.tar.gz`, `.deb`, `.rpm`,
    `.AppImage`, `.flatpak` and `.snap` and the macOS `.dmg`, adds the third-party license
    notices (`cargo about`, configured in `about.toml`) and creates a draft release. The Linux
    packages are all made from the one Linux binary; their files are in `packaging/linux`.

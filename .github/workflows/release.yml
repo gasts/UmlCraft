@@ -117,6 +117,49 @@ jobs:
           cp README.md LICENSE-MIT LICENSE-APACHE THIRD-PARTY-LICENSES.html "dist/$name/"
           (cd dist && 7z a -tzip "$name.zip" "$name")
 
+      - name: Build the Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $innoSetup = "$env:RUNNER_TEMP\innosetup-7.1.1-x64.exe"
+          Invoke-WebRequest -OutFile $innoSetup `
+            https://github.com/jrsoftware/issrc/releases/download/is-7_1_1/innosetup-7.1.1-x64.exe
+          $hash = '8A5A6711C3766A6E5FB74F280BA0E3551E719CE94538D901FDBD1F8F9920B3F0'
+          if ((Get-FileHash $innoSetup -Algorithm SHA256).Hash -ne $hash) {
+            throw 'The Inno Setup download is not the expected file.'
+          }
+          Start-Process $innoSetup -Wait -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES',
+            '/NORESTART', '/SP-', "/DIR=$env:RUNNER_TEMP\InnoSetup"
+          & "$env:RUNNER_TEMP\InnoSetup\ISCC.exe" /Qp "/DVersion=$env:VERSION" `
+            "/DSource=$PWD\dist\UmlCraft-$env:VERSION-windows-x64" "/O$PWD\dist" `
+            packaging\windows\umlcraft.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      # Installs for the current user, as by default, checks the program and its file type,
+      # and uninstalls again.
+      - name: Try the Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Start-Process "dist\UmlCraft-$env:VERSION-windows-x64-setup.exe" -Wait -ArgumentList `
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER'
+          $dir = "$env:LOCALAPPDATA\Programs\UmlCraft"
+          if (-not (Test-Path "$dir\umlcraft.exe")) { throw "umlcraft.exe is not in $dir" }
+          $open = 'HKCU:\Software\Classes\UmlCraft.Project\shell\open\command'
+          $command = (Get-Item $open).GetValue('')
+          if ($command -ne "`"$dir\umlcraft.exe`" `"%1`"") { throw "Unexpected command: $command" }
+          if ((Get-Item 'HKCU:\Software\Classes\.ucraft').GetValue('') -ne 'UmlCraft.Project') {
+            throw '.ucraft is not associated'
+          }
+          # The uninstaller runs from a copy and returns at once; wait for it to finish.
+          Start-Process "$dir\unins000.exe" -Wait -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES',
+            '/NORESTART'
+          for ($i = 0; $i -lt 60 -and (Test-Path $dir); $i++) { Start-Sleep 1 }
+          if (Test-Path $dir) { throw "Uninstalling left $dir behind" }
+          if (Test-Path 'HKCU:\Software\Classes\UmlCraft.Project') {
+            throw 'Uninstalling left the file type behind'
+          }
+
       - name: Package for Linux
         if: runner.os == 'Linux'
         run: |
@@ -159,6 +202,7 @@ jobs:
           name: package-${{ runner.os }}
           path: |
             dist/*.zip
+            dist/*-setup.exe
             dist/*.tar.gz
             dist/*.dmg
           if-no-files-found: error

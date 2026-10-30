@@ -3,6 +3,14 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
+## Unreleased
+
+- **Windows installer**: `UmlCraft-*-windows-x64-setup.exe` installs UmlCraft for the current
+  user without administrator rights, or for all users, and makes it the program for `.ucraft`
+  files; `.asta` files get UmlCraft under "Open with". The `.zip` stays for use without
+  installing.
+- The mouse wheel over the ribbon switches its tabs.
+
 ## 0.10.0 – 2026-10-30
 
 - **New window layout**: the window draws its own title bar with the File menu, Save, Undo and
