@@ -44,9 +44,10 @@ const ROOT_KINDS: [(RootKind, &str); 3] = [
 ];
 
 /// Opens the dialog for `target` (an element of `element_kind`, or the diagram for `None`)
-/// with the values it starts from.
+/// with the values it starts from. `focus` is the structogram's, which gets the focus back.
 pub fn open(
     view: WeakEntity<NsdView>,
+    focus: &FocusHandle,
     target: Target,
     element_kind: Option<ElementKind>,
     start: Edited,
@@ -64,16 +65,12 @@ pub fn open(
     let comment = cx.new(|cx| TextareaState::new(window, cx).auto_grow(2, 8));
     text.update(cx, |s, cx| s.set_value(text_value, window, cx));
     comment.update(cx, |s, cx| s.set_value(start.comment.join("\n"), window, cx));
-    if has_text {
-        text.update(cx, |s, cx| {
-            if let Some(at) = question {
-                s.set_selected_range(at..at + 1, cx);
-            }
-            s.focus(window, cx);
-        });
-    } else {
-        comment.update(cx, |s, cx| s.focus(window, cx));
-    }
+    // Closing gives the focus back to what had it on opening. That must be the structogram
+    // (`focus`), not the toolbar button that opened the dialog nor the dialog's own fields,
+    // which are gone then and would leave keys and toolbar without a target. The fields get
+    // the focus once the dialog is open.
+    window.focus(focus, cx);
+    let (first_text, first_comment) = (text.clone(), comment.clone());
     let disabled = Rc::new(Cell::new(start.disabled));
     let kind = Rc::new(Cell::new(start.kind));
 
@@ -182,4 +179,14 @@ pub fn open(
                     ),
             )
     });
+    if has_text {
+        first_text.update(cx, |s, cx| {
+            if let Some(at) = question {
+                s.set_selected_range(at..at + 1, cx);
+            }
+            s.focus(window, cx);
+        });
+    } else {
+        first_comment.update(cx, |s, cx| s.focus(window, cx));
+    }
 }

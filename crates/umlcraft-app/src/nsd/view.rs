@@ -487,7 +487,7 @@ impl NsdView {
             kind: self.editor.diagram().kind(),
         };
         let target = Target::New(slot, kind);
-        dialog::open(cx.entity().downgrade(), target, Some(kind), start, window, cx);
+        dialog::open(cx.entity().downgrade(), &self.focus, target, Some(kind), start, window, cx);
     }
 
     fn edit_element(&mut self, _: &EditElement, window: &mut Window, cx: &mut Context<Self>) {
@@ -510,7 +510,7 @@ impl NsdView {
                 (Target::Element(p), Some(e.kind), start)
             }
         };
-        dialog::open(cx.entity().downgrade(), target, kind, start, window, cx);
+        dialog::open(cx.entity().downgrade(), &self.focus, target, kind, start, window, cx);
     }
 
     /// Takes what the element dialog hands back.
