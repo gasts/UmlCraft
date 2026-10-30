@@ -149,7 +149,30 @@
         | yield i
 ! line 83: Yield
 
-== Shop.fetch (line 85)
+== Shop.ranges (line 85)
+| ranges(n, m)
+  for style=COUNTER
+    | for j := 1 to (m if n else n + 1) - 1
+    -
+      instruction
+        | print(j)
+  try
+    | exception
+    -
+      call
+        | self.check()
+    -
+      case
+        | exception instanceof?
+        | ValueError
+        | %
+        -
+          instruction
+            | print("bad")
+        -
+    -
+
+== Shop.fetch (line 93)
 | fetch(url)
   instruction
     | response := await client.get(url)
@@ -157,18 +180,18 @@
     | handler := lambda r: r.json()
   jump
     | gib handler(response)
-! line 86: NestedFunction
-! line 89: LocalClass
+! line 94: NestedFunction
+! line 97: LocalClass
 
-== Shop.broken (line 96)
+== Shop.broken (line 104)
 | broken()
   instruction color=ff0000 disabled
     | x = = 1
   jump
     | gib x
-! line 97: SyntaxError
+! line 105: SyntaxError
 
-== .__main__ (line 101)
+== .__main__ (line 109)
 | __main__
   instruction
     | shop := Shop("demo")

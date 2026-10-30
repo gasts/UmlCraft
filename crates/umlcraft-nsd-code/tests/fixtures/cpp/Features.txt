@@ -159,3 +159,30 @@
     | gib id * 2
 ! line 113: Yield
 
+== .fractions (line 117)
+| fractions(v)
+  instruction
+    | x := 0
+  while
+    | x < 2.5?
+    -
+      instruction
+        | v.push_back(1)
+      instruction
+        | x := x + 1
+  try
+    | exception
+    -
+      instruction
+        | v.reserve(1000)
+    -
+      case
+        | exception instanceof?
+        | std::bad_alloc
+        | %
+        -
+          instruction
+            | v.clear()
+        -
+    -
+

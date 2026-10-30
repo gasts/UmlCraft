@@ -567,10 +567,11 @@ writes, and none of its code is used.
   `tests/structorizer_deviations.txt`; the `nsd-import` example runs a whole source tree. The
   comparison covers Structorizer's C import too (`tests/fixtures/cpp/Plain.c`, with
   `UMLCRAFT_NSD_REFS`). Structorizer has no C# or Python import to compare with; besides the
-  parity test, the example ran over Newtonsoft.Json (951 files, 8438 methods) requests and httpx
-  (97 files, 1745 functions), and leveldb and yaml-cpp (227 files, 2500 functions; 17 places
-  tree-sitter cannot read, such as calls through member pointers), and Structorizer read the
-  diagrams back as written (apart from its own keywords `input`/`output`, which it capitalizes).
+  parity test, the example ran over Newtonsoft.Json (951 files, 8438 methods), requests and
+  httpx (97 files, 1745 functions), and leveldb and yaml-cpp without its bundled googletest (232
+  files, 2546 functions; 17 places tree-sitter cannot read, such as calls through member
+  pointers), and Structorizer read the diagrams back as written (apart from its own keywords
+  `input`/`output`, which it capitalizes).
   In the app, `nsd/source.rs` holds the menu command (the extension picks the language) and the
   dialog that picks methods; each opens unsaved, with the report in a bar at the bottom.
 

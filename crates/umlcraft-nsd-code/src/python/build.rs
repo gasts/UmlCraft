@@ -142,22 +142,25 @@ fn range_counting(var: &str, call: Node, src: &str) -> Option<String> {
         _ => return None,
     };
     // The bound is not reached: the last value is one step short of it.
-    let bound_text = one_line(node_text(bound, src));
     let end = match step {
         0 => return None,
-        s if s > 0 => match bound_text.strip_suffix(" + 1") {
-            Some(end) => end.to_owned(),
-            None => pseudo::offset(bound, src, -1),
-        },
-        _ => match bound_text.strip_suffix(" - 1") {
-            Some(end) => end.to_owned(),
-            None => pseudo::offset(bound, src, 1),
-        },
+        s if s > 0 => plus_one(bound, "+", src).unwrap_or_else(|| pseudo::offset(bound, src, -1)),
+        _ => plus_one(bound, "-", src).unwrap_or_else(|| pseudo::offset(bound, src, 1)),
     };
     Some(match step {
         1 => format!("for {var} := {start} to {end}"),
         _ => format!("for {var} := {start} to {end} by {step}"),
     })
+}
+
+/// `n` for a bound `n + 1` (`op` `+`) or `n - 1` (`op` `-`), as written.
+fn plus_one(bound: Node, op: &str, src: &str) -> Option<String> {
+    let operator = bound.child_by_field_name("operator").map(|o| node_text(o, src));
+    let right = bound.child_by_field_name("right").map(|r| node_text(r, src));
+    if bound.kind() != "binary_operator" || operator != Some(op) || right != Some("1") {
+        return None;
+    }
+    Some(one_line(node_text(bound.child_by_field_name("left")?, src)))
 }
 
 impl Builder<'_, Python> {

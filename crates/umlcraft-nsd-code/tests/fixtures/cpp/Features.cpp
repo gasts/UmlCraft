@@ -113,3 +113,14 @@ Task<int> fetch(int id) {
     co_yield id;
     co_return id * 2;
 }
+
+void fractions(std::vector<int>& v) {
+    for (double x = 0; x < 2.5; x++) {
+        v.push_back(1);
+    }
+    try {
+        v.reserve(1000);
+    } catch (const std::bad_alloc&) {
+        v.clear();
+    }
+}
