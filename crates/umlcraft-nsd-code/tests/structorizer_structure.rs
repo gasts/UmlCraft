@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use umlcraft_nsd::{Element, Sequence, read};
-use umlcraft_nsd_java::{Made, Source};
+use umlcraft_nsd_code::{Made, Source};
 
 /// The kinds and nesting of a sequence, one line per element.
 fn shape(seq: &Sequence, depth: usize, out: &mut String) {
@@ -44,7 +44,7 @@ fn structure_matches_structorizers_import() {
         return;
     };
     let dir = Path::new(&refs).join("java/structorizer-default");
-    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/java");
     let made = Made { author: "t", date: "2026-10-29", origin: "t" };
     let expected_deviations = deviations();
     let mut compared = 0;

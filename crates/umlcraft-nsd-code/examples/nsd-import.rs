@@ -2,7 +2,7 @@
 //! structogram, laid out, drawn, written and read back. Prints counts, time and what the
 //! reports name; with `-o DIR` writes the diagrams there (`Class.method-LINE.nsd`).
 //!
-//! `cargo run --release -p umlcraft-nsd-java --example nsd-import -- [-o DIR] PATH...`
+//! `cargo run --release -p umlcraft-nsd-code --example nsd-import -- [-o DIR] PATH...`
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use umlcraft_nsd::layout::Layout;
 use umlcraft_nsd::{Metrics, read, write};
-use umlcraft_nsd_java::{Made, Source, decode};
+use umlcraft_nsd_code::{Made, Source, decode};
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();

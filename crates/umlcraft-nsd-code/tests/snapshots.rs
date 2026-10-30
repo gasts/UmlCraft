@@ -6,7 +6,7 @@ use std::fmt::Write;
 use std::path::Path;
 
 use umlcraft_nsd::{Diagram, Element, ElementKind, Sequence, read, write};
-use umlcraft_nsd_java::{Made, Source};
+use umlcraft_nsd_code::{Made, Source};
 
 const MADE: Made = Made { author: "tester", date: "2026-10-29", origin: "UmlCraft test" };
 
@@ -70,7 +70,7 @@ fn snapshot(java: &Path) -> String {
 
 #[test]
 fn fixtures_match_their_snapshots() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/java");
     let mut javas: Vec<_> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|e| e.unwrap().path())

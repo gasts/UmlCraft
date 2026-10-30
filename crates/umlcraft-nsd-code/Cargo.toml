@@ -1,6 +1,6 @@
 [package]
-name = "umlcraft-nsd-java"
-description = "Java methods as Nassi-Shneiderman diagrams in Structorizer's .nsd format"
+name = "umlcraft-nsd-code"
+description = "Methods of source files as Nassi-Shneiderman diagrams in Structorizer's .nsd format"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

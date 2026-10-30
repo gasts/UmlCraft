@@ -14,7 +14,7 @@ use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::{ActiveTheme, Sizable, StyledExt, WindowExt, v_flex};
 use gpui_kit::*;
 use rust_i18n::t;
-use umlcraft_nsd_java::{Made, MethodRef, NoteKind, Report, Source};
+use umlcraft_nsd_code::{Made, MethodRef, NoteKind, Report, Source};
 
 /// More windows than this at once would rather be a mistake.
 const MAX_WINDOWS: usize = 20;
@@ -41,7 +41,7 @@ pub fn choose(
                 .background_executor()
                 .spawn(async move {
                     let bytes = std::fs::read(&read_path)?;
-                    let source = Source::parse(&umlcraft_nsd_java::decode(&bytes));
+                    let source = Source::parse(&umlcraft_nsd_code::decode(&bytes));
                     let methods = source.methods();
                     std::io::Result::Ok((source, methods))
                 })
