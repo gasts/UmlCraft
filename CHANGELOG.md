@@ -19,17 +19,18 @@ today.
   get and lose branches; undo and redo take every step back. Saved files open in Structorizer
   as they are, and a file saved unchanged stays byte for byte. The project stays open; `.nsd`
   files also open from the command line, the system and the recent files.
-- **Structograms from Java, C# and Python** (File › Structogram from source file …): pick
-  methods of a `.java`, `.cs` or `.py` file (grouped by class, with search); each opens as an
+- **Structograms from Java, C#, Python and C++** (File › Structogram from source file …): pick
+  methods of a Java, C#, Python or C++/C file (grouped by class, with search); each opens as an
   unsaved structogram without types, with assignments as `x := 42 + a`, conditions as questions
   (`a > 0?`), returns as `gib x` and counting loops as `for i := 0 to n - 1`: statements, calls
   of the class's own methods, if chains, every loop, `switch` in all its forms (arrow cases and
   switch expressions included), jumps and `try` with its catches; in C# also accessors,
   operators, expression bodies, switch expressions with patterns, `using`, `lock` and the
   top-level statements; in Python the functions of the module, `elif`, `for … in range(…)` as a
-  counting loop, `match`, `with`, and the code of the module. Comments in the method go to the
-  element they belong to. What a structogram cannot show as written (`continue`, labels, local
-  classes …) is listed at the bottom of the window.
+  counting loop, `match`, `with`, and the code of the module; in C++ free functions, methods
+  defined outside the class, initializer lists, range-for and `catch (...)`. Comments in the
+  method go to the element they belong to. What a structogram cannot show as written
+  (`continue`, labels, local classes …) is listed at the bottom of the window.
 
 ## 0.10.0 – 2026-10-30
 
