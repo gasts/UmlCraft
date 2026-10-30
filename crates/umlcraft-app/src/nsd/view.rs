@@ -61,14 +61,17 @@ pub fn window_size(diagram: &Diagram) -> (f32, f32) {
     (w, h)
 }
 
+/// The file's name, or "Untitled".
+fn file_name(path: Option<&Path>) -> String {
+    path.and_then(Path::file_name)
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| t!("nsd.untitled").to_string())
+}
+
 /// The window title: the file's name (or "Untitled"), `*` with unsaved changes.
 pub fn title(path: Option<&Path>, dirty: bool) -> String {
-    let name = path
-        .and_then(Path::file_name)
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| t!("nsd.untitled").to_string());
     let dirty = if dirty { "*" } else { "" };
-    format!("{name}{dirty} – UmlCraft")
+    format!("{}{dirty} – UmlCraft", file_name(path))
 }
 
 /// The diagram rasterized for one scale.
@@ -85,8 +88,15 @@ enum Drag {
     /// Panning: where it started, in window coordinates, and the pan then.
     Pan { start: Point<Pixels>, pan: Point<Pixels> },
     /// Pressed on selected elements: where, whether the mouse has gone far enough to drag
-    /// them, and the place they would drop to.
-    Elements { span: Span, start: Point<Pixels>, moving: bool, slot: Option<Slot> },
+    /// them, and the place they would drop to. `pressed` is what was hit inside a selection
+    /// that stays for dragging; a click without dragging selects it after all.
+    Elements {
+        span: Span,
+        start: Point<Pixels>,
+        moving: bool,
+        slot: Option<Slot>,
+        pressed: Option<Selection>,
+    },
 }
 
 /// What happens once a question about unsaved changes is answered.
@@ -376,13 +386,15 @@ impl NsdView {
             (Selection::Elements(span), Selection::Elements(h)) => span.covers(&h.first()),
             _ => false,
         };
-        let selection = if keep { current } else { hit };
+        let (selection, pressed) =
+            if keep { (current.clone(), (hit != current).then_some(hit)) } else { (hit, None) };
         if let Selection::Elements(span) = &selection {
             self.drag = Some(Drag::Elements {
                 span: span.clone(),
                 start: ev.position,
                 moving: false,
                 slot: None,
+                pressed,
             });
         }
         self.select(selection, cx);
@@ -422,7 +434,7 @@ impl NsdView {
                 self.pan = point(pan.x + ev.position.x - start.x, pan.y + ev.position.y - start.y);
                 cx.notify();
             }
-            Some(Drag::Elements { span, start, moving, slot }) => {
+            Some(Drag::Elements { span, start, moving, slot, .. }) => {
                 let moved = ev.position - *start;
                 if !*moving && f32::from(moved.x.abs().max(moved.y.abs())) < DRAG_START {
                     return;
@@ -440,10 +452,17 @@ impl NsdView {
     fn on_mouse_up(&mut self, ev: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
         // With Ctrl (Cmd) held the elements are copied, otherwise moved.
         let copy = ev.modifiers.secondary();
-        let Some(Drag::Elements { span, moving: true, slot: Some(slot), .. }) = self.drag.take()
-        else {
-            cx.notify();
-            return;
+        let (span, slot) = match self.drag.take() {
+            Some(Drag::Elements { span, moving: true, slot: Some(slot), .. }) => (span, slot),
+            // A click into a selection selects what it hit, e.g. an element nested in it.
+            Some(Drag::Elements { moving: false, pressed: Some(hit), .. }) => {
+                self.select(hit, cx);
+                return;
+            }
+            _ => {
+                cx.notify();
+                return;
+            }
         };
         if !drops_somewhere(&span, &slot, copy) {
             cx.notify();
@@ -837,7 +856,8 @@ impl NsdView {
         let rx = cx.prompt_for_new_path(&directory, Some(&suggested));
         cx.spawn_in(window, async move |this, cx| {
             let Ok(Ok(Some(path))) = rx.await else { return };
-            let path = if super::is_structogram(&path) { path } else { path.with_extension("nsd") };
+            // Appended, not replaced: "Aufgabe 3.1" must not become "Aufgabe 3.nsd".
+            let path = crate::main_view::with_extension(path, "nsd");
             this.update_in(cx, move |this, window, cx| {
                 if this.write(path, window, cx)
                     && let Some(then) = then
@@ -901,7 +921,7 @@ impl NsdView {
             then(self, window, cx);
             return;
         }
-        let message = t!("nsd.unsaved", name = title(self.path.as_deref(), false)).to_string();
+        let message = t!("nsd.unsaved", name = file_name(self.path.as_deref())).to_string();
         let detail = t!("dialog.unsaved_detail").to_string();
         let answers = [
             t!("dialog.save").to_string(),
@@ -918,7 +938,16 @@ impl NsdView {
                     this.discarded = true;
                     then(this, window, cx);
                 }
-                _ => {}
+                // Quitting stops here, and windows asked before stay open: what they
+                // discarded on the way is unsaved again and is asked about next time.
+                _ => {
+                    let me = cx.entity_id();
+                    for (_, view) in super::open_windows(cx) {
+                        if view.entity_id() != me {
+                            view.update(cx, |view, _| view.discarded = false);
+                        }
+                    }
+                }
             })
             .ok();
         })
@@ -954,11 +983,7 @@ impl NsdView {
         let svg = self.svg.clone();
         cx.spawn_in(window, async move |_, cx| {
             let Ok(Ok(Some(path))) = rx.await else { return };
-            let path = if path.extension().is_some_and(|e| e.eq_ignore_ascii_case(extension)) {
-                path
-            } else {
-                path.with_extension(extension)
-            };
+            let path = crate::main_view::with_extension(path, extension);
             let written = cx
                 .background_executor()
                 .spawn(async move {

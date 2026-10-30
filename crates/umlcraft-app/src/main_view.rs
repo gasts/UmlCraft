@@ -1844,7 +1844,7 @@ fn with_project_extension(path: PathBuf) -> PathBuf {
     with_extension(path, FILE_EXTENSION)
 }
 
-fn with_extension(path: PathBuf, extension: &str) -> PathBuf {
+pub(crate) fn with_extension(path: PathBuf, extension: &str) -> PathBuf {
     if path.extension().is_some_and(|e| e.eq_ignore_ascii_case(extension)) {
         return path;
     }
