@@ -1,6 +1,6 @@
-//! Smoke test over real code: every method of every `.java` file under the given paths as a
-//! structogram, laid out, drawn, written and read back. Prints counts, time and what the
-//! reports name; with `-o DIR` writes the diagrams there (`Class.method-LINE.nsd`).
+//! Smoke test over real code: every method of every `.java` and `.cs` file under the given
+//! paths as a structogram, laid out, drawn, written and read back. Prints counts, time and what
+//! the reports name; with `-o DIR` writes the diagrams there (`Class.method-LINE.nsd`).
 //!
 //! `cargo run --release -p umlcraft-nsd-code --example nsd-import -- [-o DIR] PATH...`
 
@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use umlcraft_nsd::layout::Layout;
 use umlcraft_nsd::{Metrics, read, write};
-use umlcraft_nsd_code::{Made, Source, decode};
+use umlcraft_nsd_code::{Language, Made, Source, decode};
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
@@ -24,7 +24,8 @@ fn main() {
         None => None,
     };
     let paths: Vec<PathBuf> = args.into_iter().map(PathBuf::from).collect();
-    let files = umlcraft_reverse::source::collect_sources(&paths, &["java"]).expect("sources");
+    let files =
+        umlcraft_reverse::source::collect_sources(&paths, &["java", "cs"]).expect("sources");
     let made = Made { author: "smoke", date: "2026-10-29", origin: "UmlCraft smoke test" };
     let start = Instant::now();
     let (mut methods, mut elements, mut largest) = (0usize, 0usize, (0usize, String::new()));
@@ -32,7 +33,8 @@ fn main() {
     let mut failures = Vec::new();
     for file in &files {
         let text = decode(&std::fs::read(file).expect("readable file"));
-        let source = Source::parse(&text);
+        let Some(language) = Language::of(file) else { continue };
+        let source = Source::parse(language, &text);
         for m in source.methods() {
             let label = format!("{}:{} {}", file.display(), m.line, m.name);
             let result = std::panic::catch_unwind(|| {

@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use umlcraft_nsd::{Element, Sequence, read};
-use umlcraft_nsd_code::{Made, Source};
+use umlcraft_nsd_code::{Language, Made, Source};
 
 /// The kinds and nesting of a sequence, one line per element.
 fn shape(seq: &Sequence, depth: usize, out: &mut String) {
@@ -61,7 +61,7 @@ fn structure_matches_structorizers_import() {
         let Some((class, method)) = qualified.split_once('.') else { continue };
         let java = fixtures.join(format!("{class}.java"));
         let Ok(text) = std::fs::read_to_string(&java) else { continue };
-        let source = Source::parse(&text);
+        let source = Source::parse(Language::Java, &text);
         let Some(m) = source.methods().into_iter().find(|m| m.name == method) else {
             panic!("{qualified}: no such method in {}", java.display());
         };

@@ -25,6 +25,9 @@ pub trait Grammar: Sized {
     const IGNORED: &'static [&'static str];
     /// Statements that leave a `switch` case.
     const ENDS_CASE: &'static [&'static str];
+    /// Whether a case that does not end runs on into the next (Java); C# forbids it, so a
+    /// case there never runs on, whatever its last statement.
+    const RUNS_ON: bool;
 
     /// Appends the elements of one statement.
     fn statement(b: &mut Builder<'_, Self>, node: Node, out: &mut Vec<Element>);
@@ -53,11 +56,24 @@ pub struct Group<'t> {
     pub statements: Vec<Node<'t>>,
 }
 
-/// A catch clause: the exception's name, its types and its body.
+/// A catch clause: the exception's name (none for C#'s `catch (T)` and `catch`), its types,
+/// its filter (C#'s `when (c)`) and its body.
 pub struct Catch<'t> {
     pub name: String,
     pub types: Vec<String>,
+    pub filter: Option<String>,
     pub body: Option<Node<'t>>,
+}
+
+impl Catch<'_> {
+    /// Its case label: `IOException, RuntimeException`, `IOException when e.Code > 0`.
+    fn label(&self) -> String {
+        let types = self.types.join(", ");
+        match &self.filter {
+            Some(filter) => format!("{types} when {filter}"),
+            None => types,
+        }
+    }
 }
 
 pub struct Builder<'a, G> {
@@ -316,7 +332,7 @@ impl<'a, G: Grammar> Builder<'a, G> {
         for (i, g) in merged.iter().enumerate() {
             let mut body = g.statements.clone();
             let mut j = i;
-            while !g.rule && !ends_case::<G>(&body) && j + 1 < merged.len() {
+            while G::RUNS_ON && !g.rule && !ends_case::<G>(&body) && j + 1 < merged.len() {
                 j += 1;
                 body.extend(merged[j].statements.iter().copied());
             }
@@ -359,15 +375,24 @@ impl<'a, G: Grammar> Builder<'a, G> {
         vec![e]
     }
 
-    /// A case's statements; `value` for the body of a `case … ->` in a switch expression,
-    /// where a single expression is the value.
+    /// A case's statements; `value` for the body of a switch expression's case, where a
+    /// single expression (Java's `case 1 -> v;`, C#'s `1 => v`) is the value and a `throw`
+    /// expression a jump.
     fn case_body(&mut self, body: &[Node], value: bool) -> Vec<Element> {
-        match body {
-            [single] if value && single.kind() == "expression_statement" => {
+        let [single] = body else { return self.statements(body) };
+        if !value {
+            return self.statements(body);
+        }
+        match single.kind() {
+            "expression_statement" => {
                 let value = single.named_child(0).map(|v| lines(v, self.src)).unwrap_or_default();
                 vec![self.valued(value, *single)]
             }
-            _ => self.statements(body),
+            "throw_expression" => vec![self.element(ElementKind::Jump, &lines(*single, self.src))],
+            kind if G::BLOCKS.contains(&kind) || kind.ends_with("_statement") => {
+                self.statements(body)
+            }
+            _ => vec![self.valued(lines(*single, self.src), *single)],
         }
     }
 
@@ -382,22 +407,27 @@ impl<'a, G: Grammar> Builder<'a, G> {
     ) -> Element {
         let (variable, caught) = match catches.as_slice() {
             [] => (String::new(), Vec::new()),
-            [only] if only.types.len() < 2 => (only.name.clone(), self.catch_body(only)),
+            [only] if only.types.len() < 2 && only.filter.is_none() => {
+                (only.name.clone(), self.catch_body(only))
+            }
             [only] => {
-                let text =
-                    vec![format!("{} instanceof", only.name), only.types.join(", "), "%".into()];
+                let name = if only.name.is_empty() { "exception" } else { &only.name };
+                let text = vec![format!("{name} instanceof"), only.label(), "%".into()];
                 let mut case = self.element(ElementKind::Case, &text);
                 case.branches[0] = Sequence::new(self.catch_body(only));
-                (only.name.clone(), vec![case])
+                (name.to_owned(), vec![case])
             }
             several => {
                 let mut text = vec!["exception instanceof".to_owned()];
-                text.extend(several.iter().map(|c| c.types.join(", ")));
+                text.extend(several.iter().map(Catch::label));
                 text.push("%".to_owned());
                 let mut case = self.element(ElementKind::Case, &text);
                 for (i, c) in several.iter().enumerate() {
-                    let rename = pseudo::assign(&c.name, vec!["exception".to_owned()]);
-                    let mut body = vec![self.element(ElementKind::Instruction, &rename)];
+                    let mut body = Vec::new();
+                    if !c.name.is_empty() {
+                        let rename = pseudo::assign(&c.name, vec!["exception".to_owned()]);
+                        body.push(self.element(ElementKind::Instruction, &rename));
+                    }
                     body.extend(self.catch_body(c));
                     case.branches[i] = Sequence::new(body);
                 }

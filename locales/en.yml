@@ -47,7 +47,7 @@ menu:
   open: Open …
   new_structogram: New structogram
   open_structogram: Open structogram …
-  structogram_from_java: Structogram from Java file …
+  structogram_from_source: Structogram from source file …
   import_astah: Import .asta project …
   export: Export
   export_svg: Diagram as SVG …
@@ -605,13 +605,14 @@ nsd:
   color_7: Grey
   color_8: Orange
   color_9: Violet
-  java_title: "Structogram from %{file}"
-  java_search: Search methods …
-  java_hint: Tick methods and open them, or double-click one. Each opens in a window of its own, not saved yet.
-  java_open: Open
-  java_failed: The Java file could not be read.
-  java_no_methods: The file contains no methods with a body.
-  java_too_many: "Only the first %{max} methods were opened."
+  source_title: "Structogram from %{file}"
+  source_search: Search methods …
+  source_hint: Tick methods and open them, or double-click one. Each opens in a window of its own, not saved yet.
+  source_open: Open
+  source_failed: The file could not be read.
+  source_unknown: "Structograms can be made from Java (.java) and C# (.cs) files."
+  source_no_methods: The file contains no methods with a body.
+  source_too_many: "Only the first %{max} methods were opened."
   notes: "%{count} places are not shown as written"
   note_line: "Line %{line}: %{what}"
   note_continue: continue has no element; kept as a red, disabled instruction
@@ -620,3 +621,9 @@ nsd:
   note_synchronized: synchronized – the body stands in its place, the lock as a comment
   note_fallthrough: the case runs on into the next one; its statements are copied there
   note_syntax_error: the parser could not read this; kept as a red, disabled instruction
+  note_using: using – the resource is assigned, the body stands in its place
+  note_lock: lock – the body stands in its place, the lock as a comment
+  note_yield: yield has no element; kept as written
+  note_goto: goto has no element; kept as a jump with its text
+  note_local_function: a function declared in the method is left out
+  note_conditional: "#if: only the first branch is read, the others are left out"

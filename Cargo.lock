@@ -6763,6 +6763,7 @@ version = "0.10.0"
 dependencies = [
  "pretty_assertions",
  "tree-sitter",
+ "tree-sitter-c-sharp",
  "tree-sitter-java",
  "umlcraft-nsd",
  "umlcraft-reverse",

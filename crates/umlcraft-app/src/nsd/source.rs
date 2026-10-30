@@ -1,6 +1,6 @@
-//! File › Structogram from Java file …: choose a `.java` file, then one or more of its methods
-//! in a dialog (grouped by class, with a search field); each opens as an unsaved structogram
-//! whose file name is suggested as `Class.method.nsd` next to the Java file.
+//! File › Structogram from source file …: choose a `.java` or `.cs` file, then one or more of
+//! its methods in a dialog (grouped by class, with a search field); each opens as an unsaved
+//! structogram whose file name is suggested as `Class.method.nsd` next to the source file.
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -14,13 +14,13 @@ use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::{ActiveTheme, Sizable, StyledExt, WindowExt, v_flex};
 use gpui_kit::*;
 use rust_i18n::t;
-use umlcraft_nsd_code::{Made, MethodRef, NoteKind, Report, Source};
+use umlcraft_nsd_code::{Language, Made, MethodRef, NoteKind, Report, Source};
 
 /// More windows than this at once would rather be a mistake.
 const MAX_WINDOWS: usize = 20;
 
-/// Asks for a Java file, reads it in the background and offers its methods. Errors come back
-/// to `failed` as message and detail.
+/// Asks for a Java or C# file, reads it in the background and offers its methods. Errors come
+/// back to `failed` as message and detail.
 pub fn choose(
     window: &mut Window,
     cx: &mut App,
@@ -36,25 +36,35 @@ pub fn choose(
         .spawn(cx, async move |cx| {
             let Ok(Ok(Some(paths))) = rx.await else { return };
             let Some(path) = paths.into_iter().next() else { return };
+            let Some(language) = Language::of(&path) else {
+                cx.update(|window, cx| {
+                    let message = t!("nsd.source_unknown").to_string();
+                    failed(message, path.display().to_string(), window, cx);
+                })
+                .ok();
+                return;
+            };
             let read_path = path.clone();
             let parsed = cx
                 .background_executor()
                 .spawn(async move {
                     let bytes = std::fs::read(&read_path)?;
-                    let source = Source::parse(&umlcraft_nsd_code::decode(&bytes));
+                    let source = Source::parse(language, &umlcraft_nsd_code::decode(&bytes));
                     let methods = source.methods();
                     std::io::Result::Ok((source, methods))
                 })
                 .await;
             cx.update(|window, cx| match parsed {
                 Ok((_, methods)) if methods.is_empty() => failed(
-                    t!("nsd.java_no_methods").to_string(),
+                    t!("nsd.source_no_methods").to_string(),
                     path.display().to_string(),
                     window,
                     cx,
                 ),
                 Ok((source, methods)) => offer(path, Rc::new(source), methods, window, cx),
-                Err(err) => failed(t!("nsd.java_failed").to_string(), err.to_string(), window, cx),
+                Err(err) => {
+                    failed(t!("nsd.source_failed").to_string(), err.to_string(), window, cx)
+                }
             })
             .ok();
         })
@@ -72,7 +82,7 @@ fn offer(
     if window.has_active_dialog(cx) {
         return;
     }
-    let search = cx.new(|cx| InputState::new(window, cx).placeholder(t!("nsd.java_search")));
+    let search = cx.new(|cx| InputState::new(window, cx).placeholder(t!("nsd.source_search")));
     search.update(cx, |s, cx| s.focus(window, cx));
     let chosen: Rc<RefCell<BTreeSet<usize>>> = Rc::default();
     let methods = Rc::new(methods);
@@ -97,12 +107,12 @@ fn offer(
             let (toggle, open) = (chosen.clone(), opener(&source, &methods, &path, vec![i]));
             list = list.child(
                 div()
-                    .id(("nsd-java-method", i))
+                    .id(("nsd-source-method", i))
                     .pl_3()
                     .flex()
                     .gap_2()
                     .items_center()
-                    .child(Checkbox::new(("nsd-java-check", i)).checked(checked).on_click(
+                    .child(Checkbox::new(("nsd-source-check", i)).checked(checked).on_click(
                         move |&on, window, _| {
                             let mut set = toggle.borrow_mut();
                             if on {
@@ -134,16 +144,18 @@ fn offer(
         };
         let ok_click = ok.clone();
         dialog
-            .title(t!("nsd.java_title", file = file_name).to_string())
+            .title(t!("nsd.source_title", file = file_name).to_string())
             .width(px(560.0))
             .child(
                 v_flex()
                     .gap_2()
                     .child(Input::new(&search).small())
-                    .child(div().text_xs().text_color(muted).child(t!("nsd.java_hint").to_string()))
+                    .child(
+                        div().text_xs().text_color(muted).child(t!("nsd.source_hint").to_string()),
+                    )
                     .child(
                         div()
-                            .id("nsd-java-methods")
+                            .id("nsd-source-methods")
                             .max_h(px(380.0))
                             .overflow_y_scroll()
                             .child(list),
@@ -156,14 +168,14 @@ fn offer(
             .footer(
                 DialogFooter::new()
                     .child(
-                        Button::new("nsd-java-cancel")
+                        Button::new("nsd-source-cancel")
                             .label(t!("dialog.cancel").to_string())
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
                     .child(
-                        Button::new("nsd-java-open")
+                        Button::new("nsd-source-open")
                             .primary()
-                            .label(t!("nsd.java_open").to_string())
+                            .label(t!("nsd.source_open").to_string())
                             .on_click(move |_, window, cx| ok_click(window, cx)),
                     ),
             )
@@ -182,7 +194,8 @@ fn opener(
         window.close_dialog(cx);
         let file_name =
             path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let origin = format!("{} / Java: {file_name}", super::origin());
+        let language = source.language().name();
+        let origin = format!("{} / {language}: {file_name}", super::origin());
         let (author, date) = (super::user_name(), super::today());
         let made = Made { author: &author, date: &date, origin: &origin };
         let directory = path.parent().map(PathBuf::from).unwrap_or_default();
@@ -195,7 +208,7 @@ fn opener(
             }
         }
         if picked.len() > MAX_WINDOWS {
-            let message = t!("nsd.java_too_many", max = MAX_WINDOWS).to_string();
+            let message = t!("nsd.source_too_many", max = MAX_WINDOWS).to_string();
             let rx =
                 window.prompt(PromptLevel::Info, &message, None, &[t!("dialog.ok").as_ref()], cx);
             cx.spawn(async move |_| rx.await.ok()).detach();
@@ -216,6 +229,12 @@ pub fn notes(report: &Report) -> Vec<String> {
                 NoteKind::Synchronized => t!("nsd.note_synchronized"),
                 NoteKind::Fallthrough => t!("nsd.note_fallthrough"),
                 NoteKind::SyntaxError => t!("nsd.note_syntax_error"),
+                NoteKind::Using => t!("nsd.note_using"),
+                NoteKind::Lock => t!("nsd.note_lock"),
+                NoteKind::Yield => t!("nsd.note_yield"),
+                NoteKind::Goto => t!("nsd.note_goto"),
+                NoteKind::LocalFunction => t!("nsd.note_local_function"),
+                NoteKind::Conditional => t!("nsd.note_conditional"),
             };
             t!("nsd.note_line", line = n.line, what = what).to_string()
         })

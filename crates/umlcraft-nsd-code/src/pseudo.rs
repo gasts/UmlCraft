@@ -16,11 +16,19 @@ pub fn assign(name: &str, mut value: Vec<String>) -> Vec<String> {
 }
 
 /// An assignment or increment as `x := value`: `x = 1` → `x := 1`, `total += a + b` →
-/// `total := total + (a + b)`, `i++` → `i := i + 1`. Other expressions give `None`.
+/// `total := total + (a + b)`, `i++` → `i := i + 1`, C#'s `x ??= y` → `x := x ?? y` and
+/// `var (a, b) = p` → `(a, b) := p`. Other expressions give `None`.
 pub fn assignment(expr: Node, src: &str) -> Option<Vec<String>> {
     match expr.kind() {
         "assignment_expression" => {
-            let left = node_text(expr.child_by_field_name("left")?, src);
+            let left = expr.child_by_field_name("left")?;
+            let left = match left.child_by_field_name("type") {
+                // `var (a, b)`: what is declared, without its type.
+                Some(t) if left.kind() == "declaration_expression" => {
+                    src[t.end_byte()..left.end_byte()].trim()
+                }
+                _ => node_text(left, src),
+            };
             let op = node_text(expr.child_by_field_name("operator")?, src);
             let right = expr.child_by_field_name("right")?;
             let column = expr.start_position().column;
@@ -34,12 +42,11 @@ pub fn assignment(expr: Node, src: &str) -> Option<Vec<String>> {
             };
             Some(assign(left, value))
         }
-        "update_expression" => {
+        "update_expression" | "postfix_unary_expression" | "prefix_unary_expression" => {
             let operand = expr.named_child(0)?;
-            let text = node_text(expr, src);
-            let op = if text.contains("++") { "+" } else { "-" };
+            let op = increment(expr, src)?;
             let name = one_line(node_text(operand, src));
-            Some(vec![format!("{name} := {name} {op} 1")])
+            Some(vec![format!("{name} := {name} {} 1", if op > 0 { "+" } else { "-" })])
         }
         _ => None,
     }
@@ -89,12 +96,12 @@ pub fn traversal(name: &str, mut value: Vec<String>) -> Vec<String> {
 /// The constant a counting loop's update adds to `var`: `i++` 1, `i -= 2` -2.
 fn step(update: Node, var: &str, src: &str) -> Option<i64> {
     match update.kind() {
-        "update_expression" => {
+        "update_expression" | "postfix_unary_expression" | "prefix_unary_expression" => {
             let operand = update.named_child(0)?;
             if node_text(operand, src) != var {
                 return None;
             }
-            Some(if node_text(update, src).contains("++") { 1 } else { -1 })
+            increment(update, src)
         }
         "assignment_expression" => {
             if node_text(update.child_by_field_name("left")?, src) != var {
@@ -108,6 +115,18 @@ fn step(update: Node, var: &str, src: &str) -> Option<i64> {
                 _ => None,
             }
         }
+        _ => None,
+    }
+}
+
+/// 1 for `i++`/`++i`, -1 for `i--`/`--i`, `None` for other unary expressions (`-x`, `!b`).
+fn increment(expr: Node, src: &str) -> Option<i64> {
+    let operand = expr.named_child(0)?;
+    let text = node_text(expr, src);
+    let op = text.replacen(node_text(operand, src), "", 1);
+    match op.trim() {
+        "++" => Some(1),
+        "--" => Some(-1),
         _ => None,
     }
 }
@@ -130,8 +149,14 @@ fn operand(expr: Node, src: &str, column: usize, outer: u8) -> Vec<String> {
         "binary_expression" => {
             expr.child_by_field_name("operator").map_or(0, |o| precedence(node_text(o, src)))
         }
-        "instanceof_expression" => precedence("<"),
-        "ternary_expression" | "assignment_expression" | "lambda_expression" => 0,
+        "instanceof_expression" | "is_expression" | "as_expression" | "is_pattern_expression" => {
+            precedence("<")
+        }
+        "ternary_expression"
+        | "conditional_expression"
+        | "assignment_expression"
+        | "lambda_expression"
+        | "switch_expression" => 0,
         _ => u8::MAX,
     };
     let mut text = lines_at(expr, src, column);
@@ -144,7 +169,7 @@ fn operand(expr: Node, src: &str, column: usize, outer: u8) -> Vec<String> {
     text
 }
 
-/// How tightly a binary operator binds (Java's order).
+/// How tightly a binary operator binds (Java's and C#'s order).
 fn precedence(op: &str) -> u8 {
     match op {
         "*" | "/" | "%" => 12,
@@ -157,17 +182,19 @@ fn precedence(op: &str) -> u8 {
         "|" => 5,
         "&&" => 4,
         "||" => 3,
+        "??" => 2,
         _ => 0,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::Source;
+    use crate::{Language, Source};
 
     /// The first statement of `body` as the notation gives it.
     fn first(body: &str) -> Vec<String> {
-        let source = Source::parse(&format!("class A {{ void f(int n) {{ {body} }} }}"));
+        let source =
+            Source::parse(Language::Java, &format!("class A {{ void f(int n) {{ {body} }} }}"));
         let m = &source.methods()[0];
         let made = crate::Made { author: "t", date: "2026-10-30", origin: "test" };
         let (d, _) = source.diagram(m, &made).unwrap();
@@ -224,6 +251,7 @@ mod tests {
     #[test]
     fn signatures_name_only_the_parameters() {
         let source = Source::parse(
+            Language::Java,
             "class A { <T> int f(final java.util.List<T> xs, int[] a, String... rest) { return 0; }
                        void g(A this, int x) { } record P(int x) { P { } } }",
         );

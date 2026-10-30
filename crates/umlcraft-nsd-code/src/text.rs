@@ -76,6 +76,22 @@ pub fn block_comment(text: &str) -> Vec<String> {
     }
 }
 
+/// A run of `///` comments' lines without the slashes and the blanks after them, the rest
+/// (XML tags included) as written, blank lines at either end dropped.
+pub fn doc_lines<'a>(comments: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let lines: Vec<String> = comments
+        .into_iter()
+        .map(|c| c.trim_start().trim_start_matches("///").trim_start_matches([' ', '\t']))
+        .map(|l| l.trim_end().to_owned())
+        .collect();
+    let first = lines.iter().position(|l| !l.is_empty());
+    let last = lines.iter().rposition(|l| !l.is_empty());
+    match (first, last) {
+        (Some(a), Some(b)) => lines[a..=b].to_vec(),
+        _ => Vec::new(),
+    }
+}
+
 /// Lines without a final `;`.
 pub fn without_semicolon(mut lines: Vec<String>) -> Vec<String> {
     if let Some(last) = lines.last_mut()

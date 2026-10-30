@@ -1,0 +1,56 @@
+== Switches.classic (line 3)
+| classic(day)
+  case
+    | day
+    | 1
+    | 2, 3
+    | default
+    -
+      instruction
+        | name := "Monday"
+    -
+      instruction
+        | name := "Midweek"
+    -
+      instruction
+        | name := "Other"
+  jump
+    | return name
+
+== Switches.defaultInMiddle (line 22)
+| defaultInMiddle(a)
+  case
+    | a
+    | 1
+    | 2
+    | default
+    -
+      instruction
+        | r := 10
+    -
+      instruction
+        | r := 20
+    -
+      instruction
+        | r := 0
+  jump
+    | return r
+
+== Switches.noDefault (line 40)
+| noDefault(a)
+  case
+    | a
+    | 1
+    | 2
+    | %
+    -
+      call
+        | work()
+    -
+      call
+        | work()
+    -
+
+== Switches.work (line 53)
+| work()
+

@@ -3,7 +3,7 @@
 //! that is open already brings its window to the front.
 
 mod dialog;
-mod java;
+mod source;
 mod view;
 
 use std::path::{Path, PathBuf};
@@ -12,7 +12,7 @@ use gpui_kit::*;
 use rust_i18n::t;
 use umlcraft_nsd::{Diagram, ElementKind};
 
-pub use java::choose as choose_java_method;
+pub use source::choose as choose_source_method;
 use view::{NsdView, Opening};
 
 actions!(

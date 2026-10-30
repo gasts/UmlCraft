@@ -1,0 +1,17 @@
+== Orders.Run (line 5)
+| Run(n)
+  call
+    | Check(n)
+  call
+    | this.Check(n)
+  instruction
+    | base.ToString()
+
+== Orders.Check (line 12)
+| Check(n)
+  instruction color=ff0000 disabled
+    | int broken = = 2;
+  instruction
+    | n := n + 1
+! line 14: SyntaxError
+

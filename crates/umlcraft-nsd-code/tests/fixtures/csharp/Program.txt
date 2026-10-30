@@ -1,0 +1,21 @@
+== Program.Main (line 3)
+| Main(args)
+  instruction
+    | total := 0
+  for style=COUNTER
+    | for i := 0 to args.Length - 1
+    # Count the arguments.
+    -
+      instruction
+        | total := total + i
+  instruction
+    | Console.WriteLine(total)
+
+== Helper.Run (line 13)
+| Run()
+  call
+    | Check()
+
+== Helper.Check (line 18)
+| Check()
+

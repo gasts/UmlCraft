@@ -1,0 +1,66 @@
+== Exceptions.tryCatch (line 6)
+| tryCatch(s)
+  try
+    | e
+    -
+      jump
+        | return Integer.parseInt(s)
+    -
+      jump
+        | return 0
+    -
+
+== Exceptions.multiCatch (line 18)
+| multiCatch(r)
+  try
+    | exception
+    -
+      instruction
+        | r.read()
+    -
+      case
+        | exception instanceof
+        | IOException
+        | RuntimeException
+        | %
+        -
+          instruction
+            | e := exception
+          call
+            | log(e)
+        -
+          instruction
+            | e := exception
+          call
+            | log(e)
+        -
+    -
+
+== Exceptions.tryFinally (line 34)
+| tryFinally(r)
+  try
+    | e
+    -
+      instruction
+        | r.read()
+    -
+      call
+        | log(e)
+    -
+      instruction
+        | r.close()
+
+== Exceptions.onlyFinally (line 50)
+| onlyFinally(r)
+  try
+    -
+      instruction
+        | r.read()
+    -
+    -
+      instruction
+        | r.close()
+
+== Exceptions.log (line 62)
+| log(e)
+

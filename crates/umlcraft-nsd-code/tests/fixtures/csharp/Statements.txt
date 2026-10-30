@@ -1,0 +1,39 @@
+== Statements.declarations (line 6)
+| declarations(a)
+# Declarations, assignments and expressions.
+  instruction
+    | y := a + 1
+  instruction
+    | x := y * 2
+  instruction
+    | y := y + 1
+  instruction
+    | total := total + x
+  jump
+    | return x
+
+== Statements.calls (line 16)
+| calls(list)
+  instruction
+    | list.clear()
+  call
+    | helper(1, 2)
+  instruction
+    | n := list.size()
+  instruction
+    | s := list.toString().trim()
+  instruction
+    | System.out.println(n + s)
+  instruction
+    | new StringBuilder()
+
+== Statements.blocks (line 26)
+| blocks()
+  instruction
+    | inner := 1
+  call
+    | helper(inner, 0)
+
+== Statements.helper (line 35)
+| helper(a, b)
+

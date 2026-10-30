@@ -370,14 +370,14 @@ impl MainView {
         }
     }
 
-    /// Chooses a Java file and methods of it, each opening as a structogram.
-    fn structogram_from_java(
+    /// Chooses a source file and methods of it, each opening as a structogram.
+    fn structogram_from_source(
         &mut self,
-        _: &StructogramFromJava,
+        _: &StructogramFromSource,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        crate::nsd::choose_java_method(window, cx, |message, detail, window, cx| {
+        crate::nsd::choose_source_method(window, cx, |message, detail, window, cx| {
             let rx = window.prompt(
                 PromptLevel::Critical,
                 &message,
@@ -1706,7 +1706,7 @@ fn menus(settings: &Settings) -> Vec<Menu> {
         menu_item("menu.open", OpenProject),
         menu_item("menu.new_structogram", NewStructogram),
         menu_item("menu.open_structogram", OpenStructogram),
-        menu_item("menu.structogram_from_java", StructogramFromJava),
+        menu_item("menu.structogram_from_source", StructogramFromSource),
         MenuItem::submenu(Menu::new(t!("menu.recent").to_string()).items(recent)),
         menu_item("menu.import_astah", ImportAstah),
     ];
@@ -1827,7 +1827,7 @@ fn file_menu(
     menu = item(menu, "menu.open", Box::new(OpenProject));
     menu = item(menu, "menu.new_structogram", Box::new(NewStructogram));
     menu = item(menu, "menu.open_structogram", Box::new(OpenStructogram));
-    menu = item(menu, "menu.structogram_from_java", Box::new(StructogramFromJava));
+    menu = item(menu, "menu.structogram_from_source", Box::new(StructogramFromSource));
     menu = menu.submenu(t!("menu.recent"), window, cx, move |mut menu, _, _| {
         if recent.is_empty() {
             return menu.menu_with_disabled(t!("menu.no_recent"), Box::new(Cancel), true);
@@ -1958,7 +1958,7 @@ impl Render for MainView {
             .on_action(cx.listener(Self::open_project))
             .on_action(cx.listener(Self::new_structogram))
             .on_action(cx.listener(Self::open_structogram))
-            .on_action(cx.listener(Self::structogram_from_java))
+            .on_action(cx.listener(Self::structogram_from_source))
             .on_action(cx.listener(Self::import_astah))
             .on_action(cx.listener(Self::export_astah))
             .on_action(cx.listener(Self::import_source))

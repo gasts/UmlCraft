@@ -27,6 +27,7 @@ impl Grammar for Java {
         "continue_statement",
         "yield_statement",
     ];
+    const RUNS_ON: bool = true;
 
     fn statement(b: &mut Builder<'_, Self>, node: Node, out: &mut Vec<Element>) {
         build::statement(b, node, out);

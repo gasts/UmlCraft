@@ -195,6 +195,7 @@ impl Builder<'_, Java> {
                 "catch_clause" => catches.push(Catch {
                     name: catch_name(child, src),
                     types: catch_type(child, src).split('|').map(|t| t.trim().to_owned()).collect(),
+                    filter: None,
                     body: child.child_by_field_name("body"),
                 }),
                 "finally_clause" => finally = Some(child),
