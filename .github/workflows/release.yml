@@ -148,7 +148,10 @@ jobs:
           # Ad-hoc signature: not a Developer ID, but Apple Silicon refuses unsigned code.
           codesign --force --sign - "$app"
           ln -s /Applications dist/dmg/Applications
-          hdiutil create -volname UmlCraft -srcfolder dist/dmg -format UDZO \
+          # hdiutil sizes the image from the folder and now and then too small ("No space left
+          # on device"); a fixed size with room to spare avoids that.
+          size=$(( $(du -sm dist/dmg | cut -f1) + 64 ))
+          hdiutil create -volname UmlCraft -srcfolder dist/dmg -format UDZO -size "${size}m" \
             "dist/UmlCraft-$VERSION-macos-universal.dmg"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
