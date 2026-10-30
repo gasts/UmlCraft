@@ -392,8 +392,6 @@ settings:
   theme: Theme
   light: Light
   dark: Dark
-  backdrop: Translucent window background
-  backdrop_detail: "Lets the system's background show between the panels (Mica on Windows). Text is then smoothed without ClearType and looks less crisp."
   classes: Classes
   visibility_column: Visibility in a column of its own
   visibility_column_detail: "Lines up the names of all attributes and operations of a class. Off, the visibility stands right before the name."

@@ -79,13 +79,11 @@ UmlCraft's keys (`java.`, `csharp.`, `cpp.`); the migration renames Astah's `jud
   it. The diagram tab holds the palette of the active diagram's kind and opens by itself when
   another diagram becomes active. Where the estimated width does not fit, buttons drop their
   labels; a double click on a tab folds the ribbon (`ribbonCollapsed` in the settings).
-- `shell.rs` has the window's optional system backdrop (`backdrop` in the settings, off by
-  default: Mica on Windows, `Blurred` on macOS, none on Linux, where only KWin blurs), the
-  card style and icon buttons. Over the backdrop the grey between the cards is transparent,
-  never translucent: GPUI adds alpha instead of blending it, which roughens text over
-  translucent pixels, and with any non-opaque window it drops subpixel antialiasing
-  everywhere. The window's root surface is transparent for the same reason (`main.rs`
-  opens the window itself instead of `gpui_kit::open_window`). `icons.rs` embeds
+- `shell.rs` has the opaque backdrop the cards float on, the card style and icon buttons
+  (`in_title_bar` keeps a press on a title bar button from moving the window on Windows). A
+  system backdrop (Mica, macOS blur) was tried and dropped: with a non-opaque window GPUI
+  renders text without subpixel antialiasing, and on Windows its antialiased edges come out
+  too dark over the backdrop. `icons.rs` embeds
   `assets/icons/` (`AppAssets`, falling back to gpui-kit's Lucide icons) and maps tools, diagram
   kinds and model elements to their icons.
 - `png.rs` rasterizes the SVG export (`umlcraft_notation::svg`) with `resvg` for PNG export, at

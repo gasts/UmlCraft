@@ -199,9 +199,7 @@ fn main() {
         ]);
 
         let bounds = Bounds::centered(None, size(px(1280.0), px(820.0)), cx);
-        // Like `gpui_kit::open_window`, but the root surface stays transparent: gpui-component
-        // paints it in the theme's background, which would hide the system backdrop (Mica).
-        cx.open_window(
+        gpui_kit::open_window(
             // The main view draws the title bar itself (`TitleBar`), with the window's controls.
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -210,11 +208,11 @@ fn main() {
                 // desktops show the window with the app's icon.
                 app_id: Some("com.umlcraft.app".into()),
                 window_decorations: cfg!(target_os = "linux").then_some(WindowDecorations::Client),
-                window_background: shell::window_background(settings.backdrop),
                 ..gpui_kit::component::TitleBar::window_options()
             },
+            cx,
             move |window, cx| {
-                let view = cx.new(|cx| {
+                cx.new(|cx| {
                     let mut view = main_view::MainView::new(settings, window, cx);
                     // A file given on the command line, e.g. by "Open with".
                     if let Some(path) = std::env::args_os().nth(1) {
@@ -234,8 +232,7 @@ fn main() {
                     })
                     .detach();
                     view
-                });
-                cx.new(|cx| base::Root::new(view, window, cx).bg(transparent_black()))
+                })
             },
         )
         .expect("failed to open the main window");

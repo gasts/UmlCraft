@@ -392,8 +392,6 @@ settings:
   theme: Farbschema
   light: Hell
   dark: Dunkel
-  backdrop: Durchscheinender Fensterhintergrund
-  backdrop_detail: "Lässt zwischen den Bereichen den Hintergrund des Systems durchscheinen (Mica unter Windows). Die Schrift wird dann ohne ClearType geglättet und wirkt weniger scharf."
   classes: Klassen
   visibility_column: Sichtbarkeit in eigener Spalte
   visibility_column_detail: "Richtet die Namen aller Attribute und Operationen einer Klasse untereinander aus. Ausgeschaltet steht die Sichtbarkeit direkt vor dem Namen."

@@ -7,13 +7,11 @@ use gpui_kit::component::dialog::DialogFooter;
 use gpui_kit::component::radio::RadioGroup;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{ActiveTheme, StyledExt, WindowExt, v_flex};
-use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use rust_i18n::t;
 
 use crate::main_view::MainView;
 use crate::settings::LANGUAGES;
-use crate::shell::SYSTEM_BACKDROP;
 
 /// Opens the dialog on the settings of `view`, unless a dialog is open already.
 pub fn open(view: WeakEntity<MainView>, window: &mut Window, cx: &mut App) {
@@ -32,11 +30,10 @@ pub fn open(view: WeakEntity<MainView>, window: &mut Window, cx: &mut App) {
             .and_then(|l| LANGUAGES.iter().position(|&(code, _)| code == l))
             .map_or(0, |ix| ix + 1);
         let column = settings.visibility_column;
-        let backdrop = settings.backdrop;
         let dark = cx.theme().is_dark();
         let muted = cx.theme().muted_foreground;
 
-        let (v1, v2, v3, v4) = (view.clone(), view.clone(), view.clone(), view.clone());
+        let (v1, v2, v3) = (view.clone(), view.clone(), view.clone());
         let languages = RadioGroup::horizontal("settings-language")
             .child(t!("settings.system_language").to_string())
             .children(LANGUAGES.map(|(_, name)| name))
@@ -79,19 +76,6 @@ pub fn open(view: WeakEntity<MainView>, window: &mut Window, cx: &mut App) {
                     .text_color(muted)
                     .child(t!("settings.visibility_column_detail").to_string()),
             );
-        let system_backdrop = v_flex()
-            .gap_1()
-            .child(
-                Switch::new("settings-backdrop")
-                    .checked(backdrop)
-                    .label(t!("settings.backdrop").to_string())
-                    .on_change(move |&on, window, cx| {
-                        v4.update(cx, |this, cx| this.set_backdrop(on, window, cx)).ok();
-                    }),
-            )
-            .child(
-                div().text_xs().text_color(muted).child(t!("settings.backdrop_detail").to_string()),
-            );
 
         dialog
             .title(t!("settings.title").to_string())
@@ -101,13 +85,7 @@ pub fn open(view: WeakEntity<MainView>, window: &mut Window, cx: &mut App) {
                     .gap_5()
                     .pb_1()
                     .child(section(t!("settings.language").to_string(), languages))
-                    .child(section(
-                        t!("settings.theme").to_string(),
-                        v_flex()
-                            .gap_3()
-                            .child(theme)
-                            .when(SYSTEM_BACKDROP.is_some(), |s| s.child(system_backdrop)),
-                    ))
+                    .child(section(t!("settings.theme").to_string(), theme))
                     .child(section(t!("settings.classes").to_string(), visibility_column)),
             )
             .footer(

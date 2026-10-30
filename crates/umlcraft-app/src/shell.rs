@@ -9,44 +9,18 @@ use gpui_kit::*;
 pub const GAP: Pixels = px(8.0);
 pub const RADIUS: Pixels = px(10.0);
 
-/// What the system can draw behind the window, if the user turns it on (`Settings::backdrop`):
-/// Mica on Windows 11, the blurred desktop on macOS. None on Linux: only KWin blurs,
-/// elsewhere the window would just be see-through.
-pub const SYSTEM_BACKDROP: Option<WindowBackgroundAppearance> = if cfg!(windows) {
-    Some(WindowBackgroundAppearance::MicaBackdrop)
-} else if cfg!(target_os = "macos") {
-    Some(WindowBackgroundAppearance::Blurred)
-} else {
-    None
-};
-
-/// The window's background with the system's backdrop on or off.
-pub fn window_background(backdrop: bool) -> WindowBackgroundAppearance {
-    SYSTEM_BACKDROP.filter(|_| backdrop).unwrap_or(WindowBackgroundAppearance::Opaque)
-}
-
 /// The surface the cards float on: a grey under white cards in the light theme; in the dark
 /// one the theme's background, with the cards a shade lighter (`card_background`).
 ///
-/// Over a system backdrop it is transparent, as long as the backdrop follows the app's theme:
-/// the system draws it light or dark after the system's appearance. Where the two differ, the
-/// grey stays opaque. Never translucent: GPUI adds the alpha of what it draws to the alpha
-/// below instead of blending it, so text over a translucent surface loses its antialiasing.
-pub fn backdrop(system_backdrop: bool, window: &Window, cx: &App) -> Hsla {
+/// Always opaque. A system backdrop (Mica, the blurred desktop) was tried and dropped: with a
+/// non-opaque window GPUI renders text without ClearType, and on Windows its antialiased
+/// edges come out too dark over the backdrop.
+pub fn backdrop(cx: &App) -> Hsla {
     let theme = cx.theme();
-    let color = if theme.is_dark() {
+    if theme.is_dark() {
         theme.background
     } else {
         theme.background.blend(theme.foreground.opacity(0.07))
-    };
-    let system_dark =
-        matches!(window.appearance(), WindowAppearance::Dark | WindowAppearance::VibrantDark);
-    if window_background(system_backdrop) != WindowBackgroundAppearance::Opaque
-        && system_dark == theme.is_dark()
-    {
-        transparent_black()
-    } else {
-        color
     }
 }
 

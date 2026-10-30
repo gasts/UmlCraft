@@ -14,9 +14,7 @@ today.
   left of the ribbon creates new diagrams. In a narrow window the ribbon's buttons drop their
   labels; a double click on a tab folds the ribbon to its tabs. The model tree shows an icon
   per element, the properties panel names what it shows. On macOS the system menu bar stays
-  as it was. A new setting lets the system's backdrop show behind the cards, Mica on
-  Windows 11 and the blurred desktop on macOS. It is off by default, since text then loses
-  ClearType.
+  as it was.
 - The interface no longer names Astah: menus, messages and the ribbon speak of `.asta`
   projects, and the ribbon's group for import and export is called Exchange.
 

@@ -1103,14 +1103,6 @@ impl MainView {
         self.settings.save();
     }
 
-    /// Lets the system's backdrop show behind the cards, or not.
-    pub fn set_backdrop(&mut self, on: bool, window: &mut Window, cx: &mut Context<Self>) {
-        self.settings.backdrop = on;
-        self.settings.save();
-        window.set_background_appearance(shell::window_background(on));
-        cx.notify();
-    }
-
     /// Switches the user interface to `language`, or with `None` to the system's language.
     pub fn set_language(
         &mut self,
@@ -1811,7 +1803,7 @@ impl Render for MainView {
         if window.focused(cx).is_none() {
             self.canvas.focus_handle(cx).focus(window, cx);
         }
-        let backdrop = shell::backdrop(self.settings.backdrop, window, cx);
+        let backdrop = shell::backdrop(cx);
         let model_browser = self.model_browser(cx).into_any_element();
         let diagram_area = self.diagram_area(cx).into_any_element();
         let properties_area = self.properties_area(cx).into_any_element();
