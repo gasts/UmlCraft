@@ -12,4 +12,10 @@
     <comment xml:lang="de">Astah-Projekt</comment>
     <glob pattern="*.asta"/>
   </mime-type>
+  <mime-type type="application/x-structorizer">
+    <comment>Structorizer structogram</comment>
+    <comment xml:lang="de">Structorizer-Struktogramm</comment>
+    <sub-class-of type="application/xml"/>
+    <glob pattern="*.nsd"/>
+  </mime-type>
 </mime-info>

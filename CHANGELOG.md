@@ -7,7 +7,7 @@ today.
 
 - **Windows installer**: `UmlCraft-*-windows-x64-setup.exe` installs UmlCraft for the current
   user without administrator rights, or for all users, and makes it the program for `.ucraft`
-  files; `.asta` files get UmlCraft under "Open with". The `.zip` stays for use without
+  files; `.asta` and `.nsd` files get UmlCraft under "Open with". The `.zip` stays for use without
   installing.
 - The mouse wheel over the ribbon switches its tabs.
 - **Structograms**: File › Open structogram … shows Nassi-Shneiderman diagrams from

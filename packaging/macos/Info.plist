@@ -31,6 +31,18 @@
 				<string>com.change-vision.astah.project</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Structorizer structogram</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>lu.fisch.structorizer.nsd</string>
+			</array>
+		</dict>
 	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
@@ -68,6 +80,23 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>asta</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>lu.fisch.structorizer.nsd</string>
+			<key>UTTypeDescription</key>
+			<string>Structorizer structogram</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>nsd</string>
 				</array>
 			</dict>
 		</dict>

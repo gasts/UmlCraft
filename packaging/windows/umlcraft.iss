@@ -4,7 +4,7 @@
 ;
 ; It installs for the current user without administrator rights, or for all users after
 ; asking (PrivilegesRequiredOverridesAllowed). UmlCraft becomes the program for .ucraft files
-; and one of the programs offered for .asta files, without taking those over.
+; and one of the programs offered for .asta and .nsd files, without taking those over.
 
 #ifndef Version
   #error Pass the version: /DVersion=X.Y.Z
@@ -48,6 +48,8 @@ en.ProjectType=UmlCraft project
 de.ProjectType=UmlCraft-Projekt
 en.AstaType=.asta project
 de.AstaType=.asta-Projekt
+en.NsdType=Structogram
+de.NsdType=Struktogramm
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -75,8 +77,14 @@ Root: HKA; Subkey: "Software\Classes\.asta\OpenWithProgids"; ValueType: string; 
 Root: HKA; Subkey: "Software\Classes\UmlCraft.Asta"; ValueType: string; ValueName: ""; ValueData: "{cm:AstaType}"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\UmlCraft.Asta\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\umlcraft.exe,0"
 Root: HKA; Subkey: "Software\Classes\UmlCraft.Asta\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\umlcraft.exe"" ""%1"""
+; Structorizer's .nsd files likewise.
+Root: HKA; Subkey: "Software\Classes\.nsd\OpenWithProgids"; ValueType: string; ValueName: "UmlCraft.Nsd"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\UmlCraft.Nsd"; ValueType: string; ValueName: ""; ValueData: "{cm:NsdType}"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\UmlCraft.Nsd\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\umlcraft.exe,0"
+Root: HKA; Subkey: "Software\Classes\UmlCraft.Nsd\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\umlcraft.exe"" ""%1"""
 Root: HKA; Subkey: "Software\Classes\Applications\umlcraft.exe\SupportedTypes"; ValueType: string; ValueName: ".ucraft"; ValueData: ""; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\Applications\umlcraft.exe\SupportedTypes"; ValueType: string; ValueName: ".asta"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\umlcraft.exe\SupportedTypes"; ValueType: string; ValueName: ".nsd"; ValueData: ""
 
 [Run]
 Filename: "{app}\umlcraft.exe"; Description: "{cm:LaunchProgram,UmlCraft}"; Flags: nowait postinstall skipifsilent
