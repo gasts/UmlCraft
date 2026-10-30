@@ -14,6 +14,12 @@ public class Edge {
         };
     }
 
+    void fractions() {
+        for (double x = 0; x < 2.5; x++) {
+            step(x);
+        }
+    }
+
     void calls() {
         this.reset();
         super.toString();

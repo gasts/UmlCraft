@@ -237,35 +237,53 @@
     | gib Square(n)
 ! line 174: LocalFunction
 
-== Features.Open (line 180)
+== Features.Untyped (line 180)
+| Untyped(path)
+  try
+    | exception
+    -
+      instruction
+        | File.Delete(path)
+    -
+      case
+        | exception instanceof?
+        | IOException
+        | %
+        -
+          call
+            | Trace(path)
+        -
+    -
+
+== Features.Open (line 192)
 | Open(path)
   call
     | Log(path)
   jump
     | gib null
-! line 184: Conditional
+! line 196: Conditional
 
-== Features.Pairs (line 191)
+== Features.Pairs (line 203)
 | Pairs()
   jump
     | gib null
 
-== Features.Trace (line 193)
+== Features.Trace (line 205)
 | Trace(path)
   instruction
     | count := count * 2
 
-== Features.Point.Point (line 205)
+== Features.Point.Point (line 217)
 | Point(x)
   instruction
     | X := x
 
-== Features.Pair.Sum (line 213)
+== Features.Pair.Sum (line 225)
 | Sum()
   jump
     | gib A + B
 
-== Features.IShape.Area (line 218)
+== Features.IShape.Area (line 230)
 | Area()
   jump
     | gib 0

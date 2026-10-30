@@ -76,6 +76,10 @@ impl Catch<'_> {
     }
 }
 
+/// What a catch of everything names as its type: C++'s `catch (...)`, a bare `except:` and
+/// `catch { }`, and the base classes they stand for.
+const CATCH_ALL: &[&str] = &["...", "BaseException", "Exception", "Throwable"];
+
 pub struct Builder<'a, G> {
     pub src: &'a str,
     /// The diagram's header, for the keywords for loops are read with.
@@ -401,8 +405,9 @@ impl<'a, G: Grammar> Builder<'a, G> {
     }
 
     /// A try element from its parts. One catch of one type names the exception as the try's
-    /// text; one catch of several types becomes a case on the exception's type; several
-    /// catches become one case on `exception`, each branch naming it as its catch does.
+    /// text (none for a catch of everything); one catch of several types, or of one type
+    /// without a name, becomes a case on the exception's type; several catches become one
+    /// case on `exception`, each branch naming it as its catch does.
     pub fn try_element(
         &mut self,
         tried: Vec<Element>,
@@ -411,7 +416,14 @@ impl<'a, G: Grammar> Builder<'a, G> {
     ) -> Element {
         let (variable, caught) = match catches.as_slice() {
             [] => (String::new(), Vec::new()),
-            [only] if only.types.len() < 2 && only.filter.is_none() => {
+            [only]
+                if only.filter.is_none()
+                    && match only.types.as_slice() {
+                        [] => true,
+                        [one] => !only.name.is_empty() || CATCH_ALL.contains(&one.as_str()),
+                        _ => false,
+                    } =>
+            {
                 (only.name.clone(), self.catch_body(only))
             }
             [only] => {

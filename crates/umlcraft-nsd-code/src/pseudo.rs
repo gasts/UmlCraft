@@ -75,6 +75,7 @@ pub fn assignment(expr: Node, src: &str) -> Option<Vec<String>> {
 /// `for i := a to b by s` for a loop that counts `var` from `start` by a constant step:
 /// `for (int i = 0; i < n; i++)` → `for i := 0 to n - 1`. Other for loops give `None`.
 pub fn counting(node: Node, var: Node, start: Node, src: &str) -> Option<String> {
+    let var_node = var;
     let var = node_text(var, src);
 
     let condition = node.child_by_field_name("condition")?;
@@ -82,6 +83,14 @@ pub fn counting(node: Node, var: Node, start: Node, src: &str) -> Option<String>
     let left = condition.child_by_field_name("left")?;
     let bound = condition.child_by_field_name("right")?;
     if condition.kind() != "binary_expression" || node_text(left, src) != var {
+        return None;
+    }
+    // `to n - 1` counts whole numbers only: `x < 2.5` would end a pass too early.
+    let declared = std::iter::successors(var_node.parent(), |p| p.parent())
+        .take_while(|p| *p != node)
+        .filter_map(|p| p.child_by_field_name("type"))
+        .any(|t| ["float", "double", "decimal"].iter().any(|f| node_text(t, src).contains(f)));
+    if declared || fraction(start, src) || fraction(bound, src) {
         return None;
     }
 
@@ -102,6 +111,20 @@ pub fn counting(node: Node, var: Node, start: Node, src: &str) -> Option<String>
         1 => format!("for {var} := {start} to {end}"),
         _ => format!("for {var} := {start} to {end} by {step}"),
     })
+}
+
+/// Whether an expression holds a number with a fraction (`2.5`, `1e3`, `0.5f`).
+fn fraction(expr: Node, src: &str) -> bool {
+    let literal = match expr.kind() {
+        "decimal_floating_point_literal" | "hex_floating_point_literal" | "real_literal" => true,
+        "number_literal" => {
+            let text = node_text(expr, src);
+            !text.starts_with("0x") && !text.starts_with("0X") && text.contains(['.', 'e', 'E'])
+        }
+        _ => false,
+    };
+    let mut cursor = expr.walk();
+    literal || expr.named_children(&mut cursor).any(|c| fraction(c, src))
 }
 
 /// `foreach v in values` for `for (T v : values)`.

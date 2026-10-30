@@ -177,6 +177,18 @@ namespace Shop.Orders
         }
 
         #region Helpers
+        public void Untyped(string path)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (IOException)
+            {
+                Trace(path);
+            }
+        }
+
         private Reader Open(string path)
         {
 #if DEBUG

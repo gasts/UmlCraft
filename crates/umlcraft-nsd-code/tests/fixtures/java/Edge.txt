@@ -21,7 +21,19 @@
       jump
         | throw new IllegalArgumentException("day")
 
-== Edge.calls (line 17)
+== Edge.fractions (line 17)
+| fractions()
+  instruction
+    | x := 0
+  while
+    | x < 2.5?
+    -
+      call
+        | step(x)
+      instruction
+        | x := x + 1
+
+== Edge.calls (line 23)
 | calls()
   call
     | this.reset()
@@ -32,7 +44,7 @@
   instruction
     | value := compute(1) + compute(2)
 
-== Edge.comments (line 24)
+== Edge.comments (line 30)
 | comments()
   while
     | value < 10?
@@ -46,7 +58,7 @@
     -
     -
 
-== Edge.broken (line 35)
+== Edge.broken (line 41)
 | broken()
   instruction
     | a := 1
@@ -54,9 +66,9 @@
     | a = = 2;
   instruction
     | a := a + 1
-! line 37: SyntaxError
+! line 43: SyntaxError
 
-== Edge.caseDefaultWithLabel (line 41)
+== Edge.caseDefaultWithLabel (line 47)
 | caseDefaultWithLabel(a)
   case
     | a?
@@ -69,7 +81,7 @@
       instruction
         | value := 0
 
-== Edge.chain (line 52)
+== Edge.chain (line 58)
 | chain(sb)
   instruction
     | sb.append("a")
@@ -78,17 +90,17 @@
   jump
     | gib sb.toString()
 
-== Edge.reset (line 59)
+== Edge.reset (line 65)
 | reset()
   instruction
     | value := 0
 
-== Edge.compute (line 63)
+== Edge.compute (line 69)
 | compute(x)
   jump
     | gib x
 
-== Edge.braced (line 68)
+== Edge.braced (line 74)
 | braced(a)
   case
     | a?
@@ -103,14 +115,14 @@
         | value := 2
     -
 
-== Edge.onlyDefault (line 80)
+== Edge.onlyDefault (line 86)
 | onlyDefault(a)
   instruction
     | value := a
   instruction
     | value := 3
 
-== Edge.unions (line 92)
+== Edge.unions (line 98)
 | unions(r)
   try
     | exception
@@ -136,16 +148,16 @@
         -
     -
 
-== Edge.Nested.Mode.on (line 106)
+== Edge.Nested.Mode.on (line 112)
 | on()
   jump
     | gib this == ON
 
-== Edge.Nested.Nested (line 111)
+== Edge.Nested.Nested (line 117)
 | Nested()
   instruction
     | this(1)
 
-== Edge.Nested.Nested (line 115)
+== Edge.Nested.Nested (line 121)
 | Nested(x)
 
