@@ -472,7 +472,6 @@ writes, and none of its code is used.
   Structorizer does on saving; an unchanged one is written as read, byte for byte. `clip` puts
   elements on the clipboard as a whole `.nsd` file, the form in which Structorizer puts a
   diagram there; other text pastes as one instruction.
-
 - **Text metrics** (`metrics`). Structorizer measures with Java's logical font Dialog 12,
   antialiased with integer metrics: a line is as wide as its characters' advances summed and
   rounded, the bold title's widths are cut off instead. The font behind Dialog differs by
@@ -495,6 +494,9 @@ writes, and none of its code is used.
   element takes spare height, a structured one hands it to its branches. Every element box
   has its path (element and branch indices); `Layout::hit` tells what a click selects and
   `Layout::slot_at` where a drop goes.
+- Where the texts in triangular heads sit (an alternative's condition, a case's
+  discriminator) follows no rule we found; a fit to Structorizer's positions puts them within
+  a few pixels. Lines are exact.
 - **Drawing** (`draw`) turns a layout into areas, 1 px lines and texts, fills first. Colours
   are roles (`Ink`) so that a painter can use its theme, except the elements' and branch heads'
   own colours. The hatching of disabled elements repeats Structorizer's 5×10 pixel tile from
@@ -533,9 +535,6 @@ writes, and none of its code is used.
   differences listed in `tests/structorizer_deviations.txt`; the `nsd-import` example runs a
   whole source tree. In the app, `nsd/java.rs` holds the menu command and the dialog that
   picks methods; each opens unsaved, with the report in a bar at the bottom.
-- Where the texts in triangular heads sit (an alternative's condition, a case's
-  discriminator) follows no rule we found; a fit to Structorizer's positions puts them within
-  a few pixels. Lines are exact.
 
 Every file Structorizer 3.32-35 wrote that we have reads and writes back byte for byte. The
 tests check our own diagrams, one feature each, as Structorizer saved them

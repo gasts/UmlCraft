@@ -39,14 +39,14 @@ Diagrams imported from `.asta` files keep their layout, sizes and colors.
 - **Images** (File › Export › Diagram as SVG … / Diagram as PNG …): the open diagram. SVG keeps
   real text; PNG is rasterized at twice the canvas size.
 - **Structograms** (File › New structogram, Open structogram …, Structogram from Java file …):
-  Nassi-Shneiderman diagrams
-  in [Structorizer](https://structorizer.fisch.lu)'s `.nsd` format open in a window of their
-  own, drawn line for line as Structorizer draws them (syntax highlighting off), and export as
-  SVG or PNG. They are edited as in Structorizer: insert elements before or after the
-  selection, edit text and comment in a dialog, cut, copy, paste, drag, colour, disable and
-  delete them, add and remove branches, undo and redo. Files are read and written byte for
-  byte as Structorizer 3.32-35 writes them. Methods of a Java file become structograms with
-  the code's texts; what has no place in a structogram (`continue`, labels …) is listed.
+  Nassi-Shneiderman diagrams in [Structorizer](https://structorizer.fisch.lu)'s `.nsd` format
+  open in a window of their own, drawn line for line as Structorizer draws them (syntax
+  highlighting off), and export as SVG or PNG. They are edited as in Structorizer: insert
+  elements before or after the selection, edit text and comment in a dialog, cut, copy, paste,
+  drag, colour, disable and delete them, add and remove branches, undo and redo. Files are read
+  and written byte for byte as Structorizer 3.32-35 writes them. Methods of a Java file become
+  structograms with the code's texts; what has no place in a structogram (`continue`, labels …)
+  is listed.
 
 ## Importing source code
 
