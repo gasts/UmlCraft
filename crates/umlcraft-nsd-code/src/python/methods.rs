@@ -5,8 +5,10 @@ use std::collections::BTreeSet;
 
 use tree_sitter::Node;
 
+use umlcraft_reverse::comment;
+
 use crate::MethodRef;
-use crate::text::{node_text, one_line};
+use crate::text::{node_text, one_line, split_lines};
 
 /// Statements of the module that are no part of `__main__`.
 const DECLARATIONS: [&str; 6] = [
@@ -181,40 +183,15 @@ fn parameter_names(parameters: Option<Node>, src: &str) -> Vec<String> {
         .collect()
 }
 
-/// A body's docstring (its first statement, if a string) as lines, and the other statements
-/// with the comments between them.
+/// A body's docstring (its first statement, if a string) as lines, cleaned as the class import
+/// cleans it (like `inspect.cleandoc`), and the other statements with the comments between
+/// them.
 fn docstring<'t>(body: Node<'t>, src: &str) -> (Option<Vec<String>>, Vec<Node<'t>>) {
     let mut cursor = body.walk();
     let mut statements: Vec<Node> = body.named_children(&mut cursor).collect();
-    let first = statements.iter().position(|s| s.kind() != "comment");
-    let Some(at) = first else { return (None, statements) };
-    let s = statements[at];
-    let is_doc = s.kind() == "expression_statement"
-        && s.named_child_count() == 1
-        && s.named_child(0).is_some_and(|c| c.kind() == "string");
-    if !is_doc {
-        return (None, statements);
-    }
-    statements.remove(at);
-    (Some(string_lines(node_text(s, src))), statements)
-}
-
-/// A string literal's text as lines: without prefix and quotes, each line without the
-/// indentation, blank lines at either end dropped.
-fn string_lines(literal: &str) -> Vec<String> {
-    let text = literal.trim_start_matches(|c: char| c.is_ascii_alphabetic());
-    let quote = ["\"\"\"", "'''", "\"", "'"].into_iter().find(|q| text.starts_with(q));
-    let inner = match quote {
-        Some(q) => text.strip_prefix(q).and_then(|t| t.strip_suffix(q)).unwrap_or(text),
-        None => text,
-    };
-    let lines: Vec<String> = inner.lines().map(|l| l.trim().to_owned()).collect();
-    let first = lines.iter().position(|l| !l.is_empty());
-    let last = lines.iter().rposition(|l| !l.is_empty());
-    match (first, last) {
-        (Some(a), Some(b)) => lines[a..=b].to_vec(),
-        _ => Vec::new(),
-    }
+    let Some((doc, statement)) = comment::docstring(body, src) else { return (None, statements) };
+    statements.retain(|s| *s != statement);
+    (Some(split_lines(&doc)), statements)
 }
 
 #[cfg(test)]
@@ -229,7 +206,8 @@ import os
 def area(width: float, height: float = 1.0, *args, **kw) -> float:
     """Area.
 
-    Multiplies.
+    Multiplies:
+        width by height.
     """
     return width * height
 
@@ -285,7 +263,8 @@ if __name__ == "__main__":
             ]
         );
         let (area, _) = s.diagram(&s.methods()[0], &made).unwrap();
-        assert_eq!(area.comment(), ["Area.", "", "Multiplies."]);
+        // Cleaned as `inspect.cleandoc` does: what is indented more stays so.
+        assert_eq!(area.comment(), ["Area.", "", "Multiplies:", "    width by height."]);
         assert_eq!(s.methods()[0].file_name(), "area.nsd");
     }
 }

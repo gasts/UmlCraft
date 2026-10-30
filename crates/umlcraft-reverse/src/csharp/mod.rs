@@ -177,27 +177,7 @@ impl<'a> Reader<'a> {
     /// The documentation right before `node`: a run of `///` comments on the lines just above
     /// it, or a `/** */` comment.
     fn documentation(&self, node: Node) -> String {
-        let mut lines = Vec::new();
-        let mut next = node;
-        while let Some(p) = next.prev_sibling() {
-            let text = self.text(p);
-            let adjacent = p.end_position().row + 1 >= next.start_position().row;
-            if p.kind() != "comment" || !text.starts_with("///") || !adjacent {
-                break;
-            }
-            lines.push(text);
-            next = p;
-        }
-        if !lines.is_empty() {
-            lines.reverse();
-            return crate::comment::clean_lines(lines);
-        }
-        match node.prev_sibling() {
-            Some(p) if p.kind() == "comment" && self.text(p).starts_with("/**") => {
-                crate::comment::clean(self.text(p))
-            }
-            _ => String::new(),
-        }
+        crate::comment::documentation(crate::SourceLanguage::CSharp, node, self.src)
     }
 
     fn count_attributes(&mut self, list: Node) {

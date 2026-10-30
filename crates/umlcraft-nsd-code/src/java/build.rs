@@ -6,8 +6,8 @@ use umlcraft_nsd::{Diagram, Element, ElementKind, Provenance, RootKind, Sequence
 use super::{Java, declaration, title};
 use crate::core::{Builder, Catch, Group, Sink};
 use crate::pseudo;
-use crate::text::{block_comment, condition, lines, lines_at, node_text, without_semicolon};
-use crate::{Made, NoteKind, Report};
+use crate::text::{condition, documentation, lines, lines_at, node_text, without_semicolon};
+use crate::{Made, NoteKind, Report, SourceLanguage};
 
 const LOCAL_TYPES: [&str; 4] =
     ["class_declaration", "record_declaration", "enum_declaration", "interface_declaration"];
@@ -15,20 +15,13 @@ const LOCAL_TYPES: [&str; 4] =
 pub fn diagram(method: Node, src: &str, made: &Made) -> (Diagram, Report) {
     let provenance = Provenance { author: made.author, date: made.date, origin: made.origin };
     let mut d = Diagram::new(RootKind::Sub, &[title(method, src)], &provenance);
-    if let Some(doc) = javadoc(method, src) {
+    if let Some(doc) = documentation(SourceLanguage::Java, method, src) {
         d.set_comment(&doc);
     }
     let mut b = Builder::<Java>::new(src, d.clone());
     let body = method.child_by_field_name("body").map(|n| b.block(n)).unwrap_or_default();
     d.children = Sequence::new(body);
     (d, Report { notes: b.notes })
-}
-
-/// The `/** … */` right before a declaration (before its annotations too).
-fn javadoc(method: Node, src: &str) -> Option<Vec<String>> {
-    let prev = method.prev_sibling()?;
-    let text = node_text(prev, src);
-    (prev.kind() == "block_comment" && text.starts_with("/**")).then(|| block_comment(text))
 }
 
 pub fn statement(b: &mut Builder<Java>, node: Node, out: &mut Vec<Element>) {

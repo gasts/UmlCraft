@@ -8,8 +8,8 @@ use std::ops::Range;
 use tree_sitter::Node;
 
 use super::parameter_names;
-use crate::text::{block_comment, doc_lines, node_text, one_line};
-use crate::{MethodRef, operator_name};
+use crate::text::{documentation, node_text, one_line};
+use crate::{MethodRef, SourceLanguage, operator_name};
 
 const CLASSES: [&str; 3] = ["class_specifier", "struct_specifier", "union_specifier"];
 
@@ -253,36 +253,14 @@ fn last_name(mut node: Node) -> Node {
     node
 }
 
-/// The documentation right before a definition (or its `template <…>`): a run of `///`
-/// comments or a `/** … */` comment.
+/// The documentation right before a definition (or its `template <…>`), as the class import
+/// takes it: a run of `///` or `//!` comments or a `/** … */` or `/*! … */` comment.
 fn doc(node: Node, src: &str) -> Option<Vec<String>> {
     let anchor = match node.parent() {
         Some(p) if p.kind() == "template_declaration" => p,
         _ => node,
     };
-    let mut lines = Vec::new();
-    let mut prev = anchor.prev_sibling();
-    let mut row = anchor.start_position().row;
-    while let Some(p) = prev {
-        let text = node_text(p, src);
-        if p.kind() != "comment" || p.end_position().row + 1 < row {
-            break;
-        }
-        if text.starts_with("/**") && lines.is_empty() {
-            return Some(block_comment(text));
-        }
-        if !text.starts_with("///") {
-            break;
-        }
-        lines.push(text);
-        row = p.start_position().row;
-        prev = p.prev_sibling();
-    }
-    if lines.is_empty() {
-        return None;
-    }
-    lines.reverse();
-    Some(doc_lines(lines))
+    documentation(SourceLanguage::Cpp, anchor, src)
 }
 
 #[cfg(test)]

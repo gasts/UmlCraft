@@ -10,7 +10,7 @@
 //! The structograms of `umlcraft-nsd-code` read method bodies from the same [`SourceTree`].
 
 pub mod associations;
-mod comment;
+pub mod comment;
 pub mod cpp;
 pub mod csharp;
 pub mod ir;

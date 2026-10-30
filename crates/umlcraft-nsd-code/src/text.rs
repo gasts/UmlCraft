@@ -1,6 +1,8 @@
 //! Source text of nodes as element texts.
 
 use tree_sitter::Node;
+use umlcraft_reverse::SourceLanguage;
+use umlcraft_reverse::comment;
 
 pub fn node_text<'s>(node: Node, src: &'s str) -> &'s str {
     &src[node.byte_range()]
@@ -80,42 +82,18 @@ pub fn comment(node: Node, src: &str) -> Vec<String> {
     if let Some(line) = text.strip_prefix("//").or(text.strip_prefix('#')) {
         return vec![line.trim().to_owned()];
     }
-    block_comment(text)
+    split_lines(&comment::clean(text))
 }
 
-/// A `/* … */` or `/** … */` comment's lines without the delimiters, the stars at line starts
-/// and blank lines at either end.
-pub fn block_comment(text: &str) -> Vec<String> {
-    let inner = text.strip_suffix("*/").unwrap_or(text);
-    let inner = inner.strip_prefix("/*").unwrap_or(inner);
-    let inner = inner.strip_prefix('*').unwrap_or(inner);
-    let lines: Vec<String> = inner
-        .split('\n')
-        .map(|l| l.trim_start().trim_start_matches('*').trim_start_matches([' ', '\t']).trim_end())
-        .map(str::to_owned)
-        .collect();
-    let first = lines.iter().position(|l| !l.is_empty());
-    let last = lines.iter().rposition(|l| !l.is_empty());
-    match (first, last) {
-        (Some(a), Some(b)) => lines[a..=b].to_vec(),
-        _ => Vec::new(),
-    }
+/// The documentation of a declaration as lines, as the class import finds and cleans it
+/// (`umlcraft_reverse::comment::documentation`); `None` without one.
+pub fn documentation(language: SourceLanguage, node: Node, src: &str) -> Option<Vec<String>> {
+    let doc = comment::documentation(language, node, src);
+    (!doc.is_empty()).then(|| split_lines(&doc))
 }
 
-/// A run of `///` comments' lines without the slashes and the blanks after them, the rest
-/// (XML tags included) as written, blank lines at either end dropped.
-pub fn doc_lines<'a>(comments: impl IntoIterator<Item = &'a str>) -> Vec<String> {
-    let lines: Vec<String> = comments
-        .into_iter()
-        .map(|c| c.trim_start().trim_start_matches("///").trim_start_matches([' ', '\t']))
-        .map(|l| l.trim_end().to_owned())
-        .collect();
-    let first = lines.iter().position(|l| !l.is_empty());
-    let last = lines.iter().rposition(|l| !l.is_empty());
-    match (first, last) {
-        (Some(a), Some(b)) => lines[a..=b].to_vec(),
-        _ => Vec::new(),
-    }
+pub fn split_lines(text: &str) -> Vec<String> {
+    text.lines().map(str::to_owned).collect()
 }
 
 /// Lines without a final `;`.
@@ -137,17 +115,6 @@ mod tests {
         let text = "builder\n            .add(1)\n            .build();";
         assert_eq!(lines_of(text, 8), ["builder", "    .add(1)", "    .build();"]);
         assert_eq!(lines_of("a\n  b", 8), ["a", "b"]);
-    }
-
-    #[test]
-    fn comments_lose_their_delimiters() {
-        assert_eq!(
-            block_comment("/**\n     * Creates.\n     *\n     * @param a x\n     */"),
-            ["Creates.", "", "@param a x"]
-        );
-        assert_eq!(block_comment("/* one */"), ["one"]);
-        assert!(block_comment("/**/").is_empty());
-        assert!(block_comment("/***/").is_empty());
     }
 
     #[test]

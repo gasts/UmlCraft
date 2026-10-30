@@ -30,6 +30,7 @@ pub(crate) mod rules;
 use tree_sitter::Node;
 use umlcraft_model::{ParameterDirection, Visibility};
 
+use crate::comment;
 use crate::ir::{
     Field, Import, Item, Literal, Member, Operation, Param, Relation, Scope, Supertype,
     TemplateParam, TypeDecl, TypeExpr, TypeKind, TypeName,
@@ -87,33 +88,6 @@ fn visibility(name: &str) -> Visibility {
         Visibility::Protected
     } else {
         Visibility::Public
-    }
-}
-
-/// A docstring as `inspect.cleandoc` cleans it: the first line without its indentation, the
-/// others without the indentation they share, blank lines at the start and end dropped.
-fn cleandoc(doc: &str) -> String {
-    let lines: Vec<&str> = doc.lines().collect();
-    let indent = lines
-        .iter()
-        .skip(1)
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| l.len() - l.trim_start().len())
-        .min()
-        .unwrap_or(0);
-    let cleaned: Vec<String> = lines
-        .iter()
-        .enumerate()
-        .map(|(i, l)| {
-            let l = if i == 0 { l.trim_start() } else { l.get(indent..).unwrap_or("") };
-            l.trim_end().to_owned()
-        })
-        .collect();
-    let first = cleaned.iter().position(|l| !l.is_empty());
-    let last = cleaned.iter().rposition(|l| !l.is_empty());
-    match (first, last) {
-        (Some(first), Some(last)) => cleaned[first..=last].join("\n"),
-        _ => String::new(),
     }
 }
 
@@ -271,33 +245,17 @@ impl<'a> Reader<'a> {
 
     /// The string of an expression statement that is only a string: a docstring.
     fn docstring_node<'t>(&self, statement: Node<'t>) -> Option<Node<'t>> {
-        let parts = named_children(statement);
-        match parts.as_slice() {
-            [s] if s.kind() == "string" => Some(*s),
-            _ => None,
-        }
+        comment::docstring_node(statement)
     }
 
     /// The text of a string literal, without prefix and quotes.
     fn string_content(&self, string: Node) -> String {
-        named_children(string)
-            .into_iter()
-            .filter(|n| n.kind() == "string_content")
-            .map(|n| self.text(n))
-            .collect()
+        comment::string_content(string, self.src)
     }
 
     /// The docstring of a block: its first statement, if that is a string.
     fn docstring(&self, block: Option<Node>) -> String {
-        let first =
-            block.and_then(|b| named_children(b).into_iter().find(|n| n.kind() != "comment"));
-        match first.filter(|f| f.kind() == "expression_statement") {
-            Some(f) => self
-                .docstring_node(f)
-                .map(|s| cleandoc(&self.string_content(s)))
-                .unwrap_or_default(),
-            None => String::new(),
-        }
+        block.and_then(|b| comment::docstring(b, self.src)).map(|(doc, _)| doc).unwrap_or_default()
     }
 
     /// The name an assignment statement assigns to, if it is a single name (`x = 1`, `x: int`).
@@ -735,14 +693,6 @@ mod tests {
             "namespace shop.orders\n  import shop.lines.Line\n  public class Order extends Base (line 3)\n    doc \"An order.\\n\\nMore.\"\n    public field static count : int = 0\n    public field lines : list<Line>\n    public field n = n\n    public operation constructor __init__(n : int, args : ..., kwargs : **)\n    public operation total() : Line | None\n"
         );
         assert_eq!(skipped.get(&Skip::MethodBody), Some(&2));
-    }
-
-    #[test]
-    fn cleans_docstrings() {
-        assert_eq!(
-            cleandoc("First.\n\n    Indented.\n      More.\n    "),
-            "First.\n\nIndented.\n  More."
-        );
     }
 
     #[test]

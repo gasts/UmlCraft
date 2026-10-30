@@ -464,39 +464,7 @@ impl<'a> Reader<'a> {
     /// just above it, or a `/** */` or `/*! */` comment. Comments after other code on their
     /// line (`int x; ///< …`) belong to that code.
     fn documentation(&self, node: Node) -> String {
-        let own_line = |c: Node| match c.prev_sibling() {
-            Some(p) => p.end_position().row < c.start_position().row,
-            None => true,
-        };
-        let mut lines = Vec::new();
-        let mut next = node;
-        while let Some(p) = next.prev_sibling() {
-            let text = self.text(p);
-            let adjacent = p.end_position().row + 1 >= next.start_position().row;
-            let line_doc = (text.starts_with("///") || text.starts_with("//!"))
-                && !text.starts_with("///<")
-                && !text.starts_with("//!<");
-            if p.kind() != "comment" || !line_doc || !adjacent || !own_line(p) {
-                break;
-            }
-            lines.push(text);
-            next = p;
-        }
-        if !lines.is_empty() {
-            lines.reverse();
-            return crate::comment::clean_lines(lines);
-        }
-        match node.prev_sibling() {
-            Some(p)
-                if p.kind() == "comment"
-                    && own_line(p)
-                    && (self.text(p).starts_with("/**") || self.text(p).starts_with("/*!"))
-                    && !self.text(p).starts_with("/**<") =>
-            {
-                crate::comment::clean(self.text(p))
-            }
-            _ => String::new(),
-        }
+        crate::comment::documentation(crate::SourceLanguage::Cpp, node, self.src)
     }
 
     /// A class, struct, union or enum with its members; `None` for anonymous types and

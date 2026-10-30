@@ -153,10 +153,7 @@ impl<'a> Reader<'a> {
     /// The comment right before `node`, as Astah takes it: a Javadoc or block comment counts,
     /// a line comment stands for none.
     fn documentation(&self, node: Node) -> String {
-        match node.prev_sibling() {
-            Some(p) if p.kind() == "block_comment" => crate::comment::clean(self.text(p)),
-            _ => String::new(),
-        }
+        crate::comment::documentation(crate::SourceLanguage::Java, node, self.src)
     }
 
     fn modifiers(&self, decl: Node) -> Modifiers {
