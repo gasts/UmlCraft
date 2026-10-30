@@ -11,10 +11,6 @@ publish.workspace = true
 umlcraft-nsd.workspace = true
 umlcraft-reverse.workspace = true
 tree-sitter.workspace = true
-tree-sitter-java.workspace = true
-tree-sitter-c-sharp.workspace = true
-tree-sitter-python.workspace = true
-tree-sitter-cpp.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

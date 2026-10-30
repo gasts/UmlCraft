@@ -49,10 +49,10 @@ pub fn choose(
             let parsed = cx
                 .background_executor()
                 .spawn(async move {
-                    let bytes = std::fs::read(&read_path)?;
-                    let source = Source::parse(language, &umlcraft_nsd_code::decode(&bytes));
+                    let decoded = umlcraft_nsd_code::read(&read_path)?;
+                    let source = Source::parse(language, decoded.text);
                     let methods = source.methods();
-                    std::io::Result::Ok((source, methods))
+                    Ok::<_, umlcraft_nsd_code::ReadError>((source, methods))
                 })
                 .await;
             cx.update(|window, cx| match parsed {

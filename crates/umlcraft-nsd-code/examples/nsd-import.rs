@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use umlcraft_nsd::layout::Layout;
 use umlcraft_nsd::{Metrics, read, write};
-use umlcraft_nsd_code::{Made, Source, SourceLanguage, decode};
+use umlcraft_nsd_code::{Made, Source, SourceLanguage};
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
@@ -24,20 +24,18 @@ fn main() {
         None => None,
     };
     let paths: Vec<PathBuf> = args.into_iter().map(PathBuf::from).collect();
-    let files = umlcraft_reverse::source::collect_sources(
-        &paths,
-        &["java", "cs", "py", "pyw", "cpp", "cc", "cxx", "hpp", "hh", "hxx", "h", "c"],
-    )
-    .expect("sources");
+    let extensions: Vec<&str> =
+        SourceLanguage::ALL.into_iter().flat_map(|l| l.extensions().iter().copied()).collect();
+    let files = umlcraft_reverse::source::collect_sources(&paths, &extensions).expect("sources");
     let made = Made { author: "smoke", date: "2026-10-29", origin: "UmlCraft smoke test" };
     let start = Instant::now();
     let (mut methods, mut elements, mut largest) = (0usize, 0usize, (0usize, String::new()));
     let mut notes: BTreeMap<String, usize> = BTreeMap::new();
     let mut failures = Vec::new();
     for file in &files {
-        let text = decode(&std::fs::read(file).expect("readable file"));
+        let text = umlcraft_nsd_code::read(file).expect("readable file").text;
         let Some(language) = SourceLanguage::of(file) else { continue };
-        let source = Source::parse(language, &text);
+        let source = Source::parse(language, text);
         for m in source.methods() {
             let label = format!("{}:{} {}", file.display(), m.line, m.name);
             let result = std::panic::catch_unwind(|| {

@@ -21,12 +21,15 @@ mod pseudo;
 mod python;
 mod text;
 
-use tree_sitter::{Parser, Tree};
 use umlcraft_nsd::Diagram;
+use umlcraft_reverse::{SourceTree, parse_tree};
+
 /// The languages whose methods become structograms: those of the class import, with the same
 /// file extensions (`SourceLanguage::of`).
 pub use umlcraft_reverse::SourceLanguage;
-use umlcraft_reverse::preprocessor::{Dialect, first_branches};
+/// Reading a source file as the class import does: its encoding guessed where it has to be,
+/// files larger than `MAX_FILE_SIZE` not read.
+pub use umlcraft_reverse::source::{Decoded, MAX_FILE_SIZE, ReadError, read};
 
 /// A method or constructor with a body.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -177,38 +180,29 @@ impl Report {
     }
 }
 
-/// A parsed source file.
+/// A parsed source file: the tree the class import parses too ([`SourceTree`]), so that one
+/// parse serves both.
 pub struct Source {
-    language: SourceLanguage,
-    /// As parsed: in C#, the branches of `#if` after the first are blanked out (every byte
-    /// keeps its place).
-    text: String,
-    /// As written, where it differs from `text`.
-    written: Option<String>,
-    tree: Tree,
+    tree: SourceTree,
 }
 
 impl Source {
-    pub fn parse(language: SourceLanguage, text: &str) -> Source {
-        let (grammar, parsed) = match language {
-            SourceLanguage::Java => (tree_sitter_java::LANGUAGE, text.to_owned()),
-            SourceLanguage::Python => (tree_sitter_python::LANGUAGE, text.to_owned()),
-            SourceLanguage::Cpp => {
-                (tree_sitter_cpp::LANGUAGE, first_branches(text, Dialect::Cpp).0)
-            }
-            SourceLanguage::CSharp => {
-                (tree_sitter_c_sharp::LANGUAGE, first_branches(text, Dialect::CSharp).0)
-            }
-        };
-        let mut parser = Parser::new();
-        parser.set_language(&grammar.into()).expect("the grammar matches the tree-sitter version");
-        let tree = parser.parse(&parsed, None).expect("parsing without a timeout always finishes");
-        let written = (parsed != text).then(|| text.to_owned());
-        Source { language, text: parsed, written, tree }
+    /// Parses a file's text (see [`read`]) as [`umlcraft_reverse::parse_tree`] does.
+    pub fn parse(language: SourceLanguage, text: impl Into<String>) -> Source {
+        Source::new(parse_tree(language, text))
+    }
+
+    pub fn new(tree: SourceTree) -> Source {
+        Source { tree }
     }
 
     pub fn language(&self) -> SourceLanguage {
-        self.language
+        self.tree.language()
+    }
+
+    /// The parsed file, for the class import ([`umlcraft_reverse::lower`]).
+    pub fn tree(&self) -> &SourceTree {
+        &self.tree
     }
 
     /// The methods and constructors with a body, in file order, nested classes included
@@ -217,38 +211,38 @@ impl Source {
     /// and the code of the module (as `__main__`); in C++ also free functions, destructors,
     /// operators and definitions outside the class (`void Cart::add(…)`).
     pub fn methods(&self) -> Vec<MethodRef> {
-        let root = self.tree.root_node();
-        match self.language {
-            SourceLanguage::Java => java::methods(root, &self.text),
-            SourceLanguage::CSharp => csharp::methods(root, &self.text),
-            SourceLanguage::Python => python::methods(root, &self.text),
-            SourceLanguage::Cpp => cpp::methods(root, &self.text),
+        let (root, text) = (self.tree.root(), self.tree.text());
+        match self.language() {
+            SourceLanguage::Java => java::methods(root, text),
+            SourceLanguage::CSharp => csharp::methods(root, text),
+            SourceLanguage::Python => python::methods(root, text),
+            SourceLanguage::Cpp => cpp::methods(root, text),
         }
     }
 
     /// The diagram of `method` (one of [`Source::methods`]).
     pub fn diagram(&self, method: &MethodRef, made: &Made) -> Option<(Diagram, Report)> {
-        let root = self.tree.root_node();
-        match self.language {
+        let (root, text) = (self.tree.root(), self.tree.text());
+        match self.language() {
             SourceLanguage::Java => {
                 let node = java::find(root, method)?;
-                Some(java::diagram(node, &self.text, made))
+                Some(java::diagram(node, text, made))
             }
             SourceLanguage::CSharp => {
-                let member = csharp::find(root, &self.text, method)?;
-                let (d, mut report) = csharp::diagram(&member, &self.text, made);
+                let member = csharp::find(root, text, method)?;
+                let (d, mut report) = csharp::diagram(&member, text, made);
                 if let Some(line) = self.left_out(member.range()) {
                     report.notes.insert(0, Note { line, kind: NoteKind::Conditional });
                 }
                 Some((d, report))
             }
             SourceLanguage::Python => {
-                let member = python::find(root, &self.text, method)?;
-                Some(python::diagram(&member, root, &self.text, made))
+                let member = python::find(root, text, method)?;
+                Some(python::diagram(&member, root, text, made))
             }
             SourceLanguage::Cpp => {
-                let member = cpp::find(root, &self.text, method)?;
-                let (d, mut report) = cpp::diagram(&member, root, &self.text, made);
+                let member = cpp::find(root, text, method)?;
+                let (d, mut report) = cpp::diagram(&member, root, text, made);
                 if let Some(line) = self.left_out(member.range()) {
                     report.notes.insert(0, Note { line, kind: NoteKind::Conditional });
                 }
@@ -259,7 +253,10 @@ impl Source {
 
     /// The line of the first `#elif` or `#else` in `range`, whose branch was left out.
     fn left_out(&self, range: std::ops::Range<usize>) -> Option<usize> {
-        let written = self.written.as_ref()?;
+        if !self.tree.is_preprocessed() {
+            return None;
+        }
+        let written = self.tree.written();
         let before = written[..range.start].matches('\n').count();
         let at = written[range].lines().position(|line| {
             let directive = line.trim_start().strip_prefix('#').map(str::trim_start);
@@ -267,9 +264,4 @@ impl Source {
         })?;
         Some(before + at + 1)
     }
-}
-
-/// Reads a source file's bytes as text (UTF-8, UTF-16 with BOM, else Windows-1252).
-pub fn decode(bytes: &[u8]) -> String {
-    umlcraft_reverse::source::decode(bytes).text
 }
