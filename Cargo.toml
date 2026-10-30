@@ -34,6 +34,8 @@ pretty_assertions = "1"
 quick-xml = "0.41"
 rust-i18n = "4"
 sys-locale = "0.3"
+# Structograms record the local date they are saved on (GPUI pulls chrono in anyway).
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # Structograms in the app hand rasterized images to GPUI as image frames.
 image = { version = "0.25", default-features = false }
 # PNG export rasterizes the SVG export; diagrams contain no raster images.

@@ -267,10 +267,9 @@ fn user_name() -> String {
         .unwrap_or_else(|| "???".to_owned())
 }
 
-/// Today as `YYYY-MM-DD`.
+/// Today here (not in UTC: just after midnight it is already tomorrow) as `YYYY-MM-DD`.
 fn today() -> String {
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
-    umlcraft_nsd::save::date(now.map_or(0, |d| d.as_secs()))
+    chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
 /// What new structograms name as their origin.
