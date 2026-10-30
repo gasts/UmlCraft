@@ -7,21 +7,29 @@
 //! user guide, the files it writes and its images; Structorizer is GPL-licensed and none of its
 //! code is used here.
 
+pub mod clip;
 pub mod create;
 pub mod draw;
+pub mod edit;
+pub mod history;
 pub mod layout;
 pub mod metrics;
 pub mod model;
+pub mod path;
 pub mod read;
+pub mod save;
 pub mod svg;
 pub mod text;
 pub mod write;
 
 pub use create::{ForLoop, Provenance, STRUCTORIZER_VERSION, lines};
+pub use edit::EditError;
+pub use history::Editor;
 pub use metrics::Metrics;
 pub use model::{
     Attr, Attrs, Branches, Color, Diagram, Element, ElementKind, Lines, RootKind, RootStyle,
     Sequence,
 };
+pub use path::{Selection, Slot, Span};
 pub use read::{ReadError, read};
 pub use write::write;

@@ -72,7 +72,7 @@ impl Element {
     fn with(kind: ElementKind, text: Option<&[String]>, branches: usize) -> Element {
         let mut e = Element { kind, attrs: Attrs::default(), branches: Vec::new() };
         if let Some(text) = text {
-            e.set_attr("text", encode_lines(text));
+            e.set_attr("text", crate::model::text_value(text));
         }
         e.set_attr("comment", "");
         e.set_attr("color", Color::WHITE.to_hex());

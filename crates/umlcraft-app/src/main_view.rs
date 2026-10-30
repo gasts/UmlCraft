@@ -128,6 +128,23 @@ impl MainView {
         window.on_window_should_close(cx, move |window, cx| {
             weak.update(cx, |this, cx| this.should_close(window, cx)).unwrap_or(true)
         });
+        // Structogram windows put saved files among the recent ones and quit through here.
+        let (saved, quit, handle) =
+            (cx.entity().downgrade(), cx.entity().downgrade(), window.window_handle());
+        crate::nsd::connect(
+            cx,
+            move |path, cx| {
+                saved.update(cx, |this, cx| this.remember(path, cx)).ok();
+            },
+            move |cx| {
+                let quit = quit.clone();
+                handle
+                    .update(cx, |_, window, cx| {
+                        quit.update(cx, |this, cx| this.quit(&Quit, window, cx)).is_ok()
+                    })
+                    .unwrap_or(false)
+            },
+        );
 
         let mut view = Self {
             workspace,
@@ -345,6 +362,12 @@ impl MainView {
                 .detach();
             }),
         );
+    }
+
+    fn new_structogram(&mut self, _: &NewStructogram, window: &mut Window, cx: &mut Context<Self>) {
+        if let Err(detail) = crate::nsd::new(cx) {
+            self.show_error(&crate::nsd::open_failed(), &detail, window, cx);
+        }
     }
 
     fn open_structogram(
@@ -970,7 +993,12 @@ impl MainView {
     }
 
     fn quit(&mut self, _: &Quit, window: &mut Window, cx: &mut Context<Self>) {
-        self.confirm_discard(window, cx, Box::new(|_, _, cx| cx.quit()));
+        // Structogram windows are asked about their changes once the project is safe.
+        self.confirm_discard(
+            window,
+            cx,
+            Box::new(|_, _, cx| crate::nsd::confirm_all(cx, Box::new(|cx| cx.quit()))),
+        );
     }
 
     fn should_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
@@ -1657,6 +1685,7 @@ fn menus(settings: &Settings) -> Vec<Menu> {
     let mut file = vec![
         menu_item("menu.new", NewProject),
         menu_item("menu.open", OpenProject),
+        menu_item("menu.new_structogram", NewStructogram),
         menu_item("menu.open_structogram", OpenStructogram),
         MenuItem::submenu(Menu::new(t!("menu.recent").to_string()).items(recent)),
         menu_item("menu.import_astah", ImportAstah),
@@ -1776,6 +1805,7 @@ fn file_menu(
     let item = |menu: PopupMenu, key: &str, action: Box<dyn Action>| menu.menu(t!(key), action);
     let mut menu = item(menu, "menu.new", Box::new(NewProject));
     menu = item(menu, "menu.open", Box::new(OpenProject));
+    menu = item(menu, "menu.new_structogram", Box::new(NewStructogram));
     menu = item(menu, "menu.open_structogram", Box::new(OpenStructogram));
     menu = menu.submenu(t!("menu.recent"), window, cx, move |mut menu, _, _| {
         if recent.is_empty() {
@@ -1876,7 +1906,7 @@ fn start_directory(project: Option<&Path>) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-fn documents_dir() -> Option<PathBuf> {
+pub(crate) fn documents_dir() -> Option<PathBuf> {
     let home = PathBuf::from(std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?);
     let documents = home.join("Documents");
     Some(if documents.is_dir() { documents } else { home })
@@ -1905,6 +1935,7 @@ impl Render for MainView {
             .text_color(theme.foreground)
             .on_action(cx.listener(Self::new_project))
             .on_action(cx.listener(Self::open_project))
+            .on_action(cx.listener(Self::new_structogram))
             .on_action(cx.listener(Self::open_structogram))
             .on_action(cx.listener(Self::import_astah))
             .on_action(cx.listener(Self::export_astah))
