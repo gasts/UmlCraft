@@ -72,8 +72,8 @@ pub(crate) struct Importer<'p> {
     pub fields: Vec<(Id, &'p Field, usize)>,
     /// The imports of each namespace's own scope, which it re-exports (`Rules::reexports`).
     pub namespace_imports: HashMap<Id, Vec<&'p Import>>,
-    /// The re-exported paths being followed now, against cycles.
-    pub reexporting: Vec<Vec<String>>,
+    /// The re-exports being followed now, as package and name, against cycles.
+    pub reexporting: Vec<(Id, String)>,
     /// The names whose single imports are being followed now, against cycles.
     pub importing: Vec<String>,
     /// The aliases (`typedef`) each namespace or type declares, by name.
@@ -295,7 +295,7 @@ impl<'p> Importer<'p> {
                     continue;
                 }
                 let ctx = Ctx { entry: index, operation: None };
-                self.resolve(tx, ctx, &import.path, TypeKind::Class)?;
+                self.resolve_import(tx, ctx, &import.path, TypeKind::Class)?;
             }
         }
         for (index, path) in qualified {

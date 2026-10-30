@@ -247,6 +247,66 @@ fn parameters_typed_by_import_aliases_keep_their_operation() {
     assert_eq!(at(doc.model(), "shop.cart.Cart.add"), add);
 }
 
+/// `from socket import socket` names the class `socket.socket`, whose module has its name: an
+/// import's path does not go through the imports (`socket.socket.socket`, or
+/// `socket.socket.AddressFamily` beside it), so the class is the one `socket.socket` names
+/// after `import socket`.
+#[test]
+fn an_import_of_a_name_like_its_module_names_the_class() {
+    let (doc, _) = fresh("same_name_import");
+    let model = doc.model();
+    let class = at(model, "socket.socket");
+    assert_eq!(kind(model, "socket.socket"), "class");
+    assert_eq!(kind(model, "socket.AddressFamily"), "class");
+    let general = model.elements().find_map(|e| match e.kind() {
+        ElementKind::Generalization(p) if p.specific == at(model, "secure.SecureSocket") => {
+            Some(p.general)
+        }
+        _ => None,
+    });
+    assert_eq!(general, Some(class));
+    let sock = model.get(at(model, "events.Events.listen.sock")).unwrap();
+    assert!(matches!(
+        sock.kind(),
+        ElementKind::Parameter(p) if p.type_ref.as_ref().is_some_and(|t| t.ids() == [class])
+    ));
+    check("same_name_import", model);
+}
+
+/// A module written as a type (`module: store.items`) is no type: the name links a placeholder
+/// class beside the package, never the package.
+#[test]
+fn a_module_written_as_a_type_links_a_class() {
+    let (doc, _) = fresh("module_type");
+    let model = doc.model();
+    assert!(links_to(model, "shelf.Shelf", "item", "store.items.Item"));
+    let items: Vec<&'static str> = model
+        .children(at(model, "store"))
+        .iter()
+        .filter_map(|&c| model.get(c))
+        .filter(|e| e.name() == "items")
+        .map(|e| e.kind().type_name())
+        .collect();
+    assert_eq!(items, ["package", "class"]);
+    check("module_type", model);
+}
+
+/// A package that re-exports what one of its modules defines under the module's name
+/// (`from .repair import repair`) leaves the names in that module where they are, and
+/// re-exports that name each other (`from .left import right`, `from .right import left`) are
+/// followed once each: neither runs the import out of stack.
+#[test]
+fn reexports_through_their_own_module_end() {
+    let (doc, _) = fresh("reexport_cycles");
+    let model = doc.model();
+    assert_eq!(kind(model, "plumb.repair.Setting"), "class");
+    let setting = at(model, "plumb.pdf.PDF.repair.setting");
+    assert!(matches!(
+        model.get(setting).unwrap().kind(),
+        ElementKind::Parameter(p) if p.type_ref.as_ref().is_some_and(|t| t.ids() == [at(model, "plumb.repair.Setting")])
+    ));
+}
+
 /// An import used only to qualify names (`nn.Module` after `import torch.nn as nn`) names a
 /// module: `torch.nn` becomes a package, not also a class.
 #[test]

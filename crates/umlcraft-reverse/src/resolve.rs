@@ -22,7 +22,8 @@
 //! up from the model's root (with `Rules::enclosing_namespaces`, first from the type's package
 //! and the ones around it); then, if it starts with a type name, from that type; then in the
 //! library; otherwise it is split into package and type names by the language's convention and
-//! created there.
+//! created there. Such a lookup ends at a type, never at a package. The qualified path of an
+//! import itself is looked up without the imports ([`Importer::resolve_import`]).
 
 use std::collections::HashSet;
 
@@ -79,6 +80,13 @@ fn path_lookup_from(model: &Model, start: Id, path: &[String]) -> Option<Id> {
     path.iter().try_fold(start, |at, name| {
         child_package(model, at, name).or_else(|| child_type(model, at, name))
     })
+}
+
+/// The type at `path` from `start`, through packages or types: never a package, which a name
+/// written as a type may also stand for (`x: os.path`, a module).
+fn type_lookup_from(model: &Model, start: Id, path: &[String]) -> Option<Id> {
+    let (name, outer) = path.split_last()?;
+    child_type(model, path_lookup_from(model, start, outer)?, name)
 }
 
 /// `namespace` and the packages around it, innermost first, without the root.
@@ -210,8 +218,10 @@ impl<'p> Importer<'p> {
 
     /// With `Rules::reexports`, what `path` stands for through a package that imports one of its
     /// segments in its own scope: `shop.Order` is `shop.orders.Order` after
-    /// `from .orders import Order` (or `import *`) in `shop/__init__.py`.
-    fn reexported(&self, model: &Model, path: &[String]) -> Option<Vec<String>> {
+    /// `from .orders import Order` (or `import *`) in `shop/__init__.py`. Also the package and
+    /// the name it re-exports, which are not followed again while they are being followed
+    /// (`from .a import b` and `from .b import a` in one package).
+    fn reexported(&self, model: &Model, path: &[String]) -> Option<((Id, String), Vec<String>)> {
         if !self.rules.reexports {
             return None;
         }
@@ -221,8 +231,14 @@ impl<'p> Importer<'p> {
             })?;
             let imports = self.namespace_imports.get(&package)?;
             let name = path[k].as_str();
+            if self.reexporting.iter().any(|(p, n)| *p == package && n == name) {
+                return None;
+            }
             let found = imports.iter().filter(|i| !i.is_static).find_map(|i| {
-                if !i.wildcard && i.visible_name() == Some(name) {
+                // `shop.repair.Setting` after `from .repair import repair` is in the module
+                // `repair`, not in what the module defines under its own name.
+                let through_itself = i.path.starts_with(&path[..=k]) && k + 1 < path.len();
+                if !i.wildcard && i.visible_name() == Some(name) && !through_itself {
                     Some(i.path.clone())
                 } else if i.wildcard
                     && path_lookup(model, &i.path)
@@ -235,7 +251,7 @@ impl<'p> Importer<'p> {
             })?;
             let target: Vec<String> =
                 found.into_iter().chain(path[k + 1..].iter().cloned()).collect();
-            (target != path).then_some(target)
+            (target != path).then_some(((package, name.to_owned()), target))
         })
     }
 
@@ -292,6 +308,24 @@ impl<'p> Importer<'p> {
         self.resolve_qualified(tx, ctx, path, hint)
     }
 
+    /// The element the path of a single import names. A qualified path does not go through
+    /// the imports: `from socket import AddressFamily, socket` imports `socket.AddressFamily`,
+    /// not `socket.socket.AddressFamily`. A simple one may name another import (C#'s
+    /// `using A = B;`).
+    pub(crate) fn resolve_import(
+        &mut self,
+        tx: &mut Tx<'_>,
+        ctx: Ctx,
+        path: &[String],
+        hint: TypeKind,
+    ) -> Result<Id> {
+        if path.len() == 1 {
+            self.resolve(tx, ctx, path, hint)
+        } else {
+            self.resolve_qualified(tx, ctx, path, hint)
+        }
+    }
+
     /// A qualified name, imports left aside.
     fn resolve_qualified(
         &mut self,
@@ -305,18 +339,16 @@ impl<'p> Importer<'p> {
             let namespace = self.entries[ctx.entry].namespace;
             let found = enclosing(model, namespace)
                 .into_iter()
-                .find_map(|n| path_lookup_from(model, n, path));
+                .find_map(|n| type_lookup_from(model, n, path));
             if let Some(id) = found {
                 return Ok(id);
             }
         }
-        if let Some(id) = path_lookup(tx.model(), path) {
+        if let Some(id) = type_lookup_from(tx.model(), tx.model().root(), path) {
             return Ok(id);
         }
-        if let Some(target) = self.reexported(tx.model(), path)
-            && !self.reexporting.contains(&target)
-        {
-            self.reexporting.push(target.clone());
+        if let Some((reexport, target)) = self.reexported(tx.model(), path) {
+            self.reexporting.push(reexport);
             let found = self.resolve_qualified(tx, ctx, &target, hint);
             self.reexporting.pop();
             return found;
@@ -396,7 +428,7 @@ impl<'p> Importer<'p> {
         if let Some(import) = single {
             let path = import.path.clone();
             self.importing.push(name.to_owned());
-            let result = self.resolve(tx, ctx, &path, hint);
+            let result = self.resolve_import(tx, ctx, &path, hint);
             self.importing.pop();
             return result;
         }

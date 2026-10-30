@@ -31,6 +31,10 @@ today.
   defined outside the class, initializer lists, range-for and `catch (...)`. Comments in the
   method go to the element they belong to. What a structogram cannot show as written
   (`continue`, labels, local classes …) is listed at the bottom of the window.
+- **Python import** of the whole standard library works: a class imported under its module's
+  name (`from socket import socket`), a package that re-exports a name of one of its modules
+  under the module's name (`from .repair import repair`), and a module written as a type no
+  longer stop the import.
 
 ## 0.10.0 – 2026-10-30
 
