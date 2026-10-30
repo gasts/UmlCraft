@@ -1,6 +1,7 @@
-//! Methods of source files as structograms: the methods and constructors of a `.java` or `.cs`
-//! file, and one of them as a Nassi-Shneiderman diagram in Structorizer's `.nsd` form. Each
-//! language reads its own nodes (`java`, `csharp`); what they share is in `core` and `pseudo`.
+//! Methods of source files as structograms: the methods and functions of a `.java`, `.cs` or
+//! `.py` file, and one of them as a Nassi-Shneiderman diagram in Structorizer's `.nsd` form.
+//! Each language reads its own nodes (`java`, `csharp`, `python`); what they share is in
+//! `core` and `pseudo`.
 //!
 //! Texts are written as structograms write them: no types (the root is `name(a, b)`),
 //! assignments as `x := value` (`i++` as `i := i + 1`), no `;`, counting loops as
@@ -10,12 +11,13 @@
 //! become call elements, other statements instructions. What has no place in a structogram
 //! (`continue`, labels, local classes …) is named in the [`Report`]; nothing is left out
 //! silently. Structorizer's own Java import was only compared by its results, never by its
-//! code; Structorizer has no C# import.
+//! code; Structorizer has no C# or Python import.
 
 mod core;
 mod csharp;
 mod java;
 mod pseudo;
+mod python;
 mod text;
 
 use std::path::Path;
@@ -29,15 +31,17 @@ use umlcraft_reverse::preprocessor::{Dialect, first_branches};
 pub enum Language {
     Java,
     CSharp,
+    Python,
 }
 
 impl Language {
-    /// The language of a file by its extension (`.java`, `.cs`).
+    /// The language of a file by its extension (`.java`, `.cs`, `.py`, `.pyw`).
     pub fn of(path: &Path) -> Option<Language> {
         let extension = path.extension()?.to_str()?.to_ascii_lowercase();
         match extension.as_str() {
             "java" => Some(Language::Java),
             "cs" => Some(Language::CSharp),
+            "py" | "pyw" => Some(Language::Python),
             _ => None,
         }
     }
@@ -47,6 +51,7 @@ impl Language {
         match self {
             Language::Java => "Java",
             Language::CSharp => "C#",
+            Language::Python => "Python",
         }
     }
 }
@@ -54,7 +59,7 @@ impl Language {
 /// A method or constructor with a body.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MethodRef {
-    /// The classes it is in, outermost first.
+    /// The classes it is in, outermost first; none for a Python function of the module.
     pub class: Vec<String>,
     pub name: String,
     /// As written, on one line, without modifiers, annotations and `throws`:
@@ -73,9 +78,12 @@ impl MethodRef {
         self.class.join(".")
     }
 
-    /// A file name for its diagram: `Class.method.nsd`.
+    /// A file name for its diagram: `Class.method.nsd`, `function.nsd` outside classes.
     pub fn file_name(&self) -> String {
-        format!("{}.{}.nsd", self.class_name(), self.name)
+        match self.class.is_empty() {
+            true => format!("{}.nsd", self.name),
+            false => format!("{}.{}.nsd", self.class_name(), self.name),
+        }
     }
 }
 
@@ -121,6 +129,15 @@ pub enum NoteKind {
     LocalFunction,
     /// Of `#if` … `#else`, only the first branch is read.
     Conditional,
+    /// Python `with`: the context is assigned, the body stands in its place.
+    With,
+    /// Python `for`/`while … else`: the `else` body follows the loop (where it also runs
+    /// after a `break`).
+    LoopElse,
+    /// Python `try … else`: the `else` body ends the try body.
+    TryElse,
+    /// A function defined in the function is left out.
+    NestedFunction,
 }
 
 /// What the import of one method did not show as written.
@@ -150,6 +167,7 @@ impl Source {
     pub fn parse(language: Language, text: &str) -> Source {
         let (grammar, parsed) = match language {
             Language::Java => (tree_sitter_java::LANGUAGE, text.to_owned()),
+            Language::Python => (tree_sitter_python::LANGUAGE, text.to_owned()),
             Language::CSharp => {
                 (tree_sitter_c_sharp::LANGUAGE, first_branches(text, Dialect::CSharp).0)
             }
@@ -167,12 +185,14 @@ impl Source {
 
     /// The methods and constructors with a body, in file order, nested classes included
     /// (but not classes inside methods); in C# also accessors, operators, finalizers and the
-    /// top-level statements (as `Program.Main`).
+    /// top-level statements (as `Program.Main`); in Python also the functions of the module
+    /// and the code of the module (as `__main__`).
     pub fn methods(&self) -> Vec<MethodRef> {
         let root = self.tree.root_node();
         match self.language {
             Language::Java => java::methods(root, &self.text),
             Language::CSharp => csharp::methods(root, &self.text),
+            Language::Python => python::methods(root, &self.text),
         }
     }
 
@@ -191,6 +211,10 @@ impl Source {
                     report.notes.insert(0, Note { line, kind: NoteKind::Conditional });
                 }
                 Some((d, report))
+            }
+            Language::Python => {
+                let member = python::find(root, &self.text, method)?;
+                Some(python::diagram(&member, root, &self.text, made))
             }
         }
     }

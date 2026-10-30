@@ -1,6 +1,7 @@
-//! File › Structogram from source file …: choose a `.java` or `.cs` file, then one or more of
-//! its methods in a dialog (grouped by class, with a search field); each opens as an unsaved
-//! structogram whose file name is suggested as `Class.method.nsd` next to the source file.
+//! File › Structogram from source file …: choose a `.java`, `.cs` or `.py` file, then one or
+//! more of its methods in a dialog (grouped by class, with a search field); each opens as an
+//! unsaved structogram whose file name is suggested as `Class.method.nsd` (`file.function.nsd`
+//! outside classes) next to the source file.
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -19,8 +20,8 @@ use umlcraft_nsd_code::{Language, Made, MethodRef, NoteKind, Report, Source};
 /// More windows than this at once would rather be a mistake.
 const MAX_WINDOWS: usize = 20;
 
-/// Asks for a Java or C# file, reads it in the background and offers its methods. Errors come
-/// back to `failed` as message and detail.
+/// Asks for a Java, C# or Python file, reads it in the background and offers its methods.
+/// Errors come back to `failed` as message and detail.
 pub fn choose(
     window: &mut Window,
     cx: &mut App,
@@ -101,7 +102,12 @@ fn offer(
             }
             if class.as_deref() != Some(m.class_name().as_str()) {
                 class = Some(m.class_name());
-                list = list.child(div().pt_2().text_sm().font_semibold().child(m.class_name()));
+                // Python functions of the module stand under the file's name.
+                let heading = match m.class.is_empty() {
+                    true => file_name.clone(),
+                    false => m.class_name(),
+                };
+                list = list.child(div().pt_2().text_sm().font_semibold().child(heading));
             }
             let checked = chosen.borrow().contains(&i);
             let (toggle, open) = (chosen.clone(), opener(&source, &methods, &path, vec![i]));
@@ -202,7 +208,14 @@ fn opener(
         for &i in picked.iter().take(MAX_WINDOWS) {
             let m = &methods[i];
             let Some((diagram, report)) = source.diagram(m, &made) else { continue };
-            let draft = directory.join(m.file_name());
+            let draft = match m.class.is_empty() {
+                // `shop.area.nsd` for the function `area` of `shop.py`.
+                true => {
+                    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned());
+                    directory.join(format!("{}.{}", stem.unwrap_or_default(), m.file_name()))
+                }
+                false => directory.join(m.file_name()),
+            };
             if let Err(err) = super::open_imported(diagram, draft, notes(&report), cx) {
                 eprintln!("structogram window: {err}");
             }
@@ -235,6 +248,10 @@ pub fn notes(report: &Report) -> Vec<String> {
                 NoteKind::Goto => t!("nsd.note_goto"),
                 NoteKind::LocalFunction => t!("nsd.note_local_function"),
                 NoteKind::Conditional => t!("nsd.note_conditional"),
+                NoteKind::With => t!("nsd.note_with"),
+                NoteKind::LoopElse => t!("nsd.note_loop_else"),
+                NoteKind::TryElse => t!("nsd.note_try_else"),
+                NoteKind::NestedFunction => t!("nsd.note_nested_function"),
             };
             t!("nsd.note_line", line = n.line, what = what).to_string()
         })

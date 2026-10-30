@@ -1,0 +1,37 @@
+== Switches.classic (line 2)
+| classic(day)
+  case
+    | day?
+    | 1
+    | 2 | 3
+    | default
+    -
+      instruction
+        | name := "Monday"
+    -
+      instruction
+        | name := "Midweek"
+    -
+      instruction
+        | name := "Other"
+  jump
+    | gib name
+
+== Switches.noDefault (line 12)
+| noDefault(a)
+  case
+    | a?
+    | 1
+    | 2
+    | %
+    -
+      call
+        | work()
+    -
+      call
+        | work()
+    -
+
+== Switches.work (line 19)
+| work()
+

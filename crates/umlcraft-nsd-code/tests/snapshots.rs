@@ -1,4 +1,4 @@
-//! Every method of the fixture files (Java and C#) as a structogram, written as a readable
+//! Every method of the fixture files (Java, C#, Python) as a structogram, written as a readable
 //! tree and compared with the snapshot next to the file (`UPDATE_SNAPSHOTS=1` rewrites them).
 //! Each diagram must also read back as it was written.
 
@@ -31,7 +31,9 @@ fn snapshot(file: &Path) -> String {
 #[test]
 fn fixtures_match_their_snapshots() {
     let update = std::env::var_os("UPDATE_SNAPSHOTS").is_some();
-    for (folder, extension, at_least) in [("java", "java", 10), ("csharp", "cs", 8)] {
+    for (folder, extension, at_least) in
+        [("java", "java", 10), ("csharp", "cs", 8), ("python", "py", 7)]
+    {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(folder);
         let mut files: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
