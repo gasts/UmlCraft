@@ -77,6 +77,8 @@ struct Raster {
     image: Arc<RenderImage>,
     /// Its size in pixels of the image.
     size: (u32, u32),
+    /// The diagram changed since; the image goes on the next paint, which has the window.
+    outdated: bool,
 }
 
 enum Drag {
@@ -167,7 +169,9 @@ impl NsdView {
         self.svg = umlcraft_nsd::svg::render_layout(self.editor.diagram(), &self.layout, metrics);
         let (w, h) = self.layout.size;
         self.size = ((w + 1) as f32, (h + 1) as f32);
-        self.raster = None;
+        if let Some(raster) = &mut self.raster {
+            raster.outdated = true;
+        }
     }
 
     /// Makes one undoable change and shows it. Changes that are not possible (e.g. removing
@@ -198,14 +202,18 @@ impl NsdView {
         window: &mut Window,
     ) -> Option<(Arc<RenderImage>, (u32, u32), f32)> {
         let scale = scale.min(MAX_RASTER / self.size.0.max(self.size.1));
-        if self.raster.as_ref().is_none_or(|r| (r.scale - scale).abs() > 1e-4) {
+        if self.raster.as_ref().is_none_or(|r| r.outdated || (r.scale - scale).abs() > 1e-4) {
             // GPUI keeps every image it painted in the window's atlas until it is dropped
-            // there; without this each zoom step would leave its image behind.
+            // there; without this each zoom step and each change would leave its image behind.
             if let Some(old) = self.raster.take() {
                 window.drop_image(old.image).ok();
             }
-            self.raster =
-                rasterize(&self.svg, scale).map(|(image, size)| Raster { scale, image, size });
+            self.raster = rasterize(&self.svg, scale).map(|(image, size)| Raster {
+                scale,
+                image,
+                size,
+                outdated: false,
+            });
         }
         self.raster.as_ref().map(|r| (r.image.clone(), r.size, r.scale))
     }
