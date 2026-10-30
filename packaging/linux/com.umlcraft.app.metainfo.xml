@@ -33,6 +33,9 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.11.0" date="2026-10-30">
+      <url type="details">https://github.com/udvlp/UmlCraft/releases/tag/v0.11.0</url>
+    </release>
     <release version="0.10.0" date="2026-10-30">
       <url type="details">https://github.com/udvlp/UmlCraft/releases/tag/v0.10.0</url>
     </release>

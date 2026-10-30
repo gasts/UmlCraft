@@ -3,7 +3,7 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
-## Unreleased
+## 0.11.0 – 2026-10-30
 
 - **Windows installer**: `UmlCraft-*-windows-x64-setup.exe` installs UmlCraft for the current
   user without administrator rights, or for all users, and makes it the program for `.ucraft`
