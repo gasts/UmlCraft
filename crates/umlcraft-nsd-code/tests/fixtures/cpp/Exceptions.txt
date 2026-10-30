@@ -1,0 +1,41 @@
+== Exceptions.tryCatch (line 5)
+| tryCatch(s)
+  try
+    | e
+    -
+      jump
+        | gib Integer.parseInt(s)
+    -
+      jump
+        | gib 0
+    -
+
+== Exceptions.multiCatch (line 13)
+| multiCatch(r)
+  try
+    | exception
+    -
+      instruction
+        | r.read()
+    -
+      case
+        | exception instanceof?
+        | IOException
+        | RuntimeException
+        | %
+        -
+          instruction
+            | e := exception
+          call
+            | log(e)
+        -
+          instruction
+            | e := exception
+          call
+            | log(e)
+        -
+    -
+
+== Exceptions.log (line 24)
+| log(e)
+

@@ -7,8 +7,8 @@ use std::ops::Range;
 use tree_sitter::Node;
 
 use super::parameter_names;
-use crate::MethodRef;
 use crate::text::{block_comment, doc_lines, node_text, one_line};
+use crate::{MethodRef, operator_name};
 
 const TYPES: [&str; 4] =
     ["class_declaration", "struct_declaration", "record_declaration", "interface_declaration"];
@@ -294,39 +294,6 @@ fn modifiers(node: Node, src: &str) -> Vec<String> {
         .filter(|c| c.kind() == "modifier")
         .map(|c| node_text(c, src).to_owned())
         .collect()
-}
-
-/// .NET's name of an operator (`op_Addition`), so that it makes a file name.
-fn operator_name(op: &str, binary: bool) -> String {
-    let name = match (op, binary) {
-        ("+", true) => "Addition",
-        ("-", true) => "Subtraction",
-        ("+", false) => "UnaryPlus",
-        ("-", false) => "UnaryNegation",
-        ("*", _) => "Multiply",
-        ("/", _) => "Division",
-        ("%", _) => "Modulus",
-        ("&", _) => "BitwiseAnd",
-        ("|", _) => "BitwiseOr",
-        ("^", _) => "ExclusiveOr",
-        ("<<", _) => "LeftShift",
-        (">>", _) => "RightShift",
-        (">>>", _) => "UnsignedRightShift",
-        ("==", _) => "Equality",
-        ("!=", _) => "Inequality",
-        ("<", _) => "LessThan",
-        (">", _) => "GreaterThan",
-        ("<=", _) => "LessThanOrEqual",
-        (">=", _) => "GreaterThanOrEqual",
-        ("!", _) => "LogicalNot",
-        ("~", _) => "OnesComplement",
-        ("++", _) => "Increment",
-        ("--", _) => "Decrement",
-        ("true", _) => "True",
-        ("false", _) => "False",
-        _ => "Operator",
-    };
-    format!("op_{name}")
 }
 
 /// The documentation right before a declaration: a run of `///` comments (XML as written,

@@ -1,4 +1,4 @@
-//! File › Structogram from source file …: choose a `.java`, `.cs` or `.py` file, then one or
+//! File › Structogram from source file …: choose a Java, C#, Python or C++ file, then one or
 //! more of its methods in a dialog (grouped by class, with a search field); each opens as an
 //! unsaved structogram whose file name is suggested as `Class.method.nsd` (`file.function.nsd`
 //! outside classes) next to the source file.
@@ -20,7 +20,7 @@ use umlcraft_nsd_code::{Language, Made, MethodRef, NoteKind, Report, Source};
 /// More windows than this at once would rather be a mistake.
 const MAX_WINDOWS: usize = 20;
 
-/// Asks for a Java, C# or Python file, reads it in the background and offers its methods.
+/// Asks for a Java, C#, Python or C++ file, reads it in the background and offers its methods.
 /// Errors come back to `failed` as message and detail.
 pub fn choose(
     window: &mut Window,
@@ -102,7 +102,7 @@ fn offer(
             }
             if class.as_deref() != Some(m.class_name().as_str()) {
                 class = Some(m.class_name());
-                // Python functions of the module stand under the file's name.
+                // Functions outside classes (Python, C++) stand under the file's name.
                 let heading = match m.class.is_empty() {
                     true => file_name.clone(),
                     false => m.class_name(),

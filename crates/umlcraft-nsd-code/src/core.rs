@@ -471,7 +471,7 @@ impl<'a, G: Grammar> Builder<'a, G> {
         e.branches[1] = Sequence::new(caught);
         if let Some(f) = finally {
             let mut cursor = f.walk();
-            let block = f.named_children(&mut cursor).find(|c| c.kind() == "block");
+            let block = f.named_children(&mut cursor).find(|c| G::BLOCKS.contains(&c.kind()));
             e.branches[2] = Sequence::new(block.map(|b| self.block(b)).unwrap_or_default());
         }
         e
@@ -502,7 +502,7 @@ fn for_parts(node: Node) -> (Vec<Node>, Vec<Node>) {
 fn unbraced<'t, G: Grammar>(mut statements: Vec<Node<'t>>) -> Vec<Node<'t>> {
     let last = statements.iter().rposition(|s| !G::COMMENTS.contains(&s.kind()));
     if let Some(at) = last
-        && statements[at].kind() == "block"
+        && G::BLOCKS.contains(&statements[at].kind())
     {
         let block = statements.remove(at);
         let mut cursor = block.walk();
