@@ -22,6 +22,11 @@ Like UML, `umlcraft-model` separates **elements** from **presentations**:
 - Every diagram element has a `View` with presentations in z-order. A node has `bounds`; an edge
   connects two presentations of the same view. Free texts (`Shape::Text`) and free lines
   (`Shape::Line`, dashed and with arrowheads as chosen) show no element.
+- A structogram (`ElementKind::Structogram`) sits where a diagram may (`can_own` as for
+  diagrams) and holds its whole `umlcraft_nsd::Diagram` in content form (see
+  [Nassi-Shneiderman diagrams](#nassi-shneiderman-diagrams)), with no view. It may name the
+  operation it describes (a weak `RefRole::Operation`: deleting the operation leaves the
+  structogram). Its name stays empty; tree and tab show the text of its root.
 
 ## Changes
 
@@ -49,6 +54,10 @@ sequence diagrams; version 1 files load unchanged and their sequence diagrams ar
 when the app opens them (`sequence_edit::upgrade_document`, not an undoable edit; `load_versioned`
 tells the app the file's version). Version 3 keeps the tagged values of languages under
 UmlCraft's keys (`java.`, `csharp.`, `cpp.`); the migration renames Astah's `jude.` keys.
+Version 4 adds structograms; nothing changes in older files, so its migration does nothing,
+but a file with structograms does not open in UmlCraft 0.10 or earlier. A structogram is
+stored as structured JSON (`kind`, `text` as a list of lines, branches as lists of items) so
+that a diff shows which element changed.
 
 ## User interface
 
@@ -76,8 +85,9 @@ UmlCraft's keys (`java.`, `csharp.`, `cpp.`); the migration renames Astah's `jud
   line. The platform menu bar (`cx.set_menus`) stays for macOS.
 - `ribbon.rs` describes the ribbon as data (tabs, groups, large and small buttons, each with an
   action) built on every render from a `ribbon::State` read once from the workspace, and draws
-  it. The diagram tab holds the palette of the active diagram's kind and opens by itself when
-  another diagram becomes active. Where the estimated width does not fit, buttons drop their
+  it. The diagram tab holds the palette of the active diagram's kind, or for a structogram its
+  elements and commands, and opens by itself when another diagram becomes active. Buttons send
+  their action to the view shown (canvas or structogram), wherever the keyboard focus is. Where the estimated width does not fit, buttons drop their
   labels; a double click on a tab folds the ribbon (`ribbonCollapsed` in the settings).
 - `shell.rs` has the opaque backdrop the cards float on, the card style and icon buttons
   (`in_title_bar` keeps a press on a title bar button from moving the window on Windows). A
@@ -301,9 +311,27 @@ mapping for all languages puts the IR into the model.
   the key, `0..1` for optionals). The import marks the associations it makes with the tagged
   value `umlcraft.imported`. On a new import an association with the same role is reused, and
   marked associations whose field is gone are removed; those drawn by hand stay.
+- **Where things went** (`Placed`, from `apply_placed`): per file, the operations by the bytes
+  their declarations stand on (`ir::Operation::span`; a C++ definition outside its class
+  counts for the operation it joins), the types by their names in the file, and the package of
+  what the file declares outside types. A method's structogram finds its operation by the
+  overlap of those bytes with its own (`MethodRef::start..end`), so neither side has to name
+  the method as the other does (`tests/placed.rs` in `umlcraft-nsd-code` checks every method
+  of its fixtures).
 
 Parsing needs only the files, so the app runs it in the background (`parse_sources`); `apply`
-then runs on the UI thread inside one `Document::edit`, so one undo takes the import back. For
+then runs on the UI thread inside one `Document::edit`, so one undo takes the import back.
+In the app one import serves classes and structograms (`umlcraft-app/src/nsd/source.rs`):
+`source::parse` reads and parses each file once and keeps its units and its methods, a file
+with a syntax error giving methods all the same; a dialog lists the methods (none ticked,
+those with a structogram from an earlier import ticked, those edited by hand ticked and
+locked); the structograms of the ticked ones are built in the background from the files read
+again, and one edit applies the classes (`apply_placed`) and files the structograms
+(`file_structograms`): under the class of their operation and linked to it, else under their
+class or their file's package, else in the project. They carry `umlcraft.imported` until edited
+by hand (`Tx::set_structogram` removes it) and `umlcraft.method` (file name, classes,
+signature) always; a new import renews the untouched ones ticked, deletes the untouched ones
+not ticked or whose method is gone, and leaves edited ones alone. For
 large imports `Tx::delete_many` deletes in one pass what `Tx::delete` would look for one by
 one, and undo replays removals without looking through the model for references, which the
 recorded operations rule out; 6300 files (225,000 elements) import in about ten seconds.
@@ -422,6 +450,8 @@ through its official API (`astah-api.jar`):
   they get their UmlCraft fill (`fill.color`, Astah's yellow by default).
 - Not available in the API and reported as dropped: the query flag of operations, conditions and
   extension points of extends, return parameters, parameter multiplicity and default values.
+  Structograms, which Astah does not have, are taken out of the model before writing
+  (`without_structograms`) and counted as dropped.
 - System boundaries, which Astah does not have, become what Astah users draw instead: a
   rectangle (`createRect`) and the name as a text (`createText`) centered at its top. The
   importer turns a rectangle on a use case diagram back into a boundary, named by the text
@@ -441,8 +471,9 @@ through its official API (`astah-api.jar`):
 ## Nassi-Shneiderman diagrams
 
 `umlcraft-nsd` holds structograms in the `.nsd` format of
-[Structorizer](https://structorizer.fisch.lu) 3.32-35. They are not part of the UML model:
-a diagram is a file of its own. Structorizer is GPL-licensed; the format and the way
+[Structorizer](https://structorizer.fisch.lu) 3.32-35. In the app they are part of the
+project, stored in `.ucraft` next to the UML diagrams; `.nsd` files are imported and exported.
+Structorizer is GPL-licensed; the format and the way
 Structorizer writes it were worked out from its XML schema, its user guide and the files it
 writes, and none of its code is used.
 
@@ -482,6 +513,16 @@ writes, and none of its code is used.
   Structorizer does on saving; an unchanged one is written as read, byte for byte. `clip` puts
   elements on the clipboard as a whole `.nsd` file, the form in which Structorizer puts a
   diagram there; other text pastes as one instruction.
+- **Content form** (`content`). A project keeps only what a structogram says, not the file it
+  came from: `normalize` drops the header (version, author, dates, licence, `origin`), unknown
+  attributes and the parser keywords that equal Structorizer's defaults, and keeps the root's
+  text, comment, colour, `type`, `style`, include list and namespace and each element's
+  attributes. Keywords someone changed stay (`custom_keywords`), since Structorizer's parser
+  reads the diagram with them. `to_file` makes a file of it again for the export: a fresh
+  header (`Diagram::new`, user, date, `origin`) plus the kept keywords. With the `serde`
+  feature the content form reads and writes as structured JSON (`records`); reading checks
+  kinds, branch counts, colours and keyword names, and derives a for loop's attributes from its
+  text instead of storing them.
 - **Text metrics** (`metrics`). Structorizer measures with Java's logical font Dialog 12,
   antialiased with integer metrics: a line is as wide as its characters' advances summed and
   rounded, the bold title's widths are cut off instead. The font behind Dialog differs by
@@ -512,20 +553,25 @@ writes, and none of its code is used.
   own colours. The hatching of disabled elements repeats Structorizer's 5×10 pixel tile from
   the image's origin. `svg::render` writes it as an SVG image as large as Structorizer's PNG
   export; the app rasterizes it with `png::from_svg` like UML diagrams.
-- **In the app** (`umlcraft-app/src/nsd`), a structogram opens in a window of its own
-  (`nsd::open`, `nsd::new`); the main window only gets the menu items, a switch by extension
-  where files open (menu, command line, system, recent files) and two hooks (`nsd::connect`):
-  saved structograms join the recent files, and quitting from a structogram window quits
-  through the main window, which asks about the project and then about each structogram with
-  unsaved changes (`nsd::confirm_all`). `NsdView` holds the `Editor` apart from the window, so
-  that a tab can build on it later. It shows the SVG export rasterized with resvg, made again
-  when the diagram, the zoom or the screen's scale changes, so the window holds exactly what
-  an export does; GPUI cannot turn text, which turned case branches need. Selection and the
-  place a drag would drop to are painted over the image and never reach an export. Text,
-  comment and the root's signature are edited in a dialog (`nsd/dialog.rs`), as in
-  Structorizer; a new element is only inserted when its dialog is confirmed. The diagram stays
-  a white sheet in the dark theme; the area around it follows the theme. The window has
-  toolbars instead of menus, because on macOS the menu bar belongs to the whole app.
+- **In the app** (`umlcraft-app/src/nsd`), a structogram opens like a diagram, in the main
+  window's diagram card. `MainView` keeps an `NsdView` per structogram shown and puts it where
+  the canvas would be; the zoom pill, the zoom commands and the image export go to it.
+  `NsdView` reads the structogram from the model and changes it only through
+  `Workspace::edit_structogram` (one `Document::edit` with the whole changed diagram), so
+  structograms share the project's undo history; after an undo the selection is kept only if
+  it still fits. The ribbon's diagram tab becomes a structogram tab (insert by kind, colour,
+  disabling, branches, `.nsd` export), enabled by what the selection allows (`Allowed`). It
+  shows the SVG export rasterized with resvg, made again when the diagram, the zoom or the
+  screen's scale changes, so the card holds exactly what an export does; GPUI cannot turn
+  text, which turned case branches need. Selection and the place a drag would drop to are
+  painted over the image and never reach an export. Text, comment and the root's signature
+  are edited in a dialog (`nsd/dialog.rs`), as in Structorizer; a new element is only inserted
+  when its dialog is confirmed, and an open dialog is taken over before saving or closing the
+  project. The diagram stays a white sheet in the dark theme; the area around it follows the
+  theme. Opening a `.nsd` (menu, command line, system, recent files) starts a new unsaved
+  project holding just that structogram, offered for saving as `<name>.ucraft` next to it;
+  *Import › Structogram* adds `.nsd` files to the open project, *Export › Structogram* writes
+  the one shown.
 - **From source code** (`umlcraft-nsd-code`; `java`, `csharp`, `python`, `cpp`): a Java, C#,
   Python or C++ file is read and parsed by the base of the class import (see "Source import":
   `SourceLanguage`, `source::read`, `parse_tree`; C and headers with the C++ grammar, C# and C++
@@ -587,8 +633,8 @@ writes, and none of its code is used.
   files, 2546 functions; 17 places tree-sitter cannot read, such as calls through member
   pointers), and Structorizer read the diagrams back as written (apart from its own keywords
   `input`/`output`, which it capitalizes).
-  In the app, `nsd/source.rs` holds the menu command (the extension picks the language) and the
-  dialog that picks methods; each opens unsaved, with the report in a bar at the bottom.
+  In the app the source import makes them, next to the classes (see "Source import"); each
+  shows its report in a bar at the bottom of its view.
 
 Every file Structorizer 3.32-35 wrote that we have reads and writes back byte for byte. The
 tests check our own diagrams, one feature each, as Structorizer saved them

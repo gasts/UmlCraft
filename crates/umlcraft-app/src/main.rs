@@ -32,9 +32,8 @@ actions!(
     [
         NewProject,
         OpenProject,
-        OpenStructogram,
+        ImportStructogram,
         NewStructogram,
-        StructogramFromSource,
         ImportAstah,
         ExportAstah,
         ExportSvg,
@@ -152,6 +151,13 @@ pub enum TreeCommandKind {
     Delete,
 }
 
+/// A key binding; `secondary-` is Cmd on macOS and Ctrl elsewhere, which `KeyBinding::new` no
+/// longer resolves.
+pub(crate) fn key<A: Action>(cx: &App, keys: &str, action: A, context: Option<&str>) -> KeyBinding {
+    let context = context.map(|c| Rc::new(KeyBindingContextPredicate::parse(c).expect(c)));
+    KeyBinding::load(keys, Box::new(action), context, false, None, cx).expect(keys)
+}
+
 fn main() {
     let settings = settings::Settings::load();
     rust_i18n::set_locale(&settings.ui_language());
@@ -166,40 +172,36 @@ fn main() {
     });
     app.run(move |cx| {
         gpui_kit::init(cx);
-        // "secondary" is Cmd on macOS and Ctrl elsewhere.
+        // "secondary" is Cmd on macOS and Ctrl elsewhere (`key`).
         cx.bind_keys([
-            KeyBinding::new("secondary-n", NewProject, None),
-            KeyBinding::new("secondary-o", OpenProject, None),
-            KeyBinding::new("secondary-s", SaveProject, None),
-            KeyBinding::new("secondary-shift-s", SaveProjectAs, None),
-            KeyBinding::new("secondary-z", Undo, None),
-            KeyBinding::new("secondary-y", Redo, None),
-            KeyBinding::new("secondary-shift-z", Redo, None),
+            key(cx, "secondary-n", NewProject, None),
+            key(cx, "secondary-o", OpenProject, None),
+            key(cx, "secondary-s", SaveProject, None),
+            key(cx, "secondary-shift-s", SaveProjectAs, None),
+            key(cx, "secondary-z", Undo, None),
+            key(cx, "secondary-y", Redo, None),
+            key(cx, "secondary-shift-z", Redo, None),
             // Fields bind only Ctrl+Y for their own redo there; without this, Ctrl+Shift+Z in a
             // field would redo a model change and reload the field being typed in.
             #[cfg(not(target_os = "macos"))]
-            KeyBinding::new("ctrl-shift-z", gpui_kit::component::input::Redo, Some("Input")),
-            KeyBinding::new("delete", DeleteSelection, Some("Canvas")),
-            KeyBinding::new("secondary-delete", RemoveFromDiagram, Some("Canvas")),
-            KeyBinding::new("secondary-a", SelectAll, Some("Canvas")),
-            KeyBinding::new("secondary-c", Copy, Some("Canvas")),
-            KeyBinding::new("secondary-x", Cut, Some("Canvas")),
-            KeyBinding::new("secondary-v", Paste, Some("Canvas")),
-            KeyBinding::new("secondary-shift-v", PasteAsReference, Some("Canvas")),
-            KeyBinding::new("escape", Cancel, Some("Canvas")),
-            KeyBinding::new("secondary-g", WrapInFragment, Some("Canvas")),
+            key(cx, "ctrl-shift-z", gpui_kit::component::input::Redo, Some("Input")),
+            key(cx, "delete", DeleteSelection, Some("Canvas")),
+            key(cx, "secondary-delete", RemoveFromDiagram, Some("Canvas")),
+            key(cx, "secondary-a", SelectAll, Some("Canvas")),
+            key(cx, "secondary-c", Copy, Some("Canvas")),
+            key(cx, "secondary-x", Cut, Some("Canvas")),
+            key(cx, "secondary-v", Paste, Some("Canvas")),
+            key(cx, "secondary-shift-v", PasteAsReference, Some("Canvas")),
+            key(cx, "escape", Cancel, Some("Canvas")),
+            key(cx, "secondary-g", WrapInFragment, Some("Canvas")),
             // Astah's shortcuts for the line styles.
-            KeyBinding::new("secondary-l", SetLineShape { shape: LineShape::Line }, Some("Canvas")),
-            KeyBinding::new(
-                "secondary-e",
-                SetLineShape { shape: LineShape::RightAngle },
-                Some("Canvas"),
-            ),
-            KeyBinding::new("secondary-0", ResetZoom, None),
-            KeyBinding::new("secondary-=", ZoomIn, None),
-            KeyBinding::new("secondary--", ZoomOut, None),
-            KeyBinding::new("secondary-shift-0", ZoomToFit, None),
-            KeyBinding::new("secondary-,", OpenSettings, None),
+            key(cx, "secondary-l", SetLineShape { shape: LineShape::Line }, Some("Canvas")),
+            key(cx, "secondary-e", SetLineShape { shape: LineShape::RightAngle }, Some("Canvas")),
+            key(cx, "secondary-0", ResetZoom, None),
+            key(cx, "secondary-=", ZoomIn, None),
+            key(cx, "secondary--", ZoomOut, None),
+            key(cx, "secondary-shift-0", ZoomToFit, None),
+            key(cx, "secondary-,", OpenSettings, None),
         ]);
         nsd::bind_keys(cx);
 

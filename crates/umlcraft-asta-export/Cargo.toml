@@ -17,6 +17,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 umlcraft-asta.workspace = true
+umlcraft-nsd.workspace = true
 pretty_assertions.workspace = true
 
 [lints]

@@ -43,6 +43,8 @@ fn shown_name(model: &Model, e: &Element) -> String {
         ElementKind::Transition(p) => p.label(),
         ElementKind::InternalTransition(p) => p.label(),
         ElementKind::Class(_) => umlcraft_notation::member::display_name(model, e.id()),
+        // A structogram is named by its root's text (the signature).
+        ElementKind::Structogram(p) => p.structogram.text().join("\n"),
         _ => String::new(),
     };
     if shown.is_empty() { display_name(e) } else { shown }

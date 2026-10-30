@@ -27,6 +27,11 @@ ribbon:
     source: Quellcode importieren
     exchange: Austausch
     image: Bild exportieren
+    nsd_simple: Einfach
+    nsd_branches: Verzweigungen
+    nsd_loops: Schleifen
+    nsd_element: Element
+    nsd_export: Structorizer
   paste: Einfügen
   cut: Ausschneiden
   copy: Kopieren
@@ -40,19 +45,20 @@ ribbon:
   folder: Ordner …
   import: Importieren
   export: Exportieren
+  export_nsd: .nsd exportieren
   new_diagram: Neues Diagramm
 menu:
   file: Datei
   new: Neues Projekt
   open: Öffnen …
   new_structogram: Neues Struktogramm
-  open_structogram: Struktogramm öffnen …
-  structogram_from_source: Struktogramm aus Quelltext-Datei …
   import_astah: .asta-Projekt importieren …
+  import_structogram: Struktogramm (.nsd) importieren …
   export: Exportieren
   export_svg: Diagramm als SVG …
   export_png: Diagramm als PNG …
   export_astah: .asta-Projekt …
+  export_structogram: Struktogramm als .nsd …
   recent: Zuletzt geöffnet
   no_recent: (keine)
   save: Speichern
@@ -290,6 +296,7 @@ status:
   cancel: Abbrechen
   importing_astah: .asta-Projekt wird importiert …
   imported: "%{files} Dateien importiert: %{created} neue Typen, %{updated} aktualisiert, %{associations} Assoziationen."
+  imported_structograms: "%{count} Struktogramme erstellt oder erneuert."
   hint: "Mausrad: verschieben · Strg+Mausrad: zoomen · mittlere Taste: Ansicht ziehen"
   hint_node: "Klicken, um das Element zu platzieren · Esc: abbrechen"
   hint_edge: "Vom Quell- zum Zielelement ziehen oder nacheinander klicken · Esc: abbrechen"
@@ -361,6 +368,7 @@ export_dropped:
   finalState: Endzustände, die nicht auf ihrem Diagramm stehen
   pseudostate: Pseudozustände, die nicht auf ihrem Diagramm stehen
   transition: Transitionen, die nicht auf ihrem Diagramm stehen
+  structogram: Struktogramme (Astah kennt keine)
   renamed: Wegen leerer oder doppelter Namen umbenannte Elemente
   details: Stereotypen, Eigenschaftswerte oder Dokumentation
   presentation: Diagrammelemente
@@ -409,6 +417,7 @@ edit:
   resize: Größe ändern
   align: Ausrichten
   delete: Löschen
+  structogram: Struktogramm ändern
   remove_from_diagram: Aus Diagramm entfernen
   properties: Eigenschaften ändern
   waypoints: Linienverlauf ändern
@@ -471,6 +480,7 @@ kind:
   extend: Extend
   comment: Notiz
   diagram: Diagramm
+  structogram: Struktogramm
   activity: Aktivität
   activityNode: Aktivitätsknoten
   activityEdge: Fluss
@@ -557,10 +567,8 @@ error:
   too_new: "Die Datei stammt von einem neueren UmlCraft (Formatversion %{found}; diese Version liest bis %{supported})."
   migration: "Die Datei ließ sich nicht von Formatversion %{from} umstellen: %{reason}"
 nsd:
-  untitled: Unbenannt.nsd
   untitled_stem: Unbenannt
-  unsaved: "%{name} hat ungespeicherte Änderungen."
-  save_failed: Das Struktogramm konnte nicht gespeichert werden.
+  save_failed: Das Struktogramm konnte nicht exportiert werden.
   edit: Bearbeiten …
   edit_diagram: Diagramm
   signature: Name oder Signatur
@@ -576,7 +584,6 @@ nsd:
   root_includable: Includable
   insert_after: Einfügen danach
   insert_before: Einfügen davor
-  insert_tooltip: "Fügt nach der Auswahl ein; mit Umschalt davor"
   paste: Einfügen
   delete: Löschen
   move_up: Nach oben
@@ -605,14 +612,12 @@ nsd:
   color_7: Grau
   color_8: Orange
   color_9: Violett
-  source_title: "Struktogramm aus %{file}"
+  source_title: Struktogramme der Methoden
+  source_hint: "Methoden ankreuzen, die ein Struktogramm bekommen; es kommt unter ihre Klasse, mit der Operation verknüpft. Ohne Kreuz werden nur die Klassen importiert. Wer das Kreuz bei einer früher importierten Methode entfernt, löscht ihr Struktogramm."
+  source_import: Importieren
+  source_edited: bearbeitet, bleibt
+  source_more: "%{count} weitere; die Suche findet sie."
   source_search: Methoden suchen …
-  source_hint: Methoden ankreuzen und öffnen, oder eine doppelt anklicken. Jede öffnet sich in einem eigenen Fenster, noch nicht gespeichert.
-  source_open: Öffnen
-  source_failed: Die Datei konnte nicht gelesen werden.
-  source_unknown: "Struktogramme lassen sich aus Java- (.java), C#- (.cs), Python- (.py) und C++- oder C-Dateien (.cpp, .h, .c …) erstellen."
-  source_no_methods: Die Datei enthält keine Methoden mit Rumpf.
-  source_too_many: "Nur die ersten %{max} Methoden wurden geöffnet."
   notes: "%{count} Stellen sind nicht wie im Code dargestellt"
   note_line: "Zeile %{line}: %{what}"
   note_continue: continue hat kein Element; als rote, deaktivierte Anweisung behalten

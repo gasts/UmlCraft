@@ -25,7 +25,8 @@ use crate::*;
 pub enum RibbonTab {
     #[default]
     Home,
-    /// The tools of the active diagram's kind; there only while a diagram is open.
+    /// The tools of the active diagram's kind, or the elements of the structogram shown;
+    /// there only while one is open.
     Diagram,
     View,
     Tools,
@@ -34,6 +35,8 @@ pub enum RibbonTab {
 /// What the buttons show, read once per render from the workspace.
 pub struct State {
     pub diagram: Option<DiagramKind>,
+    /// What the selection of the structogram shown allows, if one is shown.
+    pub structogram: Option<crate::nsd::Allowed>,
     pub tool: Tool,
     pub has_selection: bool,
     pub can_align: bool,
@@ -120,6 +123,8 @@ pub fn tabs(state: &State) -> Vec<(RibbonTab, String)> {
     let mut tabs = vec![(RibbonTab::Home, t!("ribbon.tab.home").to_string())];
     if let Some(kind) = state.diagram {
         tabs.push((RibbonTab::Diagram, t!(diagram_key(kind)).to_string()));
+    } else if state.structogram.is_some() {
+        tabs.push((RibbonTab::Diagram, t!("kind.structogram").to_string()));
     }
     tabs.push((RibbonTab::View, t!("ribbon.tab.view").to_string()));
     tabs.push((RibbonTab::Tools, t!("ribbon.tab.tools").to_string()));
@@ -143,9 +148,11 @@ pub const DIAGRAM_KINDS: [DiagramKind; 7] = [
 pub fn groups(tab: RibbonTab, state: &State) -> Vec<Group> {
     match tab {
         RibbonTab::Home => home(state),
-        RibbonTab::Diagram => {
-            state.diagram.map(|kind| diagram(kind, state.tool)).unwrap_or_default()
-        }
+        RibbonTab::Diagram => match (state.diagram, state.structogram) {
+            (Some(kind), _) => diagram(kind, state.tool),
+            (None, Some(allowed)) => structogram(allowed),
+            (None, None) => Vec::new(),
+        },
         RibbonTab::View => view(state),
         RibbonTab::Tools => tools(),
     }
@@ -272,6 +279,70 @@ fn diagram(kind: DiagramKind, current: Tool) -> Vec<Group> {
     .filter(|(_, items)| !items.is_empty())
     .map(|(id, items)| group(id, items))
     .collect()
+}
+
+/// Inserting elements after the selection (before it with Shift in the context menu), and
+/// what the selection allows.
+fn structogram(allowed: crate::nsd::Allowed) -> Vec<Group> {
+    use umlcraft_nsd::ElementKind as K;
+    let insert = |kinds: &[K]| -> Vec<Item> {
+        kinds
+            .iter()
+            .map(|&kind| {
+                Item::new(
+                    format!("nsd-{}", kind.tag()),
+                    icons::nsd_kind_icon(kind),
+                    crate::nsd::kind_name(kind),
+                )
+                .action(crate::nsd::InsertElement { kind, after: true })
+                .size(Size::Small)
+            })
+            .collect()
+    };
+    let mut color = Item::new("nsd-color", icons::nsd_icon("color"), t!("nsd.color"))
+        .size(Size::Small)
+        .enabled(allowed.span);
+    for (i, c) in crate::nsd::PALETTE.into_iter().enumerate() {
+        color = color.menu_entry(t!(format!("nsd.color_{i}")), crate::nsd::SetColor { color: c });
+    }
+    vec![
+        group("nsd_simple", insert(&[K::Instruction, K::Call, K::Jump])),
+        group("nsd_branches", insert(&[K::Alternative, K::Case, K::Try, K::Parallel])),
+        group("nsd_loops", insert(&[K::For, K::While, K::Repeat, K::Forever])),
+        group(
+            "nsd_element",
+            vec![
+                Item::new("nsd-edit", fluent("pen"), t!("nsd.edit"))
+                    .action(crate::nsd::EditElement)
+                    .enabled(allowed.edit),
+                color,
+                Item::new("nsd-disabled", icons::nsd_icon("disabled"), t!("nsd.disabled"))
+                    .action(crate::nsd::ToggleDisabled)
+                    .size(Size::Small)
+                    .enabled(allowed.span)
+                    .selected(allowed.disabled),
+                Item::new("nsd-add-branch", icons::nsd_icon("addBranch"), t!("nsd.add_branch"))
+                    .action(crate::nsd::AddBranch)
+                    .size(Size::Small)
+                    .enabled(allowed.branching),
+                Item::new(
+                    "nsd-remove-branch",
+                    icons::nsd_icon("removeBranch"),
+                    t!("nsd.remove_branch"),
+                )
+                .action(crate::nsd::RemoveBranch)
+                .size(Size::Small)
+                .enabled(allowed.branching),
+            ],
+        ),
+        group(
+            "nsd_export",
+            vec![
+                Item::new("nsd-export", fluent("arrow_export_ltr"), t!("ribbon.export_nsd"))
+                    .action(crate::nsd::ExportStructogram),
+            ],
+        ),
+    ]
 }
 
 fn view(state: &State) -> Vec<Group> {
@@ -401,9 +472,15 @@ const HEIGHT: Pixels = px(68.0);
 /// The tab strip; the card left of the ribbon starts its button below this height.
 const STRIP: Pixels = px(34.0);
 
-fn dispatch(action: &dyn Action) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+/// Sends `action` to the view shown (`focus`), wherever the keyboard focus is, as the menus do:
+/// after a click in the tree a structogram's commands still reach the structogram.
+fn dispatch(
+    action: &dyn Action,
+    focus: &FocusHandle,
+) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
     let action = action.boxed_clone();
-    move |_, window, cx| window.dispatch_action(action.boxed_clone(), cx)
+    let focus = focus.clone();
+    move |_, window, cx| focus.dispatch_action(action.as_ref(), window, cx)
 }
 
 type Entries = Rc<Vec<(String, Box<dyn Action>)>>;
@@ -465,7 +542,7 @@ fn large_button(item: &Item, compact: bool, focus: &FocusHandle) -> AnyElement {
         (Some(action), true) => base(item.id.clone())
             .h(HEIGHT - px(8.0))
             .child(content(!compact))
-            .on_click(dispatch(action.as_ref()))
+            .on_click(dispatch(action.as_ref(), focus))
             .into_any_element(),
         // Split: the upper part runs the action, the lower one opens the menu.
         (Some(action), false) => v_flex()
@@ -473,7 +550,7 @@ fn large_button(item: &Item, compact: bool, focus: &FocusHandle) -> AnyElement {
                 base(item.id.clone())
                     .h(HEIGHT - px(30.0))
                     .child(icon.clone())
-                    .on_click(dispatch(action.as_ref())),
+                    .on_click(dispatch(action.as_ref(), focus)),
             )
             .child(
                 base(format!("{}-menu", item.id).into())
@@ -504,7 +581,7 @@ fn small_button(item: &Item, compact: bool, focus: &FocusHandle) -> AnyElement {
         .disabled(!item.enabled)
         .selected(item.selected);
     match &item.action {
-        Some(action) => button.on_click(dispatch(action.as_ref())).into_any_element(),
+        Some(action) => button.on_click(dispatch(action.as_ref(), focus)).into_any_element(),
         None => {
             let menu: Entries =
                 Rc::new(item.menu.iter().map(|(l, a)| (l.clone(), a.boxed_clone())).collect());
@@ -650,7 +727,13 @@ pub fn new_diagram_card(collapsed: bool, focus: &FocusHandle, cx: &App) -> impl 
                 Box::new(NewDiagram { kind }),
             );
         }
-        menu.action_context(focus.clone())
+        menu.separator()
+            .menu_with_icon(
+                t!("kind.structogram"),
+                shell::icon(icons::structogram_icon()),
+                Box::new(NewStructogram),
+            )
+            .action_context(focus.clone())
     };
     let label = t!("ribbon.new_diagram").to_string();
     let button = Button::new("new-diagram").ghost().dropdown_caret(true);
@@ -693,6 +776,7 @@ mod tests {
     fn the_diagram_tab_is_there_only_with_a_diagram() {
         let mut state = State {
             diagram: None,
+            structogram: None,
             tool: Tool::Select,
             has_selection: false,
             can_align: false,
@@ -702,6 +786,9 @@ mod tests {
         };
         assert!(!tabs(&state).iter().any(|(t, _)| *t == RibbonTab::Diagram));
         state.diagram = Some(DiagramKind::Class);
+        assert!(tabs(&state).iter().any(|(t, _)| *t == RibbonTab::Diagram));
+        state.diagram = None;
+        state.structogram = Some(crate::nsd::Allowed::default());
         assert!(tabs(&state).iter().any(|(t, _)| *t == RibbonTab::Diagram));
     }
 

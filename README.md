@@ -38,21 +38,27 @@ Diagrams imported from `.asta` files keep their layout, sizes and colors.
   [docs/architecture.md](docs/architecture.md#asta-export).
 - **Images** (File › Export › Diagram as SVG … / Diagram as PNG …): the open diagram. SVG keeps
   real text; PNG is rasterized at twice the canvas size.
-- **Structograms** (File › New structogram, Open structogram …, Structogram from source file …):
-  Nassi-Shneiderman diagrams in [Structorizer](https://structorizer.fisch.lu)'s `.nsd` format
-  open in a window of their own, drawn line for line as Structorizer draws them (syntax
-  highlighting off), and export as SVG or PNG. They are edited as in Structorizer: insert
-  elements before or after the selection, edit text and comment in a dialog, cut, copy, paste,
-  drag, colour, disable and delete them, add and remove branches, undo and redo. Files are read
-  and written byte for byte as Structorizer 3.32-35 writes them. Methods of a Java, C#, Python
-  or C++ file become structograms without types, with assignments as `x := 42 + a`, conditions
-  as `a > 0?` and returns as `gib x`; what has no place in a structogram (`continue`, labels …)
-  is listed.
+- **Structograms** (File › New structogram, Import › Structogram (.nsd) …, Export ›
+  Structogram as .nsd …, and the source import): Nassi-Shneiderman diagrams as
+  [Structorizer](https://structorizer.fisch.lu) draws them are part of the project and saved in
+  the `.ucraft` file with the UML diagrams. They open in the main window like a diagram, drawn
+  line for line as Structorizer draws them (syntax highlighting off), and export as SVG or PNG.
+  They are edited as in Structorizer, from the ribbon's Structogram tab: insert elements before
+  or after the selection, edit text and comment in a dialog, cut, copy, paste, drag, colour,
+  disable and delete them, add and remove branches; undo and redo share one history with the
+  diagrams. Structorizer's `.nsd` files (3.32-35) are imported and exported with their content
+  and changed parser keywords; opening one starts a new project with it. Methods of Java, C#,
+  Python or C++ files become structograms without types, with assignments as `x := 42 + a`,
+  conditions as `a > 0?` and returns as `gib x`; what has no place in a structogram
+  (`continue`, labels …) is listed.
 
 ## Importing source code
 
 The ribbon's Tools tab imports source code (Import source code › Java, C#, C++ or Python, then
-Files … or Folder …).
+Files … or Folder …). After reading the files it lists their methods: those ticked get a
+structogram under their class, linked to the operation (none are ticked at first; with none,
+only the classes are imported). Importing again renews the structograms it made, deletes those
+no longer ticked or whose method is gone, and keeps those edited by hand.
 
 The Java import reads declarations from `.java` sources
 into the open project: packages, classes, interfaces, enumerations,

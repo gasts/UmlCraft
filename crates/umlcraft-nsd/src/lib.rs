@@ -8,6 +8,7 @@
 //! code is used here.
 
 pub mod clip;
+pub mod content;
 pub mod create;
 pub mod draw;
 pub mod edit;

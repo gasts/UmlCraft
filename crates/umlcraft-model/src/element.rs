@@ -843,6 +843,26 @@ pub struct DiagramProps {
     pub hide_frame: bool,
 }
 
+/// Marks what a source import made and may change or delete on a new import: associations made
+/// from fields, structograms made from method bodies until they are edited by hand.
+pub const IMPORTED_TAG: &str = "umlcraft.imported";
+
+/// A structogram in its normal form (`umlcraft_nsd::content`), optionally showing the method
+/// of an operation.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StructogramProps {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<Id>,
+    pub structogram: umlcraft_nsd::Diagram,
+}
+
+impl StructogramProps {
+    pub fn new(structogram: &umlcraft_nsd::Diagram) -> Self {
+        Self { operation: None, structogram: umlcraft_nsd::content::normalize(structogram) }
+    }
+}
+
 /// The metaclass of an element together with its metaclass-specific properties.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -906,6 +926,8 @@ pub enum ElementKind {
     Extend(ExtendProps),
     Comment(CommentProps),
     Diagram(DiagramProps),
+    /// A Nassi-Shneiderman diagram. It has no view: the structogram is its content.
+    Structogram(StructogramProps),
 }
 
 /// How an element refers to another element, and what the target must be.
@@ -985,9 +1007,10 @@ impl RefRole {
             Self::DefiningAttribute => matches!(target, ElementKind::Attribute(_)),
             Self::LinkEnd => matches!(target, ElementKind::Instance(_)),
             Self::Instantiates => matches!(target, ElementKind::Association(_)),
-            Self::Client | Self::Supplier | Self::Annotated => {
-                !matches!(target, ElementKind::Model | ElementKind::Diagram(_))
-            }
+            Self::Client | Self::Supplier | Self::Annotated => !matches!(
+                target,
+                ElementKind::Model | ElementKind::Diagram(_) | ElementKind::Structogram(_)
+            ),
         }
     }
 }
@@ -1125,6 +1148,7 @@ impl ElementKind {
             Self::Extend(_) => "extend",
             Self::Comment(_) => "comment",
             Self::Diagram(_) => "diagram",
+            Self::Structogram(_) => "structogram",
         }
     }
 
@@ -1217,8 +1241,8 @@ impl ElementKind {
             | K::Dependency(_)
             | K::Include(_)
             | K::Extend(_) => self.is_namespace() || self.is_classifier(),
-            K::Comment(_) => !matches!(self, K::Diagram(_) | K::Comment(_)),
-            K::Diagram(_) => {
+            K::Comment(_) => !matches!(self, K::Diagram(_) | K::Structogram(_) | K::Comment(_)),
+            K::Diagram(_) | K::Structogram(_) => {
                 self.is_namespace()
                     || self.is_classifier()
                     || matches!(self, K::Interaction | K::Activity | K::StateMachine)
@@ -1332,6 +1356,7 @@ impl ElementKind {
                 p.extension_points.iter().for_each(|&id| f(id, RefRole::ExtensionPoint));
             }
             Self::Comment(p) => p.annotated.iter().for_each(|&id| f(id, RefRole::Annotated)),
+            Self::Structogram(p) => p.operation.iter().for_each(|&id| f(id, RefRole::Operation)),
             _ => {}
         }
     }
@@ -1410,6 +1435,7 @@ impl ElementKind {
                 p.extension_points.iter_mut().for_each(f);
             }
             Self::Comment(p) => p.annotated.iter_mut().for_each(f),
+            Self::Structogram(p) => p.operation.iter_mut().for_each(f),
             _ => {}
         }
     }
@@ -1486,6 +1512,7 @@ impl ElementKind {
             Self::ActivityNode(p) => unlink_type(&mut p.type_ref),
             Self::Extend(p) => unlink_vec(&mut p.extension_points),
             Self::Comment(p) => unlink_vec(&mut p.annotated),
+            Self::Structogram(p) => unlink_opt(&mut p.operation),
             _ => false,
         }
     }
@@ -1500,6 +1527,13 @@ impl ElementKind {
     pub fn as_diagram(&self) -> Option<DiagramKind> {
         match self {
             Self::Diagram(p) => Some(p.diagram),
+            _ => None,
+        }
+    }
+
+    pub fn as_structogram(&self) -> Option<&StructogramProps> {
+        match self {
+            Self::Structogram(p) => Some(p),
             _ => None,
         }
     }

@@ -27,6 +27,11 @@ ribbon:
     source: Import source code
     exchange: Exchange
     image: Export image
+    nsd_simple: Simple
+    nsd_branches: Branches
+    nsd_loops: Loops
+    nsd_element: Element
+    nsd_export: Structorizer
   paste: Paste
   cut: Cut
   copy: Copy
@@ -40,19 +45,20 @@ ribbon:
   folder: Folder …
   import: Import
   export: Export
+  export_nsd: Export .nsd
   new_diagram: New diagram
 menu:
   file: File
   new: New project
   open: Open …
   new_structogram: New structogram
-  open_structogram: Open structogram …
-  structogram_from_source: Structogram from source file …
   import_astah: Import .asta project …
+  import_structogram: Import structogram (.nsd) …
   export: Export
   export_svg: Diagram as SVG …
   export_png: Diagram as PNG …
   export_astah: .asta project …
+  export_structogram: Structogram as .nsd …
   recent: Open recent
   no_recent: (none)
   save: Save
@@ -290,6 +296,7 @@ status:
   no_diagram_font: Neither Arial nor Liberation Sans is installed, so diagram texts use another font and may not fit their boxes.
   cancel: Cancel
   imported: "Imported %{files} files: %{created} new types, %{updated} updated, %{associations} associations."
+  imported_structograms: "%{count} structograms made or renewed."
   hint: "Wheel: scroll · Ctrl+wheel: zoom · middle button: pan"
   hint_node: "Click to place the element · Esc: cancel"
   hint_edge: "Drag from source to target or click both · Esc: cancel"
@@ -361,6 +368,7 @@ export_dropped:
   finalState: Final states not shown on their diagram
   pseudostate: Pseudostates not shown on their diagram
   transition: Transitions not shown on their diagram
+  structogram: Structograms (Astah has none)
   renamed: Elements renamed because of empty or duplicate names
   details: Stereotypes, tagged values or documentation
   presentation: Diagram shapes
@@ -409,6 +417,7 @@ edit:
   resize: Resize
   align: Align
   delete: Delete
+  structogram: Change structogram
   remove_from_diagram: Remove from diagram
   properties: Change properties
   waypoints: Change line route
@@ -471,6 +480,7 @@ kind:
   extend: Extend
   comment: Note
   diagram: Diagram
+  structogram: Structogram
   activity: Activity
   activityNode: Activity node
   activityEdge: Flow
@@ -557,10 +567,8 @@ error:
   too_new: "The file was saved by a newer UmlCraft (format version %{found}; this version reads up to %{supported})."
   migration: "The file could not be upgraded from format version %{from}: %{reason}"
 nsd:
-  untitled: Untitled.nsd
   untitled_stem: Untitled
-  unsaved: "%{name} has unsaved changes."
-  save_failed: The structogram could not be saved.
+  save_failed: The structogram could not be exported.
   edit: Edit …
   edit_diagram: Diagram
   signature: Name or signature
@@ -576,7 +584,6 @@ nsd:
   root_includable: Includable
   insert_after: Insert after
   insert_before: Insert before
-  insert_tooltip: "Inserts after the selection; with Shift before it"
   paste: Paste
   delete: Delete
   move_up: Move up
@@ -605,14 +612,12 @@ nsd:
   color_7: Grey
   color_8: Orange
   color_9: Violet
-  source_title: "Structogram from %{file}"
+  source_title: Structograms of the methods
+  source_hint: "Tick the methods that get a structogram; they go under their class, linked to the operation. With none ticked only the classes are imported. Unticking one imported before deletes its structogram."
+  source_import: Import
+  source_edited: edited, stays
+  source_more: "%{count} more; the search finds them."
   source_search: Search methods …
-  source_hint: Tick methods and open them, or double-click one. Each opens in a window of its own, not saved yet.
-  source_open: Open
-  source_failed: The file could not be read.
-  source_unknown: "Structograms can be made from Java (.java), C# (.cs), Python (.py) and C++ or C files (.cpp, .h, .c …)."
-  source_no_methods: The file contains no methods with a body.
-  source_too_many: "Only the first %{max} methods were opened."
   notes: "%{count} places are not shown as written"
   note_line: "Line %{line}: %{what}"
   note_continue: continue has no element; kept as a red, disabled instruction

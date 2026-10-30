@@ -1191,6 +1191,8 @@ impl Render for PropertiesPanel {
                 | ElementKind::CombinedFragment(_)
                 | ElementKind::InteractionOperand(_)
                 | ElementKind::InternalTransition(_)
+                // Its title is the text of its root, edited in the structogram itself.
+                | ElementKind::Structogram(_)
         );
         match &kind {
             _ if unnamed => {}

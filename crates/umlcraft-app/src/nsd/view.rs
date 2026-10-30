@@ -1,36 +1,37 @@
-//! The view and editor of one structogram: its drawing, zoom and panning, selection, editing,
-//! saving and export.
+//! The view and editor of one structogram of the project: its drawing, zoom and panning,
+//! selection, editing and export. It shows the structogram as the model holds it and changes
+//! it through the workspace, so every change is a step of the project's undo history.
 //!
 //! The diagram is drawn by `umlcraft_nsd`'s SVG export and rasterized with resvg, so that the
-//! window shows exactly what an export holds, turned texts and hatching included. The image is
+//! view shows exactly what an export holds, turned texts and hatching included. The image is
 //! made again when the diagram, the zoom or the screen's scale changes. Selection and the place
 //! a drag would drop to are drawn over it, so they never reach an export. The diagram stays a
 //! white sheet in the dark theme too, as in Structorizer; the area around it follows the theme.
 
 use std::cell::Cell;
-use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::menu::{ContextMenuExt, PopupMenu};
-use gpui_kit::component::{ActiveTheme, Disableable, Sizable, Theme, WindowExt, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme, Theme, WindowExt, v_flex};
 use gpui_kit::*;
 use resvg::{tiny_skia, usvg};
 use rust_i18n::t;
+use umlcraft_model::Id;
 use umlcraft_nsd::layout::Layout;
 use umlcraft_nsd::path::{self, Path as NsdPath, Selection, Slot, Span};
-use umlcraft_nsd::{Color, Diagram, EditError, Editor, ElementKind, clip, edit};
+use umlcraft_nsd::{Color, Diagram, EditError, ElementKind, clip, edit};
 
 use super::dialog::{self, Edited, Target};
 use super::{
-    AddBranch, EditElement, ExtendDown, ExtendUp, InsertElement, MoveDown, MoveUp, PALETTE,
-    RemoveBranch, SelectDown, SelectLeft, SelectRight, SelectUp, SetColor, ToggleDisabled,
-    kind_name,
+    AddBranch, EditElement, ExportStructogram, ExtendDown, ExtendUp, InsertElement, MoveDown,
+    MoveUp, PALETTE, RemoveBranch, SelectDown, SelectLeft, SelectRight, SelectUp, SetColor,
+    ToggleDisabled, kind_name,
 };
+use crate::workspace::Workspace;
 use crate::{
-    Cancel, Copy, Cut, DeleteSelection, ExportPng, ExportSvg, Paste, Quit, Redo, ResetZoom,
-    SaveProject, SaveProjectAs, Undo, ZoomIn, ZoomOut, ZoomToFit,
+    Cancel, Copy, Cut, DeleteSelection, ExportPng, ExportSvg, Paste, Redo, ResetZoom, Undo, ZoomIn,
+    ZoomOut, ZoomToFit,
 };
 
 const MIN_ZOOM: f32 = 0.25;
@@ -50,47 +51,6 @@ thread_local! {
         options.fontdb_mut().load_system_fonts();
         Rc::new(options)
     };
-}
-
-/// A window size that shows the whole diagram where it fits on a usual screen.
-pub fn window_size(layout: &Layout) -> (f32, f32) {
-    let (w, h) = layout.size;
-    // Room for the margins and the two toolbars.
-    let w = (w as f32 + 2.0 * MARGIN + 20.0).clamp(640.0, 1200.0);
-    let h = (h as f32 + 2.0 * MARGIN + 100.0).clamp(400.0, 900.0);
-    (w, h)
-}
-
-/// The file's name, or "Untitled".
-fn file_name(path: Option<&Path>) -> String {
-    path.and_then(Path::file_name)
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| t!("nsd.untitled").to_string())
-}
-
-/// The window title: the file's name (or "Untitled"), `*` with unsaved changes.
-pub fn title(path: Option<&Path>, dirty: bool) -> String {
-    let dirty = if dirty { "*" } else { "" };
-    format!("{}{dirty} – UmlCraft", file_name(path))
-}
-
-/// How a window starts.
-#[derive(Default)]
-pub struct Opening {
-    /// The file, or `None` for a diagram not saved yet.
-    pub path: Option<PathBuf>,
-    /// Where an unsaved diagram is suggested to go (it names the window, too).
-    pub draft: Option<PathBuf>,
-    /// What an import could not show as written, one line each.
-    pub notes: Vec<String>,
-    /// Made from something else (code): closing asks even before a change.
-    pub unsaved: bool,
-}
-
-impl Opening {
-    pub fn name(&self) -> Option<&Path> {
-        self.path.as_deref().or(self.draft.as_deref())
-    }
 }
 
 /// The diagram rasterized for one scale.
@@ -118,18 +78,30 @@ enum Drag {
     },
 }
 
-/// What happens once a question about unsaved changes is answered.
-pub type Continuation = Box<dyn FnOnce(&mut NsdView, &mut Window, &mut Context<NsdView>)>;
+/// What the selection allows, for the ribbon and the context menu.
+#[derive(Clone, Copy, Default)]
+pub struct Allowed {
+    /// One element or the diagram: its dialog opens.
+    pub edit: bool,
+    /// A run of elements: cut, delete, move, colour, disable.
+    pub span: bool,
+    /// Every selected element is disabled.
+    pub disabled: bool,
+    /// A case or parallel element, or one of its branches.
+    pub branching: bool,
+}
 
 pub struct NsdView {
-    /// The file, or `None` for a new diagram never saved.
-    path: Option<PathBuf>,
-    /// Where a diagram never saved is suggested to go.
-    draft: Option<PathBuf>,
+    workspace: Entity<Workspace>,
+    /// The structogram shown.
+    id: Id,
+    /// The structogram as the model held it at `revision`.
+    diagram: Diagram,
+    revision: u64,
+    selection: Selection,
     /// What an import could not show as written, and whether that list is shown.
     notes: Vec<String>,
     notes_open: bool,
-    editor: Editor,
     layout: Layout,
     /// The diagram as SVG, drawn again after each change.
     svg: String,
@@ -148,42 +120,53 @@ pub struct NsdView {
     /// The drawing area, as painted last.
     area: Rc<Cell<Bounds<Pixels>>>,
     drag: Option<Drag>,
-    /// Unsaved changes were discarded on closing or quitting: don't ask again.
-    discarded: bool,
-    /// What the open element dialog holds, taken over on closing and quitting.
+    /// What the open element dialog holds, taken over when the project is saved or closed.
     dialog: Option<dialog::Pending>,
     /// Where a selection extended with Shift began; that end stays put.
     anchor: Option<NsdPath>,
     focus: FocusHandle,
-    _theme: Subscription,
+    _subscriptions: Vec<Subscription>,
+}
+
+/// Structogram `id` as the model holds it, if it is one.
+fn structogram(workspace: &Entity<Workspace>, id: Id, cx: &App) -> Option<Diagram> {
+    let model = workspace.read(cx).doc.model();
+    Some(model.get(id)?.kind().as_structogram()?.structogram.clone())
 }
 
 impl NsdView {
-    /// A window for `diagram`, laid out as `layout` already (for the window's size).
+    /// The view of structogram `id`, with what its import could not show (`notes`).
     pub fn new(
-        opening: Opening,
-        diagram: Diagram,
-        layout: Layout,
-        window: &mut Window,
+        workspace: Entity<Workspace>,
+        id: Id,
+        notes: Vec<String>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let Opening { path, draft, notes, unsaved } = opening;
-        let focus = cx.focus_handle();
-        window.focus(&focus, cx);
-        let weak = cx.entity().downgrade();
-        window.on_window_should_close(cx, move |window, cx| {
-            weak.update(cx, |this, cx| this.should_close(window, cx)).unwrap_or(true)
+        let subscriptions = vec![
+            // Undo, redo and other edits of the project may change the structogram.
+            cx.observe(&workspace, |this, _, cx| {
+                if this.sync(cx) {
+                    cx.notify();
+                }
+            }),
+            // The area around the diagram follows the theme.
+            cx.observe_global::<Theme>(|_, cx| cx.notify()),
+        ];
+        let diagram = structogram(&workspace, id, cx).unwrap_or_else(|| {
+            let made = umlcraft_nsd::Provenance { author: "", date: "", origin: "" };
+            Diagram::new(umlcraft_nsd::RootKind::Program, &[], &made)
         });
-        // A new, empty diagram counts as saved until it is changed: closing it untouched
-        // loses nothing. One made from code would be lost.
-        let editor = Editor::new(diagram, !unsaved);
+        let revision = workspace.read(cx).doc.revision();
+        let layout = Layout::of(&diagram, umlcraft_nsd::Metrics::for_platform());
         let mut view = NsdView {
-            path,
-            draft,
+            workspace,
+            id,
+            diagram,
+            revision,
+            selection: Selection::Nothing,
             notes,
             notes_open: false,
             layout,
-            editor,
             svg: String::new(),
             tree: None,
             generation: 0,
@@ -194,45 +177,45 @@ impl NsdView {
             rasterizing: false,
             area: Rc::default(),
             drag: None,
-            discarded: false,
             dialog: None,
             anchor: None,
-            focus,
-            // The area around the diagram follows the theme the main window switches.
-            _theme: cx.observe_global::<Theme>(|_, cx| cx.notify()),
+            focus: cx.focus_handle(),
+            _subscriptions: subscriptions,
         };
         view.draw();
         view
     }
 
-    pub fn path(&self) -> Option<&Path> {
-        self.path.as_deref()
+    pub fn zoom(&self) -> f32 {
+        self.zoom
     }
 
-    /// The file or the suggested one, for the title.
-    fn name(&self) -> Option<&Path> {
-        self.path.as_deref().or(self.draft.as_deref())
-    }
-
-    /// Whether closing would lose changes.
-    pub fn needs_saving(&self) -> bool {
-        self.editor.is_dirty() && !self.discarded
-    }
-
-    /// Lays out and draws the diagram again after a change. Changes made after discarding
-    /// are asked about again.
-    fn redraw(&mut self) {
-        self.discarded = false;
-        // The change has made a selection of its own.
+    /// Takes over a changed structogram from the model; whether anything changed.
+    fn sync(&mut self, cx: &mut Context<Self>) -> bool {
+        let revision = self.workspace.read(cx).doc.revision();
+        if revision == self.revision {
+            return false;
+        }
+        self.revision = revision;
+        let Some(diagram) = structogram(&self.workspace, self.id, cx) else { return false };
+        if diagram == self.diagram {
+            return false;
+        }
+        self.diagram = diagram;
+        // The change has made a selection of its own, or left one that no longer fits.
         self.anchor = None;
-        self.layout = Layout::of(self.editor.diagram(), umlcraft_nsd::Metrics::for_platform());
+        if !self.selection.is_valid(&self.diagram) {
+            self.selection = Selection::Nothing;
+        }
+        self.layout = Layout::of(&self.diagram, umlcraft_nsd::Metrics::for_platform());
         self.draw();
+        true
     }
 
     /// Draws the diagram as laid out.
     fn draw(&mut self) {
         let metrics = umlcraft_nsd::Metrics::for_platform();
-        self.svg = umlcraft_nsd::svg::render_layout(self.editor.diagram(), &self.layout, metrics);
+        self.svg = umlcraft_nsd::svg::render_layout(&self.diagram, &self.layout, metrics);
         self.tree =
             OPTIONS.with(|options| usvg::Tree::from_str(&self.svg, options)).ok().map(Arc::new);
         self.generation += 1;
@@ -243,30 +226,59 @@ impl NsdView {
         }
     }
 
-    /// Makes one undoable change and shows it. Changes that are not possible (e.g. removing
-    /// a case's last branch) do nothing.
+    /// Makes one undoable change of the project and shows it. Changes that are not possible
+    /// (e.g. removing a case's last branch) do nothing.
     fn change(
         &mut self,
         cx: &mut Context<Self>,
         f: impl FnOnce(&mut Diagram) -> Result<Selection, EditError>,
     ) {
-        if self.editor.apply(f).is_ok() {
-            self.redraw();
+        let mut changed = self.diagram.clone();
+        let Ok(selection) = f(&mut changed) else {
+            cx.notify();
+            return;
+        };
+        if changed != self.diagram {
+            let id = self.id;
+            self.workspace.update(cx, |ws, cx| {
+                ws.edit_structogram(id, &changed);
+                cx.notify();
+            });
+            self.sync(cx);
         }
-        cx.notify();
+        self.select(selection, cx);
     }
 
     fn select(&mut self, selection: Selection, cx: &mut Context<Self>) {
         self.anchor = None;
-        self.editor.select(selection);
+        if selection.is_valid(&self.diagram) {
+            self.selection = selection;
+        }
         cx.notify();
     }
 
     /// Selects `span`, stretched with Shift from its end at `anchor`.
     fn stretch(&mut self, span: Span, anchor: NsdPath, cx: &mut Context<Self>) {
-        self.editor.select(Selection::Elements(span));
+        if Selection::Elements(span.clone()).is_valid(&self.diagram) {
+            self.selection = Selection::Elements(span);
+        }
         self.anchor = Some(anchor);
         cx.notify();
+    }
+
+    /// What the selection allows.
+    pub fn allowed(&self) -> Allowed {
+        let d = &self.diagram;
+        let span = self.span();
+        Allowed {
+            edit: matches!(self.selection, Selection::Root) || self.selection.single().is_some(),
+            span: span.is_some(),
+            disabled: span.as_ref().is_some_and(|s| {
+                (s.start..s.end)
+                    .all(|i| path::element(d, &s.element(i)).is_some_and(|e| e.disabled()))
+            }),
+            branching: self.branching().is_some(),
+        }
     }
 
     // ----- Zoom and pan ----------------------------------------------------------------------
@@ -353,21 +365,34 @@ impl NsdView {
         point(area.size.width / 2.0, area.size.height / 2.0)
     }
 
+    /// Zooms about the middle of the area; the main window's zoom commands end up here too.
+    pub fn zoom_by(&mut self, factor: f32, cx: &mut Context<Self>) {
+        self.set_zoom(self.zoom * factor, self.centre(), cx);
+    }
+
     fn zoom_in(&mut self, _: &ZoomIn, _: &mut Window, cx: &mut Context<Self>) {
-        self.set_zoom(self.zoom * 1.25, self.centre(), cx);
+        self.zoom_by(1.25, cx);
     }
 
     fn zoom_out(&mut self, _: &ZoomOut, _: &mut Window, cx: &mut Context<Self>) {
-        self.set_zoom(self.zoom / 1.25, self.centre(), cx);
+        self.zoom_by(1.0 / 1.25, cx);
     }
 
-    fn reset_zoom(&mut self, _: &ResetZoom, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn reset_zoom(&mut self, cx: &mut Context<Self>) {
         self.zoom = 1.0;
         self.pan = point(px(MARGIN), px(MARGIN));
         cx.notify();
     }
 
-    fn zoom_to_fit(&mut self, _: &ZoomToFit, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_reset_zoom(&mut self, _: &ResetZoom, _: &mut Window, cx: &mut Context<Self>) {
+        self.reset_zoom(cx);
+    }
+
+    fn on_zoom_to_fit(&mut self, _: &ZoomToFit, _: &mut Window, cx: &mut Context<Self>) {
+        self.zoom_to_fit(cx);
+    }
+
+    pub fn zoom_to_fit(&mut self, cx: &mut Context<Self>) {
         let area = self.area.get().size;
         let fit_w = (f32::from(area.width) - 2.0 * MARGIN) / self.size.0;
         let fit_h = (f32::from(area.height) - 2.0 * MARGIN) / self.size.1;
@@ -379,9 +404,9 @@ impl NsdView {
         cx.notify();
     }
 
-    fn on_scroll(&mut self, ev: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_scroll(&mut self, ev: &ScrollEvent, _: &mut Window, cx: &mut Context<Self>) {
         let delta = ev.delta.pixel_delta(px(20.0));
-        if ev.modifiers.secondary() {
+        if ev.modifiers.secondary(cx) {
             let origin = self.area.get().origin;
             let anchor = point(ev.position.x - origin.x, ev.position.y - origin.y);
             let factor = (1.0 + f32::from(delta.y) / 200.0).clamp(0.5, 2.0);
@@ -426,7 +451,7 @@ impl NsdView {
             }
             return;
         }
-        let current = self.editor.selection().clone();
+        let current = self.selection.clone();
         if ev.modifiers.shift
             && let (Some(span), Some(path)) = (current.span(), hit.single())
             && path.len() == span.seq.len() + 1
@@ -463,7 +488,7 @@ impl NsdView {
         window.focus(&self.focus, cx);
         let (x, y) = self.to_diagram(ev.position);
         let hit = self.layout.hit(x, y).unwrap_or_default();
-        let inside = match (self.editor.selection(), &hit) {
+        let inside = match (&self.selection, &hit) {
             (Selection::Elements(span), Selection::Elements(h)) => span.covers(&h.first()),
             (current, hit) => current == hit,
         };
@@ -497,7 +522,7 @@ impl NsdView {
                     return;
                 }
                 *moving = true;
-                let copy = ev.modifiers.secondary();
+                let copy = ev.modifiers.secondary(cx);
                 *slot =
                     layout.slot_at(target.0, target.1).filter(|s| drops_somewhere(span, s, copy));
                 cx.notify();
@@ -508,7 +533,7 @@ impl NsdView {
 
     fn on_mouse_up(&mut self, ev: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
         // With Ctrl (Cmd) held the elements are copied, otherwise moved.
-        let copy = ev.modifiers.secondary();
+        let copy = ev.modifiers.secondary(cx);
         let (span, slot) = match self.drag.take() {
             Some(Drag::Elements { span, moving: true, slot: Some(slot), .. }) => (span, slot),
             // A click into a selection selects what it hit, e.g. an element nested in it.
@@ -538,14 +563,14 @@ impl NsdView {
     // ----- Editing ---------------------------------------------------------------------------
 
     fn span(&self) -> Option<Span> {
-        self.editor.selection().span().cloned()
+        self.selection.span().cloned()
     }
 
     /// Where something new goes: after the selection, or at the end of the diagram.
     fn slot(&self, after: bool) -> Slot {
-        self.editor.selection().slot(after).unwrap_or_else(|| Slot {
+        self.selection.slot(after).unwrap_or_else(|| Slot {
             seq: Vec::new(),
-            index: self.editor.diagram().children.elements.len(),
+            index: self.diagram.children.elements.len(),
         })
     }
 
@@ -560,7 +585,7 @@ impl NsdView {
             text: edit::default_text(kind),
             comment: Vec::new(),
             disabled: false,
-            kind: self.editor.diagram().kind(),
+            kind: self.diagram.kind(),
         };
         let target = Target::New(slot, kind);
         let view = cx.entity().downgrade();
@@ -572,8 +597,8 @@ impl NsdView {
     }
 
     fn edit_element(&mut self, _: &EditElement, window: &mut Window, cx: &mut Context<Self>) {
-        let d = self.editor.diagram();
-        let (target, kind, start) = match self.editor.selection() {
+        let d = &self.diagram;
+        let (target, kind, start) = match &self.selection {
             Selection::Root => (
                 Target::Root,
                 None,
@@ -644,8 +669,8 @@ impl NsdView {
 
     /// Puts the selection on the clipboard; whether there was something to put there.
     fn copy_selection(&self, cx: &mut Context<Self>) -> bool {
-        let d = self.editor.diagram();
-        let text = match self.editor.selection() {
+        let d = &self.diagram;
+        let text = match &self.selection {
             Selection::Root => clip::copy_diagram(d),
             Selection::Elements(span) => match edit::copy(d, span) {
                 Ok(elements) => clip::copy(d, elements),
@@ -680,20 +705,6 @@ impl NsdView {
         self.select(Selection::Nothing, cx);
     }
 
-    fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
-        if self.editor.undo() {
-            self.redraw();
-            cx.notify();
-        }
-    }
-
-    fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
-        if self.editor.redo() {
-            self.redraw();
-            cx.notify();
-        }
-    }
-
     fn move_up(&mut self, _: &MoveUp, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(span) = self.span() {
             self.change(cx, |d| edit::shift(d, &span, true));
@@ -714,7 +725,7 @@ impl NsdView {
 
     fn toggle_disabled(&mut self, _: &ToggleDisabled, _: &mut Window, cx: &mut Context<Self>) {
         let Some(span) = self.span() else { return };
-        let d = self.editor.diagram();
+        let d = &self.diagram;
         let all = (span.start..span.end)
             .all(|i| path::element(d, &span.element(i)).is_some_and(|e| e.disabled()));
         self.change(cx, |d| edit::set_disabled(d, &span, !all));
@@ -723,12 +734,12 @@ impl NsdView {
     /// The case or parallel element whose branches the selection is about, and the branch
     /// meant: a selected empty branch, or none for the element itself.
     fn branching(&self) -> Option<(NsdPath, Option<usize>)> {
-        let d = self.editor.diagram();
+        let d = &self.diagram;
         let branching = |p: &[usize]| {
             path::element(d, p)
                 .is_some_and(|e| matches!(e.kind, ElementKind::Case | ElementKind::Parallel))
         };
-        match self.editor.selection() {
+        match &self.selection {
             Selection::Empty(seq) => {
                 let owner = edit::owner(seq)?;
                 branching(&owner).then(|| (owner, seq.last().copied()))
@@ -739,7 +750,7 @@ impl NsdView {
 
     fn add_branch(&mut self, _: &AddBranch, _: &mut Window, cx: &mut Context<Self>) {
         let Some((at, _)) = self.branching() else { return };
-        let Some(e) = path::element(self.editor.diagram(), &at) else { return };
+        let Some(e) = path::element(&self.diagram, &at) else { return };
         // A new case goes before the default branch.
         let index = match e.kind {
             ElementKind::Case => e.branches.len() - 1,
@@ -750,7 +761,7 @@ impl NsdView {
 
     fn remove_branch(&mut self, _: &RemoveBranch, _: &mut Window, cx: &mut Context<Self>) {
         let Some((at, branch)) = self.branching() else { return };
-        let Some(e) = path::element(self.editor.diagram(), &at) else { return };
+        let Some(e) = path::element(&self.diagram, &at) else { return };
         let last = match e.kind {
             ElementKind::Case => e.branches.len().saturating_sub(2),
             _ => e.branches.len().saturating_sub(1),
@@ -763,8 +774,7 @@ impl NsdView {
 
     /// The first element of a sequence, or the sequence when it is empty.
     fn first_in(&self, seq: NsdPath) -> Selection {
-        let empty =
-            path::sequence(self.editor.diagram(), &seq).is_none_or(|s| s.elements.is_empty());
+        let empty = path::sequence(&self.diagram, &seq).is_none_or(|s| s.elements.is_empty());
         if empty {
             Selection::Empty(seq)
         } else {
@@ -777,7 +787,7 @@ impl NsdView {
     /// The element after `p`, climbing out of branches at their end.
     fn after(&self, p: &[usize]) -> Option<Selection> {
         let (last, seq) = p.split_last()?;
-        let len = path::sequence(self.editor.diagram(), seq)?.elements.len();
+        let len = path::sequence(&self.diagram, seq)?.elements.len();
         if last + 1 < len {
             let mut next = seq.to_vec();
             next.push(last + 1);
@@ -790,7 +800,7 @@ impl NsdView {
     fn beside(&self, seq: &[usize], step: isize) -> Option<Selection> {
         let owner = edit::owner(seq)?;
         let branch = seq.last()?.checked_add_signed(step)?;
-        let e = path::element(self.editor.diagram(), &owner)?;
+        let e = path::element(&self.diagram, &owner)?;
         // A case without default hides its last branch.
         let shown = match e.kind {
             ElementKind::Case if e.text().last().is_some_and(|l| l.trim() == "%") => {
@@ -806,7 +816,7 @@ impl NsdView {
     }
 
     fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
-        let next = match self.editor.selection() {
+        let next = match &self.selection {
             Selection::Elements(span) if span.start > 0 => {
                 Some(Selection::element(&span.element(span.start - 1)))
             }
@@ -822,7 +832,7 @@ impl NsdView {
     }
 
     fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
-        let next = match self.editor.selection() {
+        let next = match &self.selection {
             Selection::Elements(span) => self.after(&span.element(span.end - 1)),
             Selection::Empty(seq) => edit::owner(seq).and_then(|o| self.after(&o)),
             Selection::Nothing | Selection::Root => Some(self.first_in(Vec::new())),
@@ -833,7 +843,7 @@ impl NsdView {
     }
 
     fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
-        let seq = match self.editor.selection() {
+        let seq = match &self.selection {
             Selection::Elements(span) => span.seq.clone(),
             Selection::Empty(seq) => seq.clone(),
             _ => return,
@@ -846,11 +856,10 @@ impl NsdView {
     }
 
     fn select_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
-        let next = match self.editor.selection() {
+        let next = match &self.selection {
             Selection::Elements(span) => {
                 let p = span.first();
-                let branches =
-                    path::element(self.editor.diagram(), &p).map_or(0, |e| e.branches.len());
+                let branches = path::element(&self.diagram, &p).map_or(0, |e| e.branches.len());
                 if span.len() == 1 && branches > 0 {
                     let mut s = p;
                     s.push(0);
@@ -869,7 +878,7 @@ impl NsdView {
 
     fn extend(&mut self, up: bool, cx: &mut Context<Self>) {
         let Some(span) = self.span() else { return };
-        let len = path::sequence(self.editor.diagram(), &span.seq).map_or(0, |s| s.elements.len());
+        let len = path::sequence(&self.diagram, &span.seq).map_or(0, |s| s.elements.len());
         let anchor = span.element(span.fixed(self.anchor.as_deref()));
         if let Some(span) = span.step(Some(&anchor), up, len) {
             self.stretch(span, anchor, cx);
@@ -884,226 +893,41 @@ impl NsdView {
         self.extend(false, cx);
     }
 
-    // ----- Files -----------------------------------------------------------------------------
-
-    fn save_action(&mut self, _: &SaveProject, window: &mut Window, cx: &mut Context<Self>) {
-        self.save(false, window, cx, None);
-    }
-
-    fn save_as_action(&mut self, _: &SaveProjectAs, window: &mut Window, cx: &mut Context<Self>) {
-        self.save(true, window, cx, None);
-    }
-
-    /// Saves to the file, or under a new name (always for a new diagram); then `then`.
-    fn save(
-        &mut self,
-        save_as: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-        then: Option<Continuation>,
-    ) {
-        if let Some(path) = self.path.clone().filter(|_| !save_as) {
-            let written = self.write(path, window, cx);
-            self.after_save(written, then, window, cx);
-            return;
-        }
-        let suggested = self
-            .path
-            .as_deref()
-            .or(self.draft.as_deref())
-            .and_then(Path::file_name)
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| format!("{}.nsd", t!("nsd.untitled_stem")));
-        let directory = self
-            .path
-            .as_deref()
-            .or(self.draft.as_deref())
-            .and_then(Path::parent)
-            .map(PathBuf::from)
-            .or_else(crate::main_view::documents_dir)
-            .unwrap_or_default();
-        let rx = cx.prompt_for_new_path(&directory, Some(&suggested));
-        cx.spawn_in(window, async move |this, cx| {
-            // Appended, not replaced: "Aufgabe 3.1" must not become "Aufgabe 3.nsd".
-            let path = match rx.await {
-                Ok(Ok(Some(path))) => Some(crate::main_view::with_extension(path, "nsd")),
-                _ => None,
-            };
-            this.update_in(cx, move |this, window, cx| {
-                let written = path.is_some_and(|path| this.write(path, window, cx));
-                this.after_save(written, then, window, cx);
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    /// Runs `then` once saved. Not saved (the name not chosen, or writing failed) is
-    /// cancelling: quitting stops there.
-    fn after_save(
-        &mut self,
-        written: bool,
-        then: Option<Continuation>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match then {
-            Some(then) if written => then(self, window, cx),
-            Some(_) => self.ask_again_elsewhere(cx),
-            None => {}
-        }
-    }
-
-    /// Quitting stops, and windows asked before stay open: what they discarded on the way is
-    /// unsaved again and is asked about next time.
-    fn ask_again_elsewhere(&self, cx: &mut Context<Self>) {
-        let me = cx.entity_id();
-        for (_, view) in super::open_windows(cx) {
-            if view.entity_id() != me {
-                view.update(cx, |view, _| view.discarded = false);
-            }
-        }
-    }
-
-    /// Writes the diagram to `path`: through a temporary file, so that a failed write leaves
-    /// the old file whole. An unchanged diagram is written as it was read.
-    fn write(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        let unchanged_here = !self.editor.is_dirty() && self.path.as_deref() == Some(&path);
-        if unchanged_here && path.exists() {
-            return true;
-        }
-        let diagram = self.editor.to_save(&super::user_name(), &super::today());
-        let text = umlcraft_nsd::write(&diagram);
-        let mut temporary = path.clone().into_os_string();
-        temporary.push(".tmp");
-        let temporary = PathBuf::from(temporary);
-        let written = std::fs::write(&temporary, text).and_then(|()| {
-            std::fs::rename(&temporary, &path).inspect_err(|_| {
-                std::fs::remove_file(&temporary).ok();
-            })
-        });
-        match written {
-            Ok(()) => {
-                self.editor.saved(diagram);
-                // Only the header changed, which is not drawn: the title follows on render.
-                self.path = Some(path.clone());
-                super::saved(&path, cx);
-                cx.notify();
-                true
-            }
-            Err(err) => {
-                let rx = window.prompt(
-                    PromptLevel::Critical,
-                    &t!("nsd.save_failed"),
-                    Some(&err.to_string()),
-                    &[t!("dialog.ok").as_ref()],
-                    cx,
-                );
-                cx.spawn(async move |_, _| rx.await.ok()).detach();
-                false
-            }
-        }
-    }
-
-    /// Runs `then` once unsaved changes are saved or discarded; nothing on cancel.
-    pub fn confirm_discard(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-        then: Continuation,
-    ) {
-        if !self.needs_saving() {
-            then(self, window, cx);
-            return;
-        }
-        let message = t!("nsd.unsaved", name = file_name(self.name())).to_string();
-        let detail = t!("dialog.unsaved_detail").to_string();
-        let answers = [
-            t!("dialog.save").to_string(),
-            t!("dialog.discard").to_string(),
-            t!("dialog.cancel").to_string(),
-        ];
-        let answers: Vec<&str> = answers.iter().map(String::as_str).collect();
-        let rx = window.prompt(PromptLevel::Warning, &message, Some(&detail), &answers, cx);
-        cx.spawn_in(window, async move |this, cx| {
-            let Ok(answer) = rx.await else { return };
-            this.update_in(cx, move |this, window, cx| match answer {
-                0 => this.save(false, window, cx, Some(then)),
-                1 => {
-                    this.discarded = true;
-                    then(this, window, cx);
-                }
-                _ => this.ask_again_elsewhere(cx),
-            })
-            .ok();
-        })
-        .detach();
-    }
-
-    /// Takes over what the open element dialog holds, as OK would, so that closing and
-    /// quitting ask about it instead of losing it. An untouched dialog just closes.
-    pub fn flush_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(pending) = self.dialog.take() else { return };
-        if !window.has_active_dialog(cx) {
-            return;
-        }
-        let edited = pending(cx);
-        window.close_dialog(cx);
-        if let Some((target, edited)) = edited {
-            self.apply_dialog(target, edited, window, cx);
-        }
-    }
-
-    fn should_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        self.flush_dialog(window, cx);
-        if !self.needs_saving() {
-            return true;
-        }
-        self.confirm_discard(window, cx, Box::new(|_, window, _| window.remove_window()));
-        false
-    }
-
-    /// Quitting from a structogram window quits like the main window does.
-    fn quit(&mut self, _: &Quit, _: &mut Window, cx: &mut Context<Self>) {
-        cx.defer(super::quit);
-    }
-
     // ----- Export ----------------------------------------------------------------------------
 
-    fn export(&mut self, png: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let extension = if png { "png" } else { "svg" };
-        let stem = self.name().and_then(Path::file_stem);
-        let stem = stem.map_or_else(
-            || t!("nsd.untitled_stem").to_string(),
-            |s| s.to_string_lossy().into_owned(),
-        );
-        let suggested = format!("{stem}.{extension}");
-        let directory = self.name().and_then(Path::parent).map(PathBuf::from);
-        let directory = directory.or_else(crate::main_view::documents_dir).unwrap_or_default();
+    /// The file name an export suggests: the structogram's name, as its signature begins.
+    fn file_stem(&self) -> String {
+        let text = self.diagram.text().join(" ");
+        let name = text.split('(').next().unwrap_or_default().trim();
+        let name = if name.is_empty() { t!("nsd.untitled_stem").to_string() } else { name.into() };
+        crate::main_view::sanitize_file_name(&name)
+    }
+
+    /// Asks where to write the export with `extension` (next to the project), then writes it
+    /// in the background; a failure is reported with `failed`.
+    fn write_export(
+        &self,
+        extension: &'static str,
+        failed: &'static str,
+        bytes: impl FnOnce() -> anyhow::Result<Vec<u8>> + Send + 'static,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let directory = crate::main_view::start_directory(self.workspace.read(cx).path.as_deref());
+        let suggested = format!("{}.{extension}", self.file_stem());
         let rx = cx.prompt_for_new_path(&directory, Some(&suggested));
-        let svg = self.svg.clone();
         cx.spawn_in(window, async move |_, cx| {
             let Ok(Ok(Some(path))) = rx.await else { return };
             let path = crate::main_view::with_extension(path, extension);
             let written = cx
                 .background_executor()
-                .spawn(async move {
-                    let bytes = if png {
-                        // `from_svg` takes images made at Astah's 4/3 pixels per unit; ours
-                        // have one.
-                        let scale = crate::png::SCALE * umlcraft_notation::svg::SCALE;
-                        crate::png::from_svg(&svg, scale)?
-                    } else {
-                        svg.into_bytes()
-                    };
-                    anyhow::Ok(std::fs::write(&path, bytes)?)
-                })
+                .spawn(async move { anyhow::Ok(write_file(&path, &bytes()?)?) })
                 .await;
             if let Err(err) = written {
                 cx.update(|window, cx| {
                     let rx = window.prompt(
                         PromptLevel::Critical,
-                        &t!("dialog.image_failed"),
+                        &t!(failed),
                         Some(&err.to_string()),
                         &[t!("dialog.ok").as_ref()],
                         cx,
@@ -1116,12 +940,51 @@ impl NsdView {
         .detach();
     }
 
+    pub fn export_image(&mut self, png: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let svg = self.svg.clone();
+        let bytes = move || {
+            Ok(if png {
+                // `from_svg` takes images made at Astah's 4/3 pixels per unit; ours have one.
+                let scale = crate::png::SCALE * umlcraft_notation::svg::SCALE;
+                crate::png::from_svg(&svg, scale)?
+            } else {
+                svg.into_bytes()
+            })
+        };
+        let extension = if png { "png" } else { "svg" };
+        self.write_export(extension, "dialog.image_failed", bytes, window, cx);
+    }
+
     fn export_svg(&mut self, _: &ExportSvg, window: &mut Window, cx: &mut Context<Self>) {
-        self.export(false, window, cx);
+        self.export_image(false, window, cx);
     }
 
     fn export_png(&mut self, _: &ExportPng, window: &mut Window, cx: &mut Context<Self>) {
-        self.export(true, window, cx);
+        self.export_image(true, window, cx);
+    }
+
+    /// Writes the structogram as a Structorizer file, with a header of today.
+    fn export_nsd(&mut self, _: &ExportStructogram, window: &mut Window, cx: &mut Context<Self>) {
+        self.flush_dialog(window, cx);
+        let (author, date, origin) = (super::user_name(), super::today(), super::origin());
+        let made = umlcraft_nsd::Provenance { author: &author, date: &date, origin: &origin };
+        let text = umlcraft_nsd::write(&umlcraft_nsd::content::to_file(&self.diagram, &made));
+        let bytes = move || Ok(text.into_bytes());
+        self.write_export("nsd", "nsd.save_failed", bytes, window, cx);
+    }
+
+    /// Takes over what the open element dialog holds, as OK would, so that saving and closing
+    /// the project keep it instead of losing it. An untouched dialog just closes.
+    pub fn flush_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(pending) = self.dialog.take() else { return };
+        if !window.has_active_dialog(cx) {
+            return;
+        }
+        let edited = pending(cx);
+        window.close_dialog(cx);
+        if let Some((target, edited)) = edited {
+            self.apply_dialog(target, edited, window, cx);
+        }
     }
 
     // ----- Drawing ---------------------------------------------------------------------------
@@ -1130,7 +993,7 @@ impl NsdView {
     /// drag would drop (a line between elements, or a box for an empty branch).
     fn overlay(&self) -> (Vec<[i32; 4]>, Option<[i32; 4]>) {
         let l = &self.layout;
-        let boxes = match self.editor.selection() {
+        let boxes = match &self.selection {
             Selection::Nothing => Vec::new(),
             Selection::Root => vec![[0, 0, l.size.0, l.size.1]],
             // A try's empty `finally` is not drawn; it shows where it would go.
@@ -1166,87 +1029,6 @@ impl NsdView {
             _ => None,
         };
         (boxes, drop)
-    }
-
-    fn toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let zoom = (self.zoom * 100.0).round();
-        let separator = || div().w(px(1.0)).h(px(18.0)).mx_1().bg(cx.theme().border);
-        let action_button = |id: &'static str, label: String, action: Box<dyn Action>| {
-            Button::new(id).ghost().small().label(label).on_click(move |_, window, cx| {
-                window.dispatch_action(action.boxed_clone(), cx);
-            })
-        };
-        h_flex()
-            .gap_1()
-            .px_2()
-            .py_1()
-            .flex_wrap()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .child(action_button("save", t!("toolbar.save").into(), Box::new(SaveProject)))
-            .child(action_button("save-as", t!("menu.save_as").into(), Box::new(SaveProjectAs)))
-            .child(separator())
-            .child(
-                action_button("undo", t!("toolbar.undo").into(), Box::new(Undo))
-                    .disabled(!self.editor.can_undo()),
-            )
-            .child(
-                action_button("redo", t!("toolbar.redo").into(), Box::new(Redo))
-                    .disabled(!self.editor.can_redo()),
-            )
-            .child(separator())
-            .child(action_button("export-svg", t!("menu.export_svg").into(), Box::new(ExportSvg)))
-            .child(action_button("export-png", t!("menu.export_png").into(), Box::new(ExportPng)))
-            .child(separator())
-            .child(action_button("zoom-out", "−".into(), Box::new(ZoomOut)))
-            .child(
-                action_button("zoom-reset", format!("{zoom} %"), Box::new(ResetZoom))
-                    .tooltip(t!("toolbar.zoom_reset")),
-            )
-            .child(action_button("zoom-in", "+".into(), Box::new(ZoomIn)))
-            .child(action_button("zoom-fit", t!("toolbar.zoom_fit").into(), Box::new(ZoomToFit)))
-    }
-
-    /// The second bar: a button per kind of element (Shift inserts before the selection, as
-    /// in Structorizer) and Structorizer's paint box.
-    fn insert_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let has_span = self.span().is_some();
-        let kinds = ElementKind::ALL.into_iter().enumerate().map(|(i, kind)| {
-            Button::new(("nsd-insert", i))
-                .ghost()
-                .small()
-                .label(kind_name(kind))
-                .tooltip(t!("nsd.insert_tooltip"))
-                .on_click(move |ev, window, cx| {
-                    let after = !ev.modifiers().shift;
-                    window.dispatch_action(Box::new(InsertElement { kind, after }), cx);
-                })
-        });
-        let swatches = PALETTE.into_iter().enumerate().map(|(i, [r, g, b])| {
-            let color =
-                Rgba { r: r as f32 / 255.0, g: g as f32 / 255.0, b: b as f32 / 255.0, a: 1.0 };
-            div()
-                .id(("nsd-color", i))
-                .size(px(16.0))
-                .border_1()
-                .border_color(cx.theme().border)
-                .bg(color)
-                .cursor_pointer()
-                .opacity(if has_span { 1.0 } else { 0.4 })
-                .on_click(move |_, window, cx| {
-                    window.dispatch_action(Box::new(SetColor { color: [r, g, b] }), cx);
-                })
-        });
-        h_flex()
-            .gap_1()
-            .px_2()
-            .py_1()
-            .flex_wrap()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .children(kinds)
-            .child(div().w(px(1.0)).h(px(18.0)).mx_1().bg(cx.theme().border))
-            .children(swatches)
     }
 
     /// What an import could not show as written: a line that opens into the list.
@@ -1292,23 +1074,18 @@ impl NsdView {
         window: &mut Window,
         cx: &mut Context<PopupMenu>,
     ) -> PopupMenu {
-        let (selection, branching, can_undo, can_redo, disabled, focus) = {
+        let (selection, allowed, can_undo, can_redo, focus) = {
             let this = view.read(cx);
-            let span = this.span();
-            let d = this.editor.diagram();
-            let disabled = span.as_ref().is_some_and(|s| {
-                (s.start..s.end)
-                    .all(|i| path::element(d, &s.element(i)).is_some_and(|e| e.disabled()))
-            });
+            let doc = &this.workspace.read(cx).doc;
             (
-                this.editor.selection().clone(),
-                this.branching().is_some(),
-                this.editor.can_undo(),
-                this.editor.can_redo(),
-                disabled,
+                this.selection.clone(),
+                this.allowed(),
+                doc.can_undo(),
+                doc.can_redo(),
                 this.focus.clone(),
             )
         };
+        let (branching, disabled) = (allowed.branching, allowed.disabled);
         let editable = matches!(selection, Selection::Root) || selection.single().is_some();
         let has_span = selection.span().is_some();
         let copyable = has_span || matches!(selection, Selection::Root);
@@ -1363,6 +1140,17 @@ fn rect(r: umlcraft_nsd::layout::Rect) -> [i32; 4] {
     [r.x, r.y, r.w, r.h]
 }
 
+/// Writes `bytes` through a temporary file, so that a failed write leaves the old file whole.
+fn write_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut temporary = path.as_os_str().to_owned();
+    temporary.push(".tmp");
+    let temporary = std::path::PathBuf::from(temporary);
+    std::fs::write(&temporary, bytes)?;
+    std::fs::rename(&temporary, path).inspect_err(|_| {
+        std::fs::remove_file(&temporary).ok();
+    })
+}
+
 /// The parsed SVG rasterized at `scale`, as GPUI takes images (BGRA, not premultiplied).
 fn rasterize(tree: &usvg::Tree, scale: f32) -> Option<(Arc<RenderImage>, (u32, u32))> {
     let size = tree.size().to_int_size().scale_by(scale)?;
@@ -1383,29 +1171,28 @@ fn rasterize(tree: &usvg::Tree, scale: f32) -> Option<(Arc<RenderImage>, (u32, u
 }
 
 impl Render for NsdView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        window.set_window_title(&title(self.name(), self.editor.is_dirty()));
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let this = cx.entity();
         let menu_owner = cx.entity();
         let area = self.area.clone();
         let surround = cx.theme().muted;
         let accent = cx.theme().blue;
+        // The view fills a card of the main window: its backgrounds keep inside the card's
+        // rounded corners (inside its 1 px border), as the diagram canvas does.
+        let corner = crate::shell::RADIUS - px(1.0);
         v_flex()
             .size_full()
+            .rounded(corner)
             .bg(cx.theme().background)
             .track_focus(&self.focus)
             .key_context("NsdView")
             .on_action(cx.listener(Self::zoom_in))
             .on_action(cx.listener(Self::zoom_out))
-            .on_action(cx.listener(Self::reset_zoom))
-            .on_action(cx.listener(Self::zoom_to_fit))
+            .on_action(cx.listener(Self::on_reset_zoom))
+            .on_action(cx.listener(Self::on_zoom_to_fit))
             .on_action(cx.listener(Self::export_svg))
             .on_action(cx.listener(Self::export_png))
-            .on_action(cx.listener(Self::save_action))
-            .on_action(cx.listener(Self::save_as_action))
-            .on_action(cx.listener(Self::quit))
-            .on_action(cx.listener(Self::undo))
-            .on_action(cx.listener(Self::redo))
+            .on_action(cx.listener(Self::export_nsd))
             .on_action(cx.listener(Self::edit_element))
             .on_action(cx.listener(Self::insert_element))
             .on_action(cx.listener(Self::delete))
@@ -1425,16 +1212,15 @@ impl Render for NsdView {
             .on_action(cx.listener(Self::select_right))
             .on_action(cx.listener(Self::extend_up))
             .on_action(cx.listener(Self::extend_down))
-            .child(self.toolbar(cx))
-            .child(self.insert_bar(cx))
             .child(
                 div()
                     .id("structogram")
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
+                    .rounded(corner)
                     .bg(surround)
-                    .on_scroll_wheel(cx.listener(Self::on_scroll))
+                    .on_scroll(cx.listener(Self::on_scroll))
                     .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
                     .on_mouse_down(MouseButton::Right, cx.listener(Self::on_right_down))
                     .on_mouse_down(MouseButton::Middle, cx.listener(Self::on_middle_down))

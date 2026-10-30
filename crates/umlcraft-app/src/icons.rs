@@ -68,6 +68,22 @@ pub fn diagram_icon(kind: DiagramKind) -> SharedString {
     }))
 }
 
+/// Structograms, which have no tool of their own.
+pub fn structogram_icon() -> SharedString {
+    uml("structogram")
+}
+
+/// A kind of structogram element, as Structorizer draws it.
+pub fn nsd_kind_icon(kind: umlcraft_nsd::ElementKind) -> SharedString {
+    let tag = kind.tag();
+    uml(&format!("nsd{}{}", tag[..1].to_uppercase(), &tag[1..]))
+}
+
+/// A command on structogram elements: `color`, `disabled`, `addBranch`, `removeBranch`.
+pub fn nsd_icon(name: &str) -> SharedString {
+    uml(&format!("nsd{}{}", name[..1].to_uppercase(), &name[1..]))
+}
+
 /// The icon in front of a model element in the tree and the properties panel; members and other
 /// elements without a notation of their own have none.
 pub fn kind_icon(kind: &ElementKind) -> Option<SharedString> {
@@ -136,6 +152,7 @@ pub fn kind_icon(kind: &ElementKind) -> Option<SharedString> {
         ElementKind::Extend(_) => edge(E::Extend),
         ElementKind::Comment(_) => node(N::Note),
         ElementKind::Diagram(p) => Some(diagram_icon(p.diagram)),
+        ElementKind::Structogram(_) => Some(structogram_icon()),
         ElementKind::Model
         | ElementKind::EnumerationLiteral
         | ElementKind::Attribute(_)
@@ -175,6 +192,14 @@ mod tests {
                 let icon = tool_icon(tool);
                 assert!(Embedded::get(&icon).is_some(), "{tool:?}: {icon}");
             }
+        }
+        assert!(Embedded::get(&structogram_icon()).is_some());
+        for kind in umlcraft_nsd::ElementKind::ALL {
+            let icon = nsd_kind_icon(kind);
+            assert!(Embedded::get(&icon).is_some(), "{icon}");
+        }
+        for name in ["color", "disabled", "addBranch", "removeBranch"] {
+            assert!(Embedded::get(&nsd_icon(name)).is_some(), "{name}");
         }
         assert!(Embedded::get(LOGO).is_some());
     }

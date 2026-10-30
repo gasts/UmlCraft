@@ -4,6 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::list::ListItem;
@@ -26,6 +27,7 @@ use umlcraft_reverse::{Problem, SourceLanguage};
 
 use crate::canvas::{AppMeasure, DiagramCanvas, DraggedElement, FontMeasure};
 use crate::labels;
+use crate::nsd::{NsdView, source};
 use crate::properties::PropertiesPanel;
 use crate::ribbon::{self, RibbonTab};
 use crate::settings::Settings;
@@ -84,6 +86,12 @@ pub struct MainView {
     ribbon_unfolded_by_click: bool,
     /// Pixels a touchpad scrolled over the ribbon that did not yet make a tab.
     ribbon_wheel: f32,
+    /// The views of the structograms opened so far, kept while they exist.
+    structograms: HashMap<Id, Entity<NsdView>>,
+    /// What the import of a structogram from code could not show, for its view.
+    structogram_notes: HashMap<Id, Vec<String>>,
+    /// The diagram or structogram shown last, to focus a structogram once it shows.
+    shown: Option<Id>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -128,24 +136,6 @@ impl MainView {
         window.on_window_should_close(cx, move |window, cx| {
             weak.update(cx, |this, cx| this.should_close(window, cx)).unwrap_or(true)
         });
-        // Structogram windows put saved files among the recent ones and quit through here.
-        let (saved, quit, handle) =
-            (cx.entity().downgrade(), cx.entity().downgrade(), window.window_handle());
-        crate::nsd::connect(
-            cx,
-            move |path, cx| {
-                saved.update(cx, |this, cx| this.remember(path, cx)).ok();
-            },
-            move |cx| {
-                let quit = quit.clone();
-                handle
-                    .update(cx, |_, window, cx| {
-                        quit.update(cx, |this, cx| this.quit(&Quit, window, cx)).is_ok()
-                    })
-                    .unwrap_or(false)
-            },
-        );
-
         let mut view = Self {
             workspace,
             canvas,
@@ -167,6 +157,9 @@ impl MainView {
             ribbon_diagram: None,
             ribbon_unfolded_by_click: false,
             ribbon_wheel: 0.0,
+            structograms: HashMap::new(),
+            structogram_notes: HashMap::new(),
+            shown: None,
             _subscriptions: subscriptions,
         };
         if !crate::canvas::choose_diagram_font(cx) {
@@ -204,6 +197,7 @@ impl MainView {
             });
         }
 
+        self.sync_structograms(window, cx);
         let ws = self.workspace.read(cx);
         if ws.active_diagram != self.ribbon_diagram {
             self.ribbon_diagram = ws.active_diagram;
@@ -223,6 +217,44 @@ impl MainView {
         cx.notify();
     }
 
+    /// Makes a view for the structogram shown, focuses it when it comes up, and drops the
+    /// views of structograms that are gone.
+    fn sync_structograms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let ws = self.workspace.read(cx);
+        let model = ws.doc.model();
+        let active = ws.active_diagram;
+        self.structograms.retain(|&id, _| crate::workspace::is_structogram(model, id));
+        let shown = active.filter(|&id| crate::workspace::is_structogram(model, id));
+        if let Some(id) = shown
+            && !self.structograms.contains_key(&id)
+        {
+            let notes = self.structogram_notes.remove(&id).unwrap_or_default();
+            let workspace = self.workspace.clone();
+            let view = cx.new(|cx| NsdView::new(workspace, id, notes, cx));
+            self.structograms.insert(id, view);
+        }
+        if active != self.shown {
+            self.shown = active;
+            if let Some(view) = self.active_structogram(cx) {
+                view.focus_handle(cx).focus(window, cx);
+            }
+        }
+    }
+
+    /// The view of the structogram shown, if a structogram is shown.
+    fn active_structogram(&self, cx: &App) -> Option<Entity<NsdView>> {
+        self.structograms.get(&self.workspace.read(cx).active_diagram?).cloned()
+    }
+
+    /// Where commands from the ribbon, the menus and shortcuts go: the structogram shown, else
+    /// the canvas.
+    fn view_focus(&self, cx: &App) -> FocusHandle {
+        match self.active_structogram(cx) {
+            Some(view) => view.focus_handle(cx),
+            None => self.canvas.focus_handle(cx),
+        }
+    }
+
     fn on_tree_changed(&mut self, tree: Entity<TreeState>, cx: &mut Context<Self>) {
         let selected = tree.read(cx).selected_item().map(|item| item.id.clone());
         if selected == self.tree_selection {
@@ -231,7 +263,7 @@ impl MainView {
         self.tree_selection = selected.clone();
         let Some(id) = selected.and_then(|s| s.parse::<Id>().ok()) else { return };
         self.workspace.update(cx, |ws, cx| {
-            if ws.doc.model().view(id).is_some() {
+            if crate::workspace::is_shown(ws.doc.model(), id) {
                 ws.open_diagram(id);
                 ws.clear_selection();
             } else {
@@ -270,14 +302,17 @@ impl MainView {
 
     /// Commits text typed into the canvas or the properties panel but not yet confirmed, so
     /// that saving, exporting and the unsaved-changes check see it.
-    fn flush_edits(&mut self, cx: &mut Context<Self>) {
+    fn flush_edits(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.canvas.update(cx, |canvas, cx| canvas.commit_edit(cx));
         self.properties.update(cx, |properties, cx| properties.flush(cx));
+        if let Some(view) = self.active_structogram(cx) {
+            view.update(cx, |view, cx| view.flush_dialog(window, cx));
+        }
     }
 
     /// Runs `then` right away, or after asking what to do with unsaved changes.
     fn confirm_discard(&mut self, window: &mut Window, cx: &mut Context<Self>, then: Continuation) {
-        self.flush_edits(cx);
+        self.flush_edits(window, cx);
         if !self.workspace.read(cx).doc.is_dirty() {
             then(self, window, cx);
             return;
@@ -316,6 +351,8 @@ impl MainView {
         // what was copied refers to elements that are gone.
         self.notice = None;
         self.clipboard = None;
+        self.structograms.clear();
+        self.structogram_notes.clear();
     }
 
     fn new_project(&mut self, _: &NewProject, window: &mut Window, cx: &mut Context<Self>) {
@@ -364,34 +401,26 @@ impl MainView {
         );
     }
 
-    fn new_structogram(&mut self, _: &NewStructogram, window: &mut Window, cx: &mut Context<Self>) {
-        if let Err(detail) = crate::nsd::new(cx) {
-            self.show_error(&crate::nsd::open_failed(), &detail, window, cx);
-        }
+    /// Where new structograms go: the selected package, else the project.
+    fn structogram_owner(&self, cx: &App) -> Id {
+        let ws = self.workspace.read(cx);
+        let model = ws.doc.model();
+        ws.selected_element
+            .filter(|&id| model.get(id).is_some_and(|e| matches!(e.kind(), ElementKind::Package)))
+            .unwrap_or(model.root())
     }
 
-    /// Chooses a source file and methods of it, each opening as a structogram.
-    fn structogram_from_source(
-        &mut self,
-        _: &StructogramFromSource,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        crate::nsd::choose_source_method(window, cx, |message, detail, window, cx| {
-            let rx = window.prompt(
-                PromptLevel::Critical,
-                &message,
-                Some(&detail),
-                &[t!("dialog.ok").as_ref()],
-                cx,
-            );
-            cx.spawn(async move |_| rx.await.ok()).detach();
+    fn new_structogram(&mut self, _: &NewStructogram, _: &mut Window, cx: &mut Context<Self>) {
+        let owner = self.structogram_owner(cx);
+        self.with_workspace(cx, |ws| {
+            ws.add_item(owner, NewItem::Structogram);
         });
     }
 
-    fn open_structogram(
+    /// Adds structograms from Structorizer files to the project.
+    fn import_structogram(
         &mut self,
-        _: &OpenStructogram,
+        _: &ImportStructogram,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -404,8 +433,20 @@ impl MainView {
         cx.spawn_in(window, async move |this, cx| {
             let Ok(Ok(Some(paths))) = rx.await else { return };
             this.update_in(cx, |this, window, cx| {
+                let mut diagrams = Vec::new();
+                let mut failed = Vec::new();
                 for path in paths {
-                    this.show_structogram(path, window, cx);
+                    match crate::nsd::read(&path) {
+                        Ok(diagram) => diagrams.push(diagram),
+                        Err(reason) => failed.push(format!("{}: {reason}", path.display())),
+                    }
+                }
+                let owner = this.structogram_owner(cx);
+                this.with_workspace(cx, |ws| {
+                    ws.add_structograms(owner, &diagrams);
+                });
+                if !failed.is_empty() {
+                    this.show_error(&crate::nsd::open_failed(), &failed.join("\n"), window, cx);
                 }
             })
             .ok();
@@ -413,30 +454,39 @@ impl MainView {
         .detach();
     }
 
-    /// Opens a structogram in a window of its own (the project stays as it is) and puts it
-    /// among the recent files.
-    fn show_structogram(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        let path = std::path::absolute(&path).unwrap_or(path);
-        match crate::nsd::open(&path, cx) {
-            Ok(()) => self.remember(&path, cx),
+    /// Opens a Structorizer file as a new project that holds it, to be saved next to it.
+    fn open_structogram(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        let diagram = match crate::nsd::read(&path) {
+            Ok(diagram) => diagram,
             Err(detail) => {
                 // A recent file that no longer opens leaves the list.
                 if self.settings.remove_recent(&path) {
                     self.settings.save();
                     self.reload_menus(cx);
                 }
-                self.show_error(&crate::nsd::open_failed(), &detail, window, cx)
+                self.show_error(&crate::nsd::open_failed(), &detail, window, cx);
+                return;
             }
-        }
+        };
+        let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let mut doc = Document::new(Model::new(stem));
+        let root = doc.model().root();
+        let kind = ElementKind::Structogram(umlcraft_model::StructogramProps::new(&diagram));
+        doc.edit("", |tx| tx.create(root, ElementData::new("", kind)))
+            .expect("a model can always own a structogram");
+        doc.clear_history();
+        doc.mark_unsaved();
+        self.replace_document(doc, None, cx);
+        self.workspace.update(cx, |ws, cx| {
+            ws.draft = Some(with_project_extension(path.with_extension("")));
+            cx.notify();
+        });
+        self.remember(&path, cx);
     }
 
     /// Opens `path` once unsaved changes are saved or discarded, e.g. for a file the system
-    /// hands over. Structograms open in a window of their own and need no such question.
+    /// hands over.
     pub fn ask_to_open(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        if crate::nsd::is_structogram(&path) {
-            self.show_structogram(path, window, cx);
-            return;
-        }
         self.confirm_discard(
             window,
             cx,
@@ -446,10 +496,6 @@ impl MainView {
 
     fn open_recent(&mut self, action: &OpenRecent, window: &mut Window, cx: &mut Context<Self>) {
         let Some(path) = self.settings.recent.get(action.index).cloned() else { return };
-        if crate::nsd::is_structogram(&path) {
-            self.show_structogram(path, window, cx);
-            return;
-        }
         self.confirm_discard(
             window,
             cx,
@@ -457,12 +503,12 @@ impl MainView {
         );
     }
 
-    /// Opens a project, imports an `.asta` file or shows a structogram.
+    /// Opens a project, or imports an `.asta` or `.nsd` file as a new project.
     pub fn open(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         // Relative paths (from the command line) would not open from elsewhere later.
         let path = std::path::absolute(&path).unwrap_or(path);
         if crate::nsd::is_structogram(&path) {
-            self.show_structogram(path, window, cx);
+            self.open_structogram(path, window, cx);
             return;
         }
         if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("asta")) {
@@ -613,7 +659,7 @@ impl MainView {
         if self.busy.is_some() {
             return;
         }
-        self.flush_edits(cx);
+        self.flush_edits(window, cx);
         let ws = self.workspace.read(cx);
         let model = ws.doc.model();
         let project = model.element(model.root()).map(|e| e.name().to_owned()).unwrap_or_default();
@@ -657,8 +703,9 @@ impl MainView {
         .detach();
     }
 
-    /// Asks for source files or a folder, parses them in the background and merges them into
-    /// the open project as one undo step, as Astah's Tools › Java › Import Java does.
+    /// Asks for source files or a folder, parses them in the background, offers their methods
+    /// for structograms and merges classes and structograms into the open project as one undo
+    /// step, as Astah's Tools › Java › Import Java does for the classes.
     fn import_source(
         &mut self,
         action: &ImportSource,
@@ -683,24 +730,19 @@ impl MainView {
                 this.generation
             });
             let Ok(generation) = started else { return };
-            let parsed = cx
+            let found = cx
                 .background_executor()
                 .spawn(async move {
                     let files = umlcraft_reverse::collect_sources_for(language, &paths)?;
-                    std::io::Result::Ok(umlcraft_reverse::parse_sources(language, &files))
+                    std::io::Result::Ok(source::parse(language, &files))
                 })
                 .await;
             this.update_in(cx, |this, window, cx| {
                 this.busy = None;
                 cx.notify();
-                match parsed {
-                    // The project it was meant for has been replaced in the meantime.
-                    Ok(_) if this.generation != generation => {
-                        let message = t!("dialog.import_source_discarded");
-                        let detail = t!("dialog.import_source_discarded_detail");
-                        this.inform(PromptLevel::Info, &message, &detail, window, cx);
-                    }
-                    Ok(parsed) => this.apply_source(language, &parsed, window, cx),
+                match found {
+                    Ok(_) if this.generation != generation => this.import_discarded(window, cx),
+                    Ok(found) => this.choose_structograms(found, generation, window, cx),
                     Err(err) => this.show_error(
                         &t!("dialog.import_source_failed"),
                         &err.to_string(),
@@ -714,15 +756,24 @@ impl MainView {
         .detach();
     }
 
-    fn apply_source(
+    /// The project the import was meant for has been replaced in the meantime.
+    fn import_discarded(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let message = t!("dialog.import_source_discarded");
+        let detail = t!("dialog.import_source_discarded_detail");
+        self.inform(PromptLevel::Info, &message, &detail, window, cx);
+    }
+
+    /// Offers the methods of the files read for structograms; the import goes on with those
+    /// chosen, or with the classes alone.
+    fn choose_structograms(
         &mut self,
-        language: SourceLanguage,
-        parsed: &umlcraft_reverse::Parsed,
+        found: source::Found,
+        generation: u64,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if parsed.units.is_empty() && parsed.failed.is_empty() {
-            let extensions = language.extensions().iter().map(|e| format!(".{e}"));
+        if found.files.is_empty() && found.parsed.failed.is_empty() {
+            let extensions = found.language.extensions().iter().map(|e| format!(".{e}"));
             let detail = t!(
                 "dialog.import_source_none_detail",
                 extensions = extensions.collect::<Vec<_>>().join(", ")
@@ -730,13 +781,90 @@ impl MainView {
             self.inform(PromptLevel::Info, &t!("dialog.import_source_none"), &detail, window, cx);
             return;
         }
+        if found.methods.is_empty() {
+            self.apply_source(&found, Vec::new(), window, cx);
+            return;
+        }
+        let existing = source::imported(self.workspace.read(cx).doc.model());
+        let found = Arc::new(found);
+        let this = cx.entity().downgrade();
+        let job = found.clone();
+        let chosen = move |picked: Vec<usize>, window: &mut Window, cx: &mut App| {
+            this.update(cx, |this, cx| {
+                this.build_structograms(job.clone(), picked, generation, window, cx)
+            })
+            .ok();
+        };
+        source::offer(&found, &existing, chosen, window, cx);
+    }
+
+    /// Builds the structograms of the methods `picked` in the background, then imports.
+    fn build_structograms(
+        &mut self,
+        found: Arc<source::Found>,
+        picked: Vec<usize>,
+        generation: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.generation != generation {
+            self.import_discarded(window, cx);
+            return;
+        }
+        if picked.is_empty() {
+            self.apply_source(&found, Vec::new(), window, cx);
+            return;
+        }
+        self.busy = Some(Busy::ImportingSource);
+        cx.notify();
+        let (author, date) = (crate::nsd::user_name(), crate::nsd::today());
+        let origin = source::made_origin(found.language);
+        cx.spawn_in(window, async move |this, cx| {
+            let job = found.clone();
+            let built = cx
+                .background_executor()
+                .spawn(async move {
+                    let made =
+                        umlcraft_nsd_code::Made { author: &author, date: &date, origin: &origin };
+                    source::build(&job, &picked, &made)
+                })
+                .await;
+            this.update_in(cx, |this, window, cx| {
+                this.busy = None;
+                cx.notify();
+                if this.generation != generation {
+                    this.import_discarded(window, cx);
+                } else {
+                    this.apply_source(&found, built, window, cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn apply_source(
+        &mut self,
+        found: &source::Found,
+        built: Vec<source::Built>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let result = self.workspace.update(cx, |ws, cx| {
-            let result = ws.import_source(language, parsed);
+            let result = ws.import_source(found, built);
             cx.notify();
             result
         });
         match result {
-            Ok(report) => self.report_source_import(&report, window, cx),
+            Ok((report, made)) => {
+                let structograms = made.len();
+                for (id, report) in made {
+                    // A view shown already keeps its notes; the next one shows the new ones.
+                    self.structograms.remove(&id);
+                    self.structogram_notes.insert(id, source::notes(&report));
+                }
+                self.report_source_import(&report, structograms, window, cx)
+            }
             Err(err) => {
                 let detail =
                     crate::errors::model_error(Some(self.workspace.read(cx).doc.model()), &err);
@@ -750,10 +878,11 @@ impl MainView {
     fn report_source_import(
         &mut self,
         report: &umlcraft_reverse::Report,
+        structograms: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let summary = t!(
+        let mut summary = t!(
             "status.imported",
             files = report.files,
             created = report.created,
@@ -761,6 +890,10 @@ impl MainView {
             associations = report.associations
         )
         .to_string();
+        if structograms > 0 {
+            summary.push(' ');
+            summary.push_str(&t!("status.imported_structograms", count = structograms));
+        }
         if !report.has_problems() {
             let revision = self.workspace.read(cx).doc.revision();
             self.notice = Some((summary, revision));
@@ -826,17 +959,23 @@ impl MainView {
 
     /// Writes the open diagram as an SVG image, drawn as on the canvas in the light theme.
     fn export_svg(&mut self, _: &ExportSvg, window: &mut Window, cx: &mut Context<Self>) {
-        self.export_image(false, window, cx);
+        match self.active_structogram(cx) {
+            Some(view) => view.update(cx, |view, cx| view.export_image(false, window, cx)),
+            None => self.export_image(false, window, cx),
+        }
     }
 
     fn export_png(&mut self, _: &ExportPng, window: &mut Window, cx: &mut Context<Self>) {
-        self.export_image(true, window, cx);
+        match self.active_structogram(cx) {
+            Some(view) => view.update(cx, |view, cx| view.export_image(true, window, cx)),
+            None => self.export_image(true, window, cx),
+        }
     }
 
     /// Writes the open diagram as an SVG image, or rasterized as PNG, drawn as on the canvas
     /// in the light theme.
     fn export_image(&mut self, png: bool, window: &mut Window, cx: &mut Context<Self>) {
-        self.flush_edits(cx);
+        self.flush_edits(window, cx);
         let ws = self.workspace.read(cx);
         let Some(diagram) = ws.active_diagram else { return };
         let model = ws.doc.model();
@@ -928,9 +1067,11 @@ impl MainView {
         cx: &mut Context<Self>,
         then: Option<Continuation>,
     ) {
-        self.flush_edits(cx);
+        self.flush_edits(window, cx);
         let ws = self.workspace.read(cx);
         let current = ws.path.clone();
+        // A project never saved may know where it would go (next to the file it came from).
+        let draft = current.clone().or_else(|| ws.draft.clone());
         if let Some(path) = current.clone().filter(|_| !save_as) {
             if self.write(path, window, cx)
                 && let Some(then) = then
@@ -941,12 +1082,12 @@ impl MainView {
         }
         let model = ws.doc.model();
         let project = model.element(model.root()).map(|e| e.name().to_owned()).unwrap_or_default();
-        let suggested = current
+        let suggested = draft
             .as_deref()
             .and_then(Path::file_name)
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| format!("{}.{FILE_EXTENSION}", sanitize_file_name(&project)));
-        let rx = cx.prompt_for_new_path(&start_directory(current.as_deref()), Some(&suggested));
+        let rx = cx.prompt_for_new_path(&start_directory(draft.as_deref()), Some(&suggested));
         cx.spawn_in(window, async move |this, cx| {
             let Ok(Ok(Some(path))) = rx.await else { return };
             let path = with_project_extension(path);
@@ -1012,16 +1153,11 @@ impl MainView {
     }
 
     fn quit(&mut self, _: &Quit, window: &mut Window, cx: &mut Context<Self>) {
-        // Structogram windows are asked about their changes once the project is safe.
-        self.confirm_discard(
-            window,
-            cx,
-            Box::new(|_, _, cx| crate::nsd::confirm_all(cx, Box::new(|cx| cx.quit()))),
-        );
+        self.confirm_discard(window, cx, Box::new(|_, _, cx| cx.quit()));
     }
 
     fn should_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        self.flush_edits(cx);
+        self.flush_edits(window, cx);
         if self.close_confirmed || !self.workspace.read(cx).doc.is_dirty() {
             return true;
         }
@@ -1165,13 +1301,19 @@ impl MainView {
             .active_diagram
             .and_then(|d| ws.doc.model().get(d))
             .and_then(|e| e.kind().as_diagram());
-        let has_selection = !ws.selection.is_empty();
+        let structogram = self.active_structogram(cx).map(|view| view.read(cx).allowed());
+        // A structogram's selection is its own; it pastes what the system's clipboard holds.
+        let has_selection = match structogram {
+            Some(allowed) => allowed.span,
+            None => !ws.selection.is_empty(),
+        };
         let state = ribbon::State {
             diagram,
+            structogram,
             tool: ws.tool,
             has_selection,
             can_align: ws.selected_nodes().len() > 1,
-            can_paste: self.clipboard.is_some() && diagram.is_some(),
+            can_paste: structogram.is_some() || (self.clipboard.is_some() && diagram.is_some()),
             can_wrap: has_selection && diagram == Some(DiagramKind::Sequence),
             dark: cx.theme().is_dark(),
         };
@@ -1186,7 +1328,7 @@ impl MainView {
         let room = f32::from(window.viewport_size().width) - 140.0;
         let compact = ribbon::width(&groups) > room;
         let collapsed = self.settings.ribbon_collapsed;
-        let focus = self.canvas.focus_handle(cx);
+        let focus = self.view_focus(cx);
         let order: Vec<RibbonTab> = tabs.iter().map(|(t, _)| *t).collect();
         h_flex()
             .id("ribbon-area")
@@ -1195,7 +1337,7 @@ impl MainView {
             .px(shell::GAP)
             .pt(shell::GAP)
             // As in Word: the wheel over the ribbon steps through its tabs, down to the right.
-            .on_scroll_wheel(cx.listener(move |this, event: &ScrollWheelEvent, window, cx| {
+            .on_scroll(cx.listener(move |this, event: &ScrollEvent, window, cx| {
                 if collapsed || !window.is_window_active() {
                     return;
                 }
@@ -1292,7 +1434,8 @@ impl MainView {
         });
         let recent = self.settings.recent.clone();
         // Menu commands go where shortcuts go, so that this view handles them.
-        let focus = self.canvas.focus_handle(cx);
+        let focus = self.view_focus(cx);
+        let structogram = self.active_structogram(cx).is_some();
         let muted = cx.theme().muted_foreground;
         let divider = || div().w(px(1.0)).h(px(16.0)).mx_1().bg(cx.theme().border);
         // On the window's backdrop, like the cards, with no line of its own.
@@ -1305,7 +1448,8 @@ impl MainView {
                 .child(
                     Button::new("file-menu").ghost().small().label(t!("menu.file")).dropdown_menu(
                         move |menu, window, cx| {
-                            file_menu(menu, &recent, window, cx).action_context(focus.clone())
+                            file_menu(menu, &recent, structogram, window, cx)
+                                .action_context(focus.clone())
                         },
                     ),
                 )
@@ -1421,12 +1565,21 @@ impl MainView {
 
     fn diagram_area(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let ws = self.workspace.read(cx);
+        let structogram = self.active_structogram(cx);
         let body = if ws.active_diagram.is_some() {
+            let zoom = match &structogram {
+                Some(view) => view.read(cx).zoom(),
+                None => self.canvas.read(cx).zoom(),
+            };
+            let content = match structogram {
+                Some(view) => view.into_any_element(),
+                None => self.canvas.clone().into_any_element(),
+            };
             div()
                 .relative()
                 .flex_1()
                 .min_h_0()
-                .child(self.canvas.clone())
+                .child(content)
                 .child(
                     div()
                         .absolute()
@@ -1435,7 +1588,7 @@ impl MainView {
                         .right_0()
                         .flex()
                         .justify_center()
-                        .child(self.zoom_pill(cx)),
+                        .child(self.zoom_pill(zoom, cx)),
                 )
                 .into_any_element()
         } else {
@@ -1477,8 +1630,8 @@ impl MainView {
     }
 
     /// Zoom out, the zoom (resets it), zoom in and zoom to fit, floating over the canvas.
-    fn zoom_pill(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let zoom = (self.canvas.read(cx).zoom() * 100.0).round();
+    fn zoom_pill(&self, zoom: f32, cx: &mut Context<Self>) -> impl IntoElement {
+        let zoom = (zoom * 100.0).round();
         shell::card(cx)
             .rounded_full()
             .flex()
@@ -1573,7 +1726,7 @@ fn tree_menu(meta: &TreeMeta, menu: PopupMenu) -> PopupMenu {
     let target = meta.id;
     let command = |command| Box::new(TreeCommand { target, command });
     let mut menu = menu;
-    if meta.kind.as_diagram().is_some() {
+    if meta.kind.as_diagram().is_some() || matches!(meta.kind, ElementKind::Structogram(_)) {
         menu = menu.menu(t!("menu.open_diagram"), command(TreeCommandKind::Open)).separator();
     }
     let items = [
@@ -1623,6 +1776,11 @@ fn tree_menu(meta: &TreeMeta, menu: PopupMenu) -> PopupMenu {
             menu = menu.menu(label, command(TreeCommandKind::New(item)));
             any = true;
         }
+    }
+    if NewItem::Structogram.applies_to(&meta.kind) {
+        let label = format!("{} {}", t!("menu.new_prefix"), t!("kind.structogram"));
+        menu = menu.menu(label, command(TreeCommandKind::New(NewItem::Structogram)));
+        any = true;
     }
     if any {
         menu = menu.separator();
@@ -1705,15 +1863,15 @@ fn menus(settings: &Settings) -> Vec<Menu> {
         menu_item("menu.new", NewProject),
         menu_item("menu.open", OpenProject),
         menu_item("menu.new_structogram", NewStructogram),
-        menu_item("menu.open_structogram", OpenStructogram),
-        menu_item("menu.structogram_from_source", StructogramFromSource),
         MenuItem::submenu(Menu::new(t!("menu.recent").to_string()).items(recent)),
         menu_item("menu.import_astah", ImportAstah),
+        menu_item("menu.import_structogram", ImportStructogram),
     ];
     file.push(MenuItem::submenu(Menu::new(t!("menu.export").to_string()).items([
         menu_item("menu.export_svg", ExportSvg),
         menu_item("menu.export_png", ExportPng),
         menu_item("menu.export_astah", ExportAstah),
+        menu_item("menu.export_structogram", crate::nsd::ExportStructogram),
     ])));
     file.extend([
         MenuItem::separator(),
@@ -1814,10 +1972,12 @@ fn install_menus(settings: &Settings, cx: &mut App) {
     cx.set_menus(menus(settings));
 }
 
-/// The title bar's File menu: the same entries as the platform's File menu.
+/// The title bar's File menu: the same entries as the platform's File menu. Exporting a
+/// structogram needs one to be shown.
 fn file_menu(
     menu: PopupMenu,
     recent: &[PathBuf],
+    structogram: bool,
     window: &mut Window,
     cx: &mut Context<PopupMenu>,
 ) -> PopupMenu {
@@ -1826,8 +1986,6 @@ fn file_menu(
     let mut menu = item(menu, "menu.new", Box::new(NewProject));
     menu = item(menu, "menu.open", Box::new(OpenProject));
     menu = item(menu, "menu.new_structogram", Box::new(NewStructogram));
-    menu = item(menu, "menu.open_structogram", Box::new(OpenStructogram));
-    menu = item(menu, "menu.structogram_from_source", Box::new(StructogramFromSource));
     menu = menu.submenu(t!("menu.recent"), window, cx, move |mut menu, _, _| {
         if recent.is_empty() {
             return menu.menu_with_disabled(t!("menu.no_recent"), Box::new(Cancel), true);
@@ -1838,10 +1996,16 @@ fn file_menu(
         menu
     });
     menu = item(menu, "menu.import_astah", Box::new(ImportAstah));
-    menu = menu.submenu(t!("menu.export"), window, cx, |menu, _, _| {
+    menu = item(menu, "menu.import_structogram", Box::new(ImportStructogram));
+    menu = menu.submenu(t!("menu.export"), window, cx, move |menu, _, _| {
         menu.menu(t!("menu.export_svg"), Box::new(ExportSvg))
             .menu(t!("menu.export_png"), Box::new(ExportPng))
             .menu(t!("menu.export_astah"), Box::new(ExportAstah))
+            .menu_with_disabled(
+                t!("menu.export_structogram"),
+                Box::new(crate::nsd::ExportStructogram),
+                !structogram,
+            )
     });
     menu = item(menu.separator(), "menu.save", Box::new(SaveProject));
     menu = item(menu, "menu.save_as", Box::new(SaveProjectAs));
@@ -1909,7 +2073,7 @@ fn recent_label(path: &Path) -> String {
     format!("{name} — {dir}")
 }
 
-fn sanitize_file_name(name: &str) -> String {
+pub(crate) fn sanitize_file_name(name: &str) -> String {
     let cleaned: String = name
         .chars()
         .map(|c| if c.is_alphanumeric() || " -_".contains(c) { c } else { '_' })
@@ -1919,7 +2083,7 @@ fn sanitize_file_name(name: &str) -> String {
 }
 
 /// Where file dialogs start: next to the project file, else in the user's documents.
-fn start_directory(project: Option<&Path>) -> PathBuf {
+pub(crate) fn start_directory(project: Option<&Path>) -> PathBuf {
     project
         .and_then(Path::parent)
         .map(Path::to_path_buf)
@@ -1938,7 +2102,7 @@ impl Render for MainView {
         // Actions start at the focused element; with nothing focused (at start, or after a
         // menu or dialog closed) the toolbar and shortcuts would not reach this view.
         if window.focused(cx).is_none() {
-            self.canvas.focus_handle(cx).focus(window, cx);
+            self.view_focus(cx).focus(window, cx);
         }
         let backdrop = shell::backdrop(cx);
         let model_browser = self.model_browser(cx).into_any_element();
@@ -1957,8 +2121,7 @@ impl Render for MainView {
             .on_action(cx.listener(Self::new_project))
             .on_action(cx.listener(Self::open_project))
             .on_action(cx.listener(Self::new_structogram))
-            .on_action(cx.listener(Self::open_structogram))
-            .on_action(cx.listener(Self::structogram_from_source))
+            .on_action(cx.listener(Self::import_structogram))
             .on_action(cx.listener(Self::import_astah))
             .on_action(cx.listener(Self::export_astah))
             .on_action(cx.listener(Self::import_source))
@@ -2019,13 +2182,34 @@ impl Render for MainView {
             .on_action(
                 cx.listener(|this, _: &AlignBottom, _, cx| this.align(Alignment::Bottom, cx)),
             )
-            .on_action(move |_: &ZoomIn, _, cx| c1.update(cx, |c, cx| c.zoom_by(1.2, cx)))
-            .on_action(move |_: &ZoomOut, _, cx| c2.update(cx, |c, cx| c.zoom_by(1.0 / 1.2, cx)))
-            .on_action(move |_: &ResetZoom, _, cx| c3.update(cx, |c, cx| c.reset_zoom(cx)))
+            // Zoom commands from outside the view (the tree has the focus) go to what is shown.
+            .on_action(cx.listener(
+                move |this, _: &ZoomIn, _, cx| match this.active_structogram(cx) {
+                    Some(view) => view.update(cx, |v, cx| v.zoom_by(1.25, cx)),
+                    None => c1.update(cx, |c, cx| c.zoom_by(1.2, cx)),
+                },
+            ))
+            .on_action(cx.listener(
+                move |this, _: &ZoomOut, _, cx| match this.active_structogram(cx) {
+                    Some(view) => view.update(cx, |v, cx| v.zoom_by(1.0 / 1.25, cx)),
+                    None => c2.update(cx, |c, cx| c.zoom_by(1.0 / 1.2, cx)),
+                },
+            ))
+            .on_action(cx.listener(move |this, _: &ResetZoom, _, cx| {
+                match this.active_structogram(cx) {
+                    Some(view) => view.update(cx, |v, cx| v.reset_zoom(cx)),
+                    None => c3.update(cx, |c, cx| c.reset_zoom(cx)),
+                }
+            }))
             .on_action(move |a: &SetLineShape, _, cx| {
                 c4.update(cx, |c, cx| c.set_line_shape(a.shape, cx))
             })
-            .on_action(move |_: &ZoomToFit, _, cx| canvas.update(cx, |c, cx| c.zoom_to_fit(cx)))
+            .on_action(cx.listener(move |this, _: &ZoomToFit, _, cx| {
+                match this.active_structogram(cx) {
+                    Some(view) => view.update(cx, |v, cx| v.zoom_to_fit(cx)),
+                    None => canvas.update(cx, |c, cx| c.zoom_to_fit(cx)),
+                }
+            }))
             .child(self.title_bar(cx))
             .child(ribbon)
             .child(

@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use rust_i18n::t;
 use umlcraft_model::{
     Aggregation, DiagramKind, Document, EdgeLabels, ElementData, ElementKind, Id, LineShape, Model,
-    ModelError, Multiplicity, Navigability, Point, Presentation, Rect, Shape, Size, Style,
-    TemplateParameterProps, Tx, TypeRef, Visibility,
+    ModelError, Multiplicity, Navigability, Point, Presentation, Rect, Shape, Size,
+    StructogramProps, Style, TemplateParameterProps, Tx, TypeRef, Visibility,
 };
 use umlcraft_notation::clipboard::{self, Clip};
 use umlcraft_notation::member;
@@ -20,7 +20,9 @@ use umlcraft_notation::state_edit;
 pub struct Workspace {
     pub doc: Document,
     pub path: Option<PathBuf>,
-    /// Diagrams open as tabs, in tab order.
+    /// Where a project never saved is suggested to go, e.g. next to the `.nsd` file it holds.
+    pub draft: Option<PathBuf>,
+    /// Diagrams and structograms open as tabs, in tab order.
     pub open_diagrams: Vec<Id>,
     pub active_diagram: Option<Id>,
     /// Element shown in the properties panel and highlighted in the model tree.
@@ -64,6 +66,7 @@ impl Workspace {
         Self {
             doc,
             path,
+            draft: None,
             open_diagrams: first_diagram.into_iter().collect(),
             active_diagram: first_diagram,
             selected_element: None,
@@ -84,9 +87,9 @@ impl Workspace {
         self.path.as_deref().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned())
     }
 
-    /// Opens `diagram` as a tab (if needed) and activates it.
+    /// Opens `diagram` (a diagram or a structogram) as a tab (if needed) and activates it.
     pub fn open_diagram(&mut self, diagram: Id) {
-        if self.doc.model().view(diagram).is_none() {
+        if !is_shown(self.doc.model(), diagram) {
             return;
         }
         if !self.open_diagrams.contains(&diagram) {
@@ -159,8 +162,8 @@ impl Workspace {
     /// Drops tabs and selections that no longer exist, e.g. after undo.
     pub fn validate(&mut self) {
         let model = self.doc.model();
-        self.open_diagrams.retain(|&d| model.view(d).is_some());
-        if self.active_diagram.is_none_or(|d| model.view(d).is_none()) {
+        self.open_diagrams.retain(|&d| is_shown(model, d));
+        if self.active_diagram.is_none_or(|d| !is_shown(model, d)) {
             self.active_diagram = self.open_diagrams.first().copied();
         }
         if self.selected_element.is_some_and(|e| !model.contains(e)) {
@@ -502,14 +505,21 @@ impl Workspace {
         self.report(result);
     }
 
-    /// Merges parsed source files into the model as one undo step (Tools › Java).
+    /// Merges parsed source files into the model and files the structograms `built` from their
+    /// methods, as one undo step (Tools › Import). Returns the import's report and each
+    /// structogram made or replaced with the report of its method.
     pub fn import_source(
         &mut self,
-        language: umlcraft_reverse::SourceLanguage,
-        parsed: &umlcraft_reverse::Parsed,
-    ) -> Result<umlcraft_reverse::Report, ModelError> {
+        found: &crate::nsd::source::Found,
+        built: Vec<crate::nsd::source::Built>,
+    ) -> Result<(umlcraft_reverse::Report, Vec<(Id, umlcraft_nsd_code::Report)>), ModelError> {
         let label = t!("edit.import_source").to_string();
-        let result = self.edit(label, |tx| umlcraft_reverse::apply(tx, language, parsed));
+        let result = self.edit(label, |tx| {
+            let (report, placed) =
+                umlcraft_reverse::apply_placed(tx, found.language, &found.parsed)?;
+            let made = crate::nsd::source::file_structograms(tx, found, &placed, built)?;
+            Ok((report, made))
+        });
         if result.is_ok() {
             self.message = None;
         }
@@ -845,6 +855,7 @@ pub enum NewItem {
     ExtensionPoint,
     TemplateParameter,
     Diagram(DiagramKind),
+    Structogram,
 }
 
 impl NewItem {
@@ -863,6 +874,7 @@ impl NewItem {
                 Some(behavior) => kind.can_own(&behavior),
                 None => kind.can_own(&ElementKind::diagram(d)),
             },
+            Self::Structogram => kind.can_own(&ElementKind::diagram(DiagramKind::Class)),
         }
     }
 
@@ -882,6 +894,7 @@ impl NewItem {
             Self::Diagram(DiagramKind::StateMachine) => "diagram.stateMachine".into(),
             Self::Diagram(DiagramKind::Component) => "diagram.component".into(),
             Self::Diagram(DiagramKind::Deployment) => "diagram.deployment".into(),
+            Self::Structogram => "kind.structogram".into(),
         }
     }
 }
@@ -907,6 +920,7 @@ impl Workspace {
     pub fn add_item(&mut self, owner: Id, item: NewItem) -> Option<Id> {
         let keep_words = match item {
             NewItem::Diagram(_) | NewItem::ExtensionPoint => true,
+            NewItem::Structogram => false,
             NewItem::Element(tool) => keeps_words(tool),
             _ => false,
         };
@@ -950,14 +964,54 @@ impl Workspace {
                         None => tx.create(owner, diagram),
                     }
                 }
+                NewItem::Structogram => {
+                    let text = free_structogram_text(tx.model(), owner, &base);
+                    let made = umlcraft_nsd::Provenance { author: "", date: "", origin: "" };
+                    let program = umlcraft_nsd::RootKind::Program;
+                    let structogram = umlcraft_nsd::Diagram::new(program, &[text], &made);
+                    let kind = ElementKind::Structogram(StructogramProps::new(&structogram));
+                    tx.create(owner, ElementData::new("", kind))
+                }
             }
         });
         let id = self.report(result)?;
-        if matches!(item, NewItem::Diagram(_)) {
+        if matches!(item, NewItem::Diagram(_) | NewItem::Structogram) {
             self.open_diagram(id);
         }
         self.select_element(id);
         Some(id)
+    }
+
+    /// Adds structograms (from `.nsd` files or code) to `owner` as one undo step and opens the
+    /// last one. Returns their ids.
+    pub fn add_structograms(
+        &mut self,
+        owner: Id,
+        structograms: &[umlcraft_nsd::Diagram],
+    ) -> Vec<Id> {
+        let label = t!("edit.create").to_string();
+        let result = self.edit(label, |tx| {
+            structograms
+                .iter()
+                .map(|d| {
+                    let kind = ElementKind::Structogram(StructogramProps::new(d));
+                    tx.create(owner, ElementData::new("", kind))
+                })
+                .collect::<Result<Vec<_>, _>>()
+        });
+        let ids = self.report(result).unwrap_or_default();
+        if let Some(&last) = ids.last() {
+            self.open_diagram(last);
+            self.select_element(last);
+        }
+        ids
+    }
+
+    /// Replaces the content of structogram `id` as one undo step.
+    pub fn edit_structogram(&mut self, id: Id, structogram: &umlcraft_nsd::Diagram) {
+        let label = t!("edit.structogram").to_string();
+        let result = self.edit(label, |tx| tx.set_structogram(id, structogram));
+        self.report(result);
     }
 
     /// Changes an element's data as one undo step, e.g. from the properties panel.
@@ -1041,7 +1095,36 @@ pub fn name_base(key: &str, keep_words: bool) -> String {
 }
 
 fn first_diagram(model: &Model) -> Option<Id> {
-    model.subtree(model.root()).into_iter().find(|&id| model.view(id).is_some())
+    model.subtree(model.root()).into_iter().find(|&id| is_shown(model, id))
+}
+
+/// Whether `id` opens as a tab: a diagram, or a structogram.
+pub fn is_shown(model: &Model, id: Id) -> bool {
+    model.view(id).is_some() || is_structogram(model, id)
+}
+
+pub fn is_structogram(model: &Model, id: Id) -> bool {
+    model.get(id).is_some_and(|e| matches!(e.kind(), ElementKind::Structogram(_)))
+}
+
+/// A new structogram's text: the item's name and the first number no structogram of `owner`
+/// has yet ("Structogram1"). Structograms have no names; their text names them.
+fn free_structogram_text(model: &Model, owner: Id, base: &str) -> String {
+    let taken: HashSet<String> = model
+        .children(owner)
+        .iter()
+        .filter_map(|&c| model.get(c)?.kind().as_structogram())
+        .map(|p| {
+            p.structogram.text().join(
+                "
+",
+            )
+        })
+        .collect();
+    (1..)
+        .map(|n| format!("{base}{n}"))
+        .find(|t| !taken.contains(t))
+        .expect("numbers do not run out")
 }
 
 #[cfg(test)]

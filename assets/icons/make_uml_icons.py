@@ -73,6 +73,9 @@ OPEN_HEAD = path('M12.5 6L17.5 9.5L12.5 13')
 MESSAGE_HEAD = path('M12.5 6.5L17.5 9.5L12.5 12.5Z', FILL)
 NAVIGABLE = [path('M2.5 9.5H17.5'), OPEN_HEAD]
 DIAMOND = 'M9.5 9.5L13.5 6.5L17.5 9.5L13.5 12.5Z'
+NSD_ALTERNATIVE = [rect(2.5, 3.5, 15, 13), path('M2.5 3.5L10 9.5L17.5 3.5M2.5 9.5H17.5'),
+                   path('M10 9.5V16.5')]
+NSD_LOOP = [path('M2.5 3.5H17.5V7.5H6.5V16.5H2.5Z'), rect(6.5, 7.5, 11, 9)]
 
 ICONS = {
     # Nodes
@@ -121,6 +124,29 @@ ICONS = {
     'componentInstance': COMPONENT + [path('M8 10.5H14')],
     'nodeInstance': NODE + [path('M5.5 11.5H11.5')],
     'object': [rect(2.5, 3.5, 15, 13, 2), path('M6.5 7.5H13.5M2.5 10.5H17.5')],
+    # A structogram: an instruction above an alternative with its two branches.
+    'structogram': [rect(2.5, 2.5, 15, 15, 1), path('M2.5 6.5H17.5M2.5 11.5H17.5'),
+                    path('M2.5 6.5L10 11.5L17.5 6.5M10 11.5V17.5')],
+    # Structogram elements, drawn as Structorizer draws them
+    'nsdInstruction': [rect(2.5, 5.5, 15, 9), path('M5.5 10H14.5')],
+    'nsdCall': [rect(2.5, 5.5, 15, 9), path('M5 5.5V14.5M15 5.5V14.5')],
+    'nsdJump': [path('M5.5 5.5H17.5V14.5H5.5L2.5 10Z'), path('M8.5 10H14.5')],
+    'nsdAlternative': NSD_ALTERNATIVE,
+    'nsdCase': [rect(2.5, 3.5, 15, 13), path('M2.5 3.5L13.5 9.5L17.5 3.5M2.5 9.5H17.5'),
+                path('M6.5 9.5V16.5M10 9.5V16.5M13.5 9.5V16.5')],
+    'nsdFor': NSD_LOOP + [path('M9.5 5.5H14.5')],
+    'nsdWhile': NSD_LOOP,
+    'nsdRepeat': [path('M2.5 3.5H6.5V12.5H17.5V16.5H2.5Z'), rect(6.5, 3.5, 11, 9)],
+    'nsdForever': [path('M2.5 3.5H17.5V7H6.5V13H17.5V16.5H2.5Z'), rect(6.5, 7, 11, 6)],
+    'nsdTry': [rect(2.5, 3.5, 15, 13), rect(5.5, 6.5, 12, 4), path('M2.5 13.5H17.5')],
+    'nsdParallel': [rect(2.5, 3.5, 15, 13), path('M2.5 6.5H17.5M2.5 13.5H17.5'),
+                    path('M7.5 6.5V13.5M12.5 6.5V13.5')],
+    'nsdColor': [rect(2.5, 4.5, 15, 11), rect(5.5, 7.5, 9, 5, extra=FILL)],
+    'nsdDisabled': [rect(2.5, 4.5, 15, 11), path('M2.5 10.5L8.5 4.5M5.5 15.5L16.5 4.5'),
+                    path('M11.5 15.5L17.5 9.5')],
+    'nsdAddBranch': [rect(2.5, 3.5, 10, 13), path('M7.5 3.5V16.5'),
+                     path('M15.5 7.5V13.5M12.5 10.5H18.5')],
+    'nsdRemoveBranch': [rect(2.5, 3.5, 10, 13), path('M7.5 3.5V16.5'), path('M13.5 10.5H18.5')],
     # Edges
     'association': [path('M2.5 9.5H17.5')],
     'navigableAssociation': NAVIGABLE,

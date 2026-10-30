@@ -11,7 +11,7 @@ pub const STRUCTORIZER_VERSION: &str = "3.32-35";
 
 /// The parser keywords of a fresh Structorizer installation as its GUI saves them (two with
 /// a trailing space).
-const DEFAULT_KEYWORDS: &[(&str, &str)] = &[
+pub(crate) const DEFAULT_KEYWORDS: &[(&str, &str)] = &[
     ("preRepeat", "until "),
     ("postFor", "to"),
     ("preReturn", "return"),

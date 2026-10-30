@@ -168,6 +168,7 @@ fn function<'t>(node: Node<'t>, src: &str, scope: &[String]) -> Option<Member<'t
             signature: one_line(&src[start..end.max(start)]),
             line: node.start_position().row + 1,
             start: node.start_byte(),
+            end: node.end_byte(),
         },
         title,
         doc: doc(node, src),

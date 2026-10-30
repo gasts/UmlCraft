@@ -126,6 +126,38 @@ fn output_is_stable_and_readable() {
     assert!(json.contains(&ids.class_diagram.to_string()));
 }
 
+/// A structogram is its content, element by element, next to the operation it shows.
+#[test]
+fn structograms_survive_and_read_line_by_line() {
+    let (mut doc, ids) = order_system();
+    let nsd = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../umlcraft-nsd/tests/fixtures/structorizer/43-bubblesort.nsd"),
+    )
+    .unwrap();
+    let diagram = umlcraft_nsd::read(&nsd).unwrap();
+    let model = doc.model();
+    let order = model.get(ids.order).unwrap();
+    let submit = *order
+        .children()
+        .iter()
+        .find(|&&c| matches!(model.get(c).unwrap().kind(), ElementKind::Operation(_)))
+        .unwrap();
+    doc.edit("structogram", |tx| {
+        let mut props = umlcraft_model::StructogramProps::new(&diagram);
+        props.operation = Some(submit);
+        tx.create(ids.order, ElementData::new("", ElementKind::Structogram(props)))
+    })
+    .unwrap();
+    let json = to_string(doc.model());
+    assert_eq!(from_str(&json).unwrap(), *doc.model());
+    for key in ["\"type\": \"structogram\"", "\"operation\"", "\"structogram\": {", "\"body\": ["] {
+        assert!(json.contains(key), "{key} in {json}");
+    }
+    // The file's header stays out of the project.
+    assert!(!json.contains("\"author\"") && !json.contains("3.32-35"), "{json}");
+}
+
 #[test]
 fn older_files_get_language_tags_under_umlcraft_names() {
     let (mut doc, ids) = order_system();

@@ -46,6 +46,8 @@ pub struct MethodRef {
     pub line: usize,
     /// Where the declaration starts in the file (identifies it).
     pub start: usize,
+    /// Where it ends: with `start` the bytes the class import's operation for it overlaps.
+    pub end: usize,
 }
 
 impl MethodRef {

@@ -10,18 +10,26 @@ today.
   files; `.asta` and `.nsd` files get UmlCraft under "Open with". The `.zip` stays for use without
   installing.
 - The mouse wheel over the ribbon switches its tabs.
-- **Structograms**: File › New structogram and File › Open structogram … edit
-  Nassi-Shneiderman diagrams of [Structorizer](https://structorizer.fisch.lu) (`.nsd`) in a
-  window of their own, drawn as Structorizer draws them with syntax highlighting off, with
-  zoom, panning and export as SVG or PNG. Elements of every kind are inserted before or after
-  the selection, edited in a dialog (double click or Enter), cut, copied, pasted, dragged,
-  moved, dyed with Structorizer's paint box, disabled and deleted; case and parallel elements
-  get and lose branches; undo and redo take every step back. Saved files open in Structorizer
-  as they are, and a file saved unchanged stays byte for byte. The project stays open; `.nsd`
-  files also open from the command line, the system and the recent files.
-- **Structograms from Java, C#, Python and C++** (File › Structogram from source file …): pick
-  methods of a Java, C#, Python or C++/C file (grouped by class, with search); each opens as an
-  unsaved structogram without types, with assignments as `x := 42 + a`, conditions as questions
+- **Structograms**: Nassi-Shneiderman diagrams in the style of
+  [Structorizer](https://structorizer.fisch.lu) are part of the project, saved in the
+  `.ucraft` file next to the UML diagrams and shown in the main window like a diagram (New
+  diagram › Structogram, or New structogram in the model tree's menu). They are drawn as
+  Structorizer draws them with syntax highlighting off, with zoom, panning and export as SVG
+  or PNG. The ribbon's Structogram tab inserts elements of every kind after the selection;
+  elements are edited in a dialog (double click or Enter), cut, copied, pasted, dragged, moved,
+  dyed with Structorizer's paint box, disabled and deleted; case and parallel elements get and
+  lose branches. Undo and redo cover structograms and diagrams alike. File › Import ›
+  Structogram (.nsd) … adds Structorizer files to the project, Export › Structogram as .nsd …
+  writes one that Structorizer opens; parser keywords changed in Structorizer go along. Opening
+  a `.nsd` file (menu, command line, system, recent files) starts a new project with that
+  structogram. Files with structograms need this version of UmlCraft or a later one.
+- **Structograms from Java, C#, Python and C++**: the source import (Tools › Import source
+  code) lists the methods of the files read (grouped by file and class, with search, none
+  ticked); each ticked method gets a structogram under its class, linked to its operation, in
+  the same undo step as the classes. Importing again renews these structograms, deletes those
+  no longer ticked or whose method is gone, and keeps those edited by hand. A file the class
+  import cannot read still gives its methods. The structograms are without types, with
+  assignments as `x := 42 + a`, conditions as questions
   (`a > 0?`), returns as `gib x` and counting loops as `for i := 0 to n - 1`: statements, calls
   of the class's own methods, if chains, every loop, `switch` in all its forms (arrow cases and
   switch expressions included), jumps and `try` with its catches; in C# also accessors,
@@ -30,7 +38,7 @@ today.
   counting loop, `match`, `with`, and the code of the module; in C++ free functions, methods
   defined outside the class, initializer lists, range-for and `catch (...)`. Comments in the
   method go to the element they belong to. What a structogram cannot show as written
-  (`continue`, labels, local classes …) is listed at the bottom of the window.
+  (`continue`, labels, local classes …) is listed below the structogram.
 
 ## 0.10.0 – 2026-10-30
 

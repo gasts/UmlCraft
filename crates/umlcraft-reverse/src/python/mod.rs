@@ -494,6 +494,7 @@ impl<'a> Reader<'a> {
                 .unwrap_or_default(),
             tags,
             documentation: self.docstring(body),
+            span: node.byte_range(),
         })
     }
 

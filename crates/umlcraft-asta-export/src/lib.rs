@@ -18,7 +18,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use thiserror::Error;
-use umlcraft_model::Model;
+use umlcraft_model::{Document, ElementKind, Id, Model};
 use umlcraft_notation::scene::{ApproxMeasure, TextMeasure};
 
 /// The Java tool, written to a temporary folder for each run.
@@ -130,6 +130,8 @@ impl Astah {
 pub struct Export {
     project: String,
     layout: String,
+    /// Structograms left out: Astah has none.
+    structograms: usize,
 }
 
 impl Export {
@@ -139,9 +141,10 @@ impl Export {
     }
 
     pub fn with_measure(model: &Model, measure: &dyn TextMeasure) -> Self {
-        let layout = serde_json::to_string(&layout::layout(model, measure))
+        let (model, structograms) = without_structograms(model);
+        let layout = serde_json::to_string(&layout::layout(&model, measure))
             .expect("layout serialization cannot fail");
-        Self { project: umlcraft_format::to_string(model), layout }
+        Self { project: umlcraft_format::to_string(&model), layout, structograms }
     }
 
     /// Builds the Astah project and writes it to `target`, replacing what is there.
@@ -185,10 +188,13 @@ impl Export {
         let output = wait_with_deadline(child, TIMEOUT, cancel)?;
 
         let report = fs::read_to_string(file("report.txt")).ok();
-        let result = match &report {
+        let mut result = match &report {
             Some(text) => parse_report(text)?,
             None => Report::default(),
         };
+        if self.structograms > 0 {
+            result.dropped.insert("structogram".to_owned(), self.structograms);
+        }
         if report.is_none() || !output.status.success() {
             let mut text = String::from_utf8_lossy(&output.stderr).into_owned();
             text.push_str(&String::from_utf8_lossy(&output.stdout));
@@ -215,6 +221,21 @@ impl Export {
         }
         Ok(result)
     }
+}
+
+/// `model` without its structograms, and how many there were.
+fn without_structograms(model: &Model) -> (Model, usize) {
+    let ids: Vec<Id> = model
+        .elements()
+        .filter(|e| matches!(e.kind(), ElementKind::Structogram(_)))
+        .map(|e| e.id())
+        .collect();
+    if ids.is_empty() {
+        return (model.clone(), 0);
+    }
+    let mut doc = Document::new(model.clone());
+    doc.edit("", |tx| tx.delete_many(&ids)).expect("structograms can always be deleted");
+    (doc.model().clone(), ids.len())
 }
 
 /// Exports `model` to `target` in one go.
@@ -367,6 +388,22 @@ mod tests {
         assert!(export.project.contains("\"shape\": \"lifeline\""), "{}", export.project);
         assert!(export.project.contains("\"shape\": \"activation\""));
         assert!(export.project.contains("\"shape\": \"message\""));
+    }
+
+    #[test]
+    fn structograms_stay_out_of_the_project_and_are_counted() {
+        let (mut doc, ids) = umlcraft_model::sample::order_system();
+        let made = umlcraft_nsd::Provenance { author: "a", date: "2026-10-30", origin: "t" };
+        let sg =
+            umlcraft_nsd::Diagram::new(umlcraft_nsd::RootKind::Program, &["f()".into()], &made);
+        let data = umlcraft_model::ElementData::new(
+            "",
+            ElementKind::Structogram(umlcraft_model::StructogramProps::new(&sg)),
+        );
+        doc.edit("structogram", |tx| tx.create(ids.order, data)).unwrap();
+        let export = Export::new(doc.model());
+        assert!(!export.project.contains("structogram"), "{}", export.project);
+        assert_eq!(export.structograms, 1);
     }
 
     #[test]

@@ -25,10 +25,11 @@ mod resolve;
 pub mod source;
 mod tree;
 
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use lang::{Frontend, Rules, Skipped, SyntaxError};
-use umlcraft_model::{Document, Result, Tx};
+use umlcraft_model::{Document, Id, Result, Tx};
 
 pub use report::Report;
 pub use tree::{SourceTree, parse_tree};
@@ -155,17 +156,93 @@ pub fn collect_sources_for(
     source::collect_sources(paths, language.extensions())
 }
 
+/// Where an import put the declarations of each file (by its index in [`Parsed::units`]): the
+/// operations by the bytes their declarations stand on, the types by their names in the file,
+/// and the package of what a file declares outside types. The structograms of method bodies
+/// are filed by it.
+#[derive(Clone, Debug, Default)]
+pub struct Placed {
+    pub(crate) operations: Vec<(usize, Range<usize>, Id)>,
+    /// With the package each type is in.
+    types: Vec<(usize, Vec<String>, Id, Id)>,
+    free: Vec<(usize, Id)>,
+}
+
+impl Placed {
+    pub(crate) fn free_namespace(&mut self, unit: usize, namespace: Id) {
+        if !self.free.iter().any(|&(u, _)| u == unit) {
+            self.free.push((unit, namespace));
+        }
+    }
+
+    /// The operation whose declaration or definition in file `unit` overlaps `range`.
+    pub fn operation(&self, unit: usize, range: Range<usize>) -> Option<Id> {
+        self.operations
+            .iter()
+            .find(|(u, span, _)| *u == unit && span.start < range.end && range.start < span.end)
+            .map(|&(_, _, id)| id)
+    }
+
+    /// The type that file `unit` declares as `path`, outermost first (`shop::Cart` counts as
+    /// `shop`, `Cart`); where no type has that whole path, one whose path ends with it.
+    pub fn type_at(&self, unit: usize, path: &[String]) -> Option<Id> {
+        let wanted: Vec<&str> = path.iter().flat_map(|p| p.split("::")).collect();
+        if wanted.is_empty() {
+            return None;
+        }
+        let of_unit = || self.types.iter().filter(move |t| t.0 == unit);
+        let exact = of_unit().find(|t| t.1.iter().map(String::as_str).eq(wanted.iter().copied()));
+        let ends = || {
+            of_unit().find(|t| {
+                t.1.len() >= wanted.len()
+                    && t.1[t.1.len() - wanted.len()..]
+                        .iter()
+                        .map(String::as_str)
+                        .eq(wanted.iter().copied())
+            })
+        };
+        exact.or_else(ends).map(|t| t.2)
+    }
+
+    /// The package of what file `unit` declares outside types: where its free functions stand,
+    /// else the package of its first type.
+    pub fn namespace(&self, unit: usize) -> Option<Id> {
+        let free = self.free.iter().find(|f| f.0 == unit).map(|f| f.1);
+        free.or_else(|| self.types.iter().find(|t| t.0 == unit).map(|t| t.3))
+    }
+}
+
 /// Merges parsed sources into the model: packages and types are found by name or created,
 /// their members matched with the sources, and attributes of class types turned into
 /// associations. Run it inside one [`Document::edit`] so the import is one undo step.
 pub fn apply(tx: &mut Tx<'_>, language: SourceLanguage, parsed: &Parsed) -> Result<Report> {
+    Ok(apply_placed(tx, language, parsed)?.0)
+}
+
+/// [`apply`], telling also where the declarations of each file went.
+pub fn apply_placed(
+    tx: &mut Tx<'_>,
+    language: SourceLanguage,
+    parsed: &Parsed,
+) -> Result<(Report, Placed)> {
     let mut importer = merge::Importer::new(language.rules(), language.tag_prefix());
     let root = tx.model().root();
-    for unit in &parsed.units {
+    for (index, unit) in parsed.units.iter().enumerate() {
+        importer.unit = index;
         importer.declare_scope(tx, &unit.scope, root, &[])?;
     }
     importer.merge(tx)?;
     importer.associations(tx)?;
+    let mut placed = std::mem::take(&mut importer.placed);
+    for entry in &importer.entries {
+        let mut path = vec![entry.decl.name.clone()];
+        let mut outer = entry.outer;
+        while let Some(o) = outer {
+            path.insert(0, importer.entries[o].decl.name.clone());
+            outer = importer.entries[o].outer;
+        }
+        placed.types.push((entry.unit, path, entry.id, entry.namespace));
+    }
     let mut report = importer.report;
     report.files = parsed.units.len();
     for (&skip, &n) in &parsed.skipped {
@@ -173,7 +250,7 @@ pub fn apply(tx: &mut Tx<'_>, language: SourceLanguage, parsed: &Parsed) -> Resu
     }
     report.failed = parsed.failed.clone();
     report.guessed_encodings = parsed.guessed_encodings.clone();
-    Ok(report)
+    Ok((report, placed))
 }
 
 /// Collects, parses and applies `paths` in one edit of `doc` labelled `label`: what the app

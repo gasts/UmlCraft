@@ -76,6 +76,7 @@ struct Accessor {
     kind: String,
     visibility: Option<Visibility>,
     has_body: bool,
+    span: std::ops::Range<usize>,
 }
 
 fn named_children<'t>(node: Node<'t>) -> Vec<Node<'t>> {
@@ -260,8 +261,8 @@ impl<'a> Reader<'a> {
         {
             self.bases(*bases, &mut t);
         }
-        if let Some(params) = parts.iter().find(|n| n.kind() == "parameter_list") {
-            let params = self.parameters(*params);
+        if let Some(&list) = parts.iter().find(|n| n.kind() == "parameter_list") {
+            let params = self.parameters(list);
             if node.kind() == "record_declaration" {
                 // Positional records: public properties, `init` only unless a mutable record
                 // struct.
@@ -292,6 +293,7 @@ impl<'a> Reader<'a> {
                     template_parameters: Vec::new(),
                     tags: Vec::new(),
                     documentation: String::new(),
+                    span: list.byte_range(),
                 }));
             }
         }
@@ -428,7 +430,8 @@ impl<'a> Reader<'a> {
         let mut accessors = Vec::new();
         if arrow.is_some() {
             self.count(Skip::MethodBody);
-            accessors.push(Accessor { kind: "get".into(), visibility: None, has_body: true });
+            let span = arrow.map(|a| a.byte_range()).unwrap_or_default();
+            accessors.push(Accessor { kind: "get".into(), visibility: None, has_body: true, span });
         }
         if let Some(list) = node.child_by_field_name("accessors") {
             let declared = named_children(list);
@@ -439,7 +442,7 @@ impl<'a> Reader<'a> {
                     self.count(Skip::MethodBody);
                 }
                 let kind = a.child_by_field_name("name").map_or("get", |n| self.text(n)).to_owned();
-                accessors.push(Accessor { kind, visibility, has_body });
+                accessors.push(Accessor { kind, visibility, has_body, span: a.byte_range() });
             }
         }
         let has_bodies = accessors.iter().any(|a| a.has_body);
@@ -487,6 +490,7 @@ impl<'a> Reader<'a> {
                 template_parameters: Vec::new(),
                 tags: Vec::new(),
                 documentation: documentation.clone(),
+                span: a.span,
             }));
         }
     }
@@ -545,6 +549,7 @@ impl<'a> Reader<'a> {
             template_parameters,
             tags: Vec::new(),
             documentation,
+            span: node.byte_range(),
         })
     }
 

@@ -1053,7 +1053,7 @@ impl DiagramCanvas {
         cx.notify();
     }
 
-    fn on_scroll(&mut self, ev: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_scroll(&mut self, ev: &ScrollEvent, _: &mut Window, cx: &mut Context<Self>) {
         let delta = ev.delta.pixel_delta(px(16.0));
         let (dx, dy) = (f32::from(delta.x), f32::from(delta.y));
         if ev.modifiers.control {
@@ -1773,7 +1773,7 @@ impl Render for DiagramCanvas {
                 MouseButton::Middle,
                 cx.listener(|this, ev: &MouseUpEvent, _, cx| this.end_drag(ev.position, cx)),
             )
-            .on_scroll_wheel(cx.listener(Self::on_scroll))
+            .on_scroll(cx.listener(Self::on_scroll))
             .on_drop(cx.listener(Self::on_drop))
             .on_action(cx.listener(Self::cancel))
             .on_action(cx.listener(|this, _: &DeleteSelection, _, cx| {

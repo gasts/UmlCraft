@@ -111,6 +111,44 @@ fn delete_cascades_to_relationships_and_presentations() {
 }
 
 #[test]
+fn a_structogram_outlives_its_operation_and_undo_takes_back_its_changes() {
+    let mut doc = Document::new(Model::new("m"));
+    let root = doc.model().root();
+    let made = umlcraft_nsd::Provenance { author: "a", date: "2026-10-30", origin: "t" };
+    let empty = umlcraft_nsd::Diagram::new(umlcraft_nsd::RootKind::Program, &["f()".into()], &made);
+    let (op, sg) = doc
+        .edit("setup", |tx| {
+            let class = tx.create(root, class("A"))?;
+            let op = tx.create(class, ElementData::new("f", ElementKind::operation(None)))?;
+            let mut props = umlcraft_model::StructogramProps::new(&empty);
+            props.operation = Some(op);
+            let sg = tx.create(class, ElementData::new("", ElementKind::Structogram(props)))?;
+            Ok((op, sg))
+        })
+        .unwrap();
+    // A structogram may not be owned by an operation, and nothing may depend on it.
+    let in_op = ElementKind::Structogram(umlcraft_model::StructogramProps::new(&empty));
+    assert!(doc.edit("bad", |tx| tx.create(op, ElementData::new("", in_op))).is_err());
+
+    let mut changed = empty.clone();
+    let slot = umlcraft_nsd::Slot { seq: vec![], index: 0 };
+    let x = umlcraft_nsd::Element::instruction(&["x := 1".into()]);
+    umlcraft_nsd::edit::insert(&mut changed, &slot, vec![x]).unwrap();
+    doc.edit("insert", |tx| tx.set_structogram(sg, &changed)).unwrap();
+    let body = |doc: &Document| match doc.model().get(sg).unwrap().kind() {
+        ElementKind::Structogram(p) => (p.operation, p.structogram.children.elements.len()),
+        _ => unreachable!(),
+    };
+    assert_eq!(body(&doc), (Some(op), 1));
+    doc.undo();
+    assert_eq!(body(&doc), (Some(op), 0));
+
+    doc.edit("delete", |tx| tx.delete(op)).unwrap();
+    doc.model().check().unwrap();
+    assert_eq!(body(&doc), (None, 0));
+}
+
+#[test]
 fn deleting_a_type_turns_attribute_types_into_text() {
     let mut doc = Document::new(Model::new("m"));
     let root = doc.model().root();

@@ -1,125 +1,190 @@
-//! File › Structogram from source file …: choose a Java, C#, Python or C++ file, then one or
-//! more of its methods in a dialog (grouped by class, with a search field); each opens as an
-//! unsaved structogram whose file name is suggested as `Class.method.nsd` (`file.function.nsd`
-//! outside classes) next to the source file.
+//! The structograms of a source import (Tools › Import …). Each file is read and parsed once:
+//! its declarations go to the class import, its methods with a body into a dialog (grouped by
+//! file and class, with a search field, none ticked) where structograms are chosen. Those are
+//! built from the files and filed in the same undo step as the classes, under the class of
+//! the operation each shows, linked to it. A structogram the import made carries
+//! [`IMPORTED_TAG`] until it is edited by hand and [`METHOD_TAG`] always: a new import replaces
+//! or deletes the untouched ones and leaves edited ones alone.
 
 use std::cell::RefCell;
-use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::dialog::DialogFooter;
 use gpui_kit::component::input::{Input, InputState};
-use gpui_kit::component::{ActiveTheme, Sizable, StyledExt, WindowExt, v_flex};
+use gpui_kit::component::{ActiveTheme, Disableable, Sizable, StyledExt, WindowExt, v_flex};
 use gpui_kit::*;
 use rust_i18n::t;
+use umlcraft_model::{
+    ElementData, ElementKind, IMPORTED_TAG, Id, Model, StructogramProps, TaggedValue, Tx,
+};
+use umlcraft_nsd::Diagram;
 use umlcraft_nsd_code::{Made, MethodRef, NoteKind, Report, Source, SourceLanguage};
+use umlcraft_reverse::lang::Skipped;
+use umlcraft_reverse::{FileProblem, Parsed, Placed, Problem};
 
-/// More windows than this at once would rather be a mistake.
-const MAX_WINDOWS: usize = 20;
+/// Which method of which file a structogram shows (see [`key`]); stays when it is edited.
+pub const METHOD_TAG: &str = "umlcraft.method";
 
-/// Asks for a Java, C#, Python or C++ file, reads it in the background and offers its methods.
-/// Errors come back to `failed` as message and detail.
-pub fn choose(
-    window: &mut Window,
-    cx: &mut App,
-    failed: impl Fn(String, String, &mut Window, &mut App) + 'static,
-) {
-    let rx = cx.prompt_for_paths(PathPromptOptions {
-        files: true,
-        directories: false,
-        multiple: false,
-        prompt: None,
-    });
-    window
-        .spawn(cx, async move |cx| {
-            let Ok(Ok(Some(paths))) = rx.await else { return };
-            let Some(path) = paths.into_iter().next() else { return };
-            let Some(language) = SourceLanguage::of(&path) else {
-                cx.update(|window, cx| {
-                    let message = t!("nsd.source_unknown").to_string();
-                    failed(message, path.display().to_string(), window, cx);
-                })
-                .ok();
-                return;
-            };
-            let read_path = path.clone();
-            let parsed = cx
-                .background_executor()
-                .spawn(async move {
-                    let decoded = umlcraft_nsd_code::read(&read_path)?;
-                    let source = Source::parse(language, decoded.text);
-                    let methods = source.methods();
-                    Ok::<_, umlcraft_nsd_code::ReadError>((source, methods))
-                })
-                .await;
-            cx.update(|window, cx| match parsed {
-                Ok((_, methods)) if methods.is_empty() => failed(
-                    t!("nsd.source_no_methods").to_string(),
-                    path.display().to_string(),
-                    window,
-                    cx,
-                ),
-                Ok((source, methods)) => offer(path, Rc::new(source), methods, window, cx),
-                Err(err) => {
-                    failed(t!("nsd.source_failed").to_string(), err.to_string(), window, cx)
-                }
-            })
-            .ok();
-        })
-        .detach();
+/// At most this many methods are listed at once; the search finds the others.
+const LISTED: usize = 300;
+
+/// The files of a source import, parsed once for classes and structograms.
+pub struct Found {
+    pub language: SourceLanguage,
+    pub parsed: Parsed,
+    /// Every file read, with its unit in `parsed` (none for a file with a syntax error, whose
+    /// methods are offered all the same).
+    pub files: Vec<(PathBuf, Option<usize>)>,
+    /// The methods with a body, with the index of their file.
+    pub methods: Vec<(usize, MethodRef)>,
 }
 
-/// The dialog listing the methods.
-fn offer(
-    path: PathBuf,
-    source: Rc<Source>,
-    methods: Vec<MethodRef>,
+/// Reads and parses `files` (in the background): what `umlcraft_reverse::parse_sources` does,
+/// plus the methods of each file from the same tree.
+pub fn parse(language: SourceLanguage, files: &[PathBuf]) -> Found {
+    let mut found =
+        Found { language, parsed: Parsed::default(), files: Vec::new(), methods: Vec::new() };
+    for path in files {
+        let decoded = match umlcraft_nsd_code::read(path) {
+            Ok(decoded) => decoded,
+            Err(err) => {
+                let problem = Problem::Read(err.to_string());
+                found.parsed.failed.push(FileProblem { path: path.clone(), problem });
+                continue;
+            }
+        };
+        if let Some(encoding) = decoded.guessed {
+            found.parsed.guessed_encodings.push((path.clone(), encoding));
+        }
+        let source = Source::parse(language, decoded.text);
+        let file = found.files.len();
+        found.methods.extend(source.methods().into_iter().map(|m| (file, m)));
+        // Counted only for files that are imported.
+        let mut skipped = Skipped::new();
+        let unit = match umlcraft_reverse::lower(source.tree(), path, &mut skipped) {
+            Ok(unit) => {
+                found.parsed.units.push(unit);
+                for (skip, n) in skipped {
+                    *found.parsed.skipped.entry(skip).or_default() += n;
+                }
+                Some(found.parsed.units.len() - 1)
+            }
+            Err(error) => {
+                let problem = Problem::Syntax(error);
+                found.parsed.failed.push(FileProblem { path: path.clone(), problem });
+                None
+            }
+        };
+        found.files.push((path.clone(), unit));
+    }
+    found
+}
+
+fn file_name(path: &Path) -> String {
+    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// What tells a method's structogram on a new import: file name, classes and signature
+/// (`Order.java:Order:void add(Item item)`).
+pub fn key(path: &Path, method: &MethodRef) -> String {
+    format!("{}:{}:{}", file_name(path), method.class_name(), method.signature)
+}
+
+/// The structograms a source import made, by [`key`], and whether each is still untouched.
+pub fn imported(model: &Model) -> HashMap<String, (Id, bool)> {
+    model
+        .elements()
+        .filter(|e| matches!(e.kind(), ElementKind::Structogram(_)))
+        .filter_map(|e| {
+            let tags = &e.data().tagged_values;
+            let key = tags.iter().find(|t| t.key == METHOD_TAG)?.value.clone();
+            let untouched = tags.iter().any(|t| t.key == IMPORTED_TAG);
+            Some((key, (e.id(), untouched)))
+        })
+        .collect()
+}
+
+/// The dialog listing the methods of `found`: those whose structogram the project has are
+/// ticked, those edited by hand ticked and locked. `chosen` gets the methods ticked (indices
+/// into `found.methods`) when the import goes on; cancelling ends the import.
+pub fn offer(
+    found: &Found,
+    existing: &HashMap<String, (Id, bool)>,
+    chosen: impl Fn(Vec<usize>, &mut Window, &mut App) + 'static,
     window: &mut Window,
     cx: &mut App,
 ) {
-    if window.has_active_dialog(cx) {
-        return;
+    struct Row {
+        file: String,
+        method: MethodRef,
+        locked: bool,
     }
+    let mut ticked = BTreeSet::new();
+    let rows: Rc<Vec<Row>> = Rc::new(
+        found
+            .methods
+            .iter()
+            .enumerate()
+            .map(|(i, (file, method))| {
+                let path = &found.files[*file].0;
+                let state = existing.get(&key(path, method)).map(|&(_, untouched)| untouched);
+                if state.is_some() {
+                    ticked.insert(i);
+                }
+                Row { file: file_name(path), method: method.clone(), locked: state == Some(false) }
+            })
+            .collect(),
+    );
     let search = cx.new(|cx| InputState::new(window, cx).placeholder(t!("nsd.source_search")));
     let first_search = search.clone();
-    let chosen: Rc<RefCell<BTreeSet<usize>>> = Rc::default();
-    let methods = Rc::new(methods);
-    let file_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let path = Rc::new(path);
+    let ticked = Rc::new(RefCell::new(ticked));
+    let chosen = Rc::new(chosen);
 
     window.open_dialog(cx, move |dialog, _, cx| {
         let filter = search.read(cx).value().to_lowercase();
         let muted = cx.theme().muted_foreground;
         let mut list = v_flex().gap_0p5();
-        let mut class: Option<String> = None;
-        for (i, m) in methods.iter().enumerate() {
-            let label = format!("{} {}", m.class_name(), m.signature).to_lowercase();
+        let mut heading: Option<(&str, String)> = None;
+        let mut shown = 0;
+        let mut more = 0;
+        for (i, row) in rows.iter().enumerate() {
+            let m = &row.method;
+            let label = format!("{} {} {}", row.file, m.class_name(), m.signature).to_lowercase();
             if !filter.is_empty() && !label.contains(&filter) {
                 continue;
             }
-            if class.as_deref() != Some(m.class_name().as_str()) {
-                class = Some(m.class_name());
-                // Functions outside classes (Python, C++) stand under the file's name.
-                let heading = match m.class.is_empty() {
-                    true => file_name.clone(),
-                    false => m.class_name(),
-                };
-                list = list.child(div().pt_2().text_sm().font_semibold().child(heading));
+            if shown == LISTED {
+                more += 1;
+                continue;
             }
-            let checked = chosen.borrow().contains(&i);
-            let (toggle, open) = (chosen.clone(), opener(&source, &methods, &path, vec![i]));
-            list = list.child(
-                div()
-                    .id(("nsd-source-method", i))
-                    .pl_3()
-                    .flex()
-                    .gap_2()
-                    .items_center()
-                    .child(Checkbox::new(("nsd-source-check", i)).checked(checked).on_click(
-                        move |&on, window, _| {
+            shown += 1;
+            let class = m.class_name();
+            if heading.as_ref() != Some(&(row.file.as_str(), class.clone())) {
+                // Functions outside classes (Python, C++) stand under the file's name.
+                let text = match m.class.is_empty() {
+                    true => row.file.clone(),
+                    false => format!("{class}  ·  {}", row.file),
+                };
+                list = list.child(div().pt_2().text_sm().font_semibold().child(text));
+                heading = Some((row.file.as_str(), class));
+            }
+            let checked = ticked.borrow().contains(&i);
+            let toggle = ticked.clone();
+            let mut line = div()
+                .id(("source-method", i))
+                .pl_3()
+                .flex()
+                .gap_2()
+                .items_center()
+                .child(
+                    Checkbox::new(("source-method-check", i))
+                        .checked(checked)
+                        .disabled(row.locked)
+                        .on_click(move |&on, window, _| {
                             let mut set = toggle.borrow_mut();
                             if on {
                                 set.insert(i);
@@ -127,31 +192,38 @@ fn offer(
                                 set.remove(&i);
                             }
                             window.refresh();
-                        },
-                    ))
-                    .child(div().text_sm().child(m.signature.clone()))
-                    .child(div().text_xs().text_color(muted).child(format!("{}", m.line)))
-                    .on_click(move |ev, window, cx| {
-                        if ev.click_count() >= 2 {
-                            open(window, cx);
-                        }
-                    }),
+                        }),
+                )
+                .child(div().text_sm().child(m.signature.clone()))
+                .child(div().text_xs().text_color(muted).child(format!("{}", m.line)));
+            if row.locked {
+                line = line.child(
+                    div().text_xs().text_color(muted).child(t!("nsd.source_edited").to_string()),
+                );
+            }
+            list = list.child(line);
+        }
+        if more > 0 {
+            list = list.child(
+                div()
+                    .pt_2()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(t!("nsd.source_more", count = more).to_string()),
             );
         }
-        let ok = {
-            let (chosen, source, methods, path) =
-                (chosen.clone(), source.clone(), methods.clone(), path.clone());
+        let go = {
+            let (ticked, chosen) = (ticked.clone(), chosen.clone());
             move |window: &mut Window, cx: &mut App| {
-                let picked: Vec<usize> = chosen.borrow().iter().copied().collect();
-                if !picked.is_empty() {
-                    opener(&source, &methods, &path, picked)(window, cx);
-                }
+                window.close_dialog(cx);
+                let picked = ticked.borrow().iter().copied().collect();
+                chosen(picked, window, cx);
             }
         };
-        let ok_click = ok.clone();
+        let go_click = go.clone();
         dialog
-            .title(t!("nsd.source_title", file = file_name).to_string())
-            .width(px(560.0))
+            .title(t!("nsd.source_title").to_string())
+            .width(px(600.0))
             .child(
                 v_flex()
                     .gap_2()
@@ -160,29 +232,25 @@ fn offer(
                         div().text_xs().text_color(muted).child(t!("nsd.source_hint").to_string()),
                     )
                     .child(
-                        div()
-                            .id("nsd-source-methods")
-                            .max_h(px(380.0))
-                            .overflow_y_scroll()
-                            .child(list),
+                        div().id("source-methods").max_h(px(380.0)).overflow_y_scroll().child(list),
                     ),
             )
             .on_ok(move |_, window, cx| {
-                ok(window, cx);
+                go(window, cx);
                 false
             })
             .footer(
                 DialogFooter::new()
                     .child(
-                        Button::new("nsd-source-cancel")
+                        Button::new("source-cancel")
                             .label(t!("dialog.cancel").to_string())
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
                     .child(
-                        Button::new("nsd-source-open")
+                        Button::new("source-import")
                             .primary()
-                            .label(t!("nsd.source_open").to_string())
-                            .on_click(move |_, window, cx| ok_click(window, cx)),
+                            .label(t!("nsd.source_import").to_string())
+                            .on_click(move |_, window, cx| go_click(window, cx)),
                     ),
             )
     });
@@ -191,45 +259,106 @@ fn offer(
     first_search.update(cx, |s, cx| s.focus(window, cx));
 }
 
-/// Opens the methods `picked` (at most [`MAX_WINDOWS`]) and closes the dialog.
-fn opener(
-    source: &Rc<Source>,
-    methods: &Rc<Vec<MethodRef>>,
-    path: &Rc<PathBuf>,
-    picked: Vec<usize>,
-) -> impl Fn(&mut Window, &mut App) + Clone + 'static {
-    let (source, methods, path) = (source.clone(), methods.clone(), path.clone());
-    move |window, cx| {
-        window.close_dialog(cx);
-        let file_name =
-            path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let language = source.language().name();
-        let origin = format!("{} / {language}: {file_name}", super::origin());
-        let (author, date) = (super::user_name(), super::today());
-        let made = Made { author: &author, date: &date, origin: &origin };
-        let directory = path.parent().map(PathBuf::from).unwrap_or_default();
-        for &i in picked.iter().take(MAX_WINDOWS) {
-            let m = &methods[i];
-            let Some((diagram, report)) = source.diagram(m, &made) else { continue };
-            let draft = match m.class.is_empty() {
-                // `shop.area.nsd` for the function `area` of `shop.py`.
-                true => {
-                    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned());
-                    directory.join(format!("{}.{}", stem.unwrap_or_default(), m.file_name()))
-                }
-                false => directory.join(m.file_name()),
-            };
-            if let Err(err) = super::open_imported(diagram, draft, notes(&report), cx) {
-                eprintln!("structogram window: {err}");
+/// A structogram built from a method.
+pub struct Built {
+    /// Index into [`Found::methods`].
+    pub method: usize,
+    pub diagram: Diagram,
+    pub report: Report,
+}
+
+/// Builds the structograms of the methods `picked` (in the background), reading their files
+/// again; a file that cannot be read any more gives none.
+pub fn build(found: &Found, picked: &[usize], made: &Made) -> Vec<Built> {
+    let mut by_file: HashMap<usize, Vec<usize>> = HashMap::new();
+    for &i in picked {
+        by_file.entry(found.methods[i].0).or_default().push(i);
+    }
+    let mut built = Vec::new();
+    for (file, methods) in by_file {
+        let Ok(decoded) = umlcraft_nsd_code::read(&found.files[file].0) else { continue };
+        let source = Source::parse(found.language, decoded.text);
+        for i in methods {
+            if let Some((diagram, report)) = source.diagram(&found.methods[i].1, made) {
+                built.push(Built { method: i, diagram, report });
             }
         }
-        if picked.len() > MAX_WINDOWS {
-            let message = t!("nsd.source_too_many", max = MAX_WINDOWS).to_string();
-            let rx =
-                window.prompt(PromptLevel::Info, &message, None, &[t!("dialog.ok").as_ref()], cx);
-            cx.spawn(async move |_| rx.await.ok()).detach();
-        }
     }
+    built.sort_by_key(|b| b.method);
+    built
+}
+
+/// How a structogram's file header names where it came from.
+pub fn made_origin(language: SourceLanguage) -> String {
+    format!("{} / {}", super::origin(), language.name())
+}
+
+/// Files the structograms of a source import, after `umlcraft_reverse::apply_placed` put the
+/// classes where `placed` says: those `built` are created or replace untouched ones; untouched
+/// ones of the imported files that were not chosen, or whose method is gone, are deleted.
+/// Returns each structogram made or replaced, with the report of its method.
+pub fn file_structograms(
+    tx: &mut Tx<'_>,
+    found: &Found,
+    placed: &Placed,
+    built: Vec<Built>,
+) -> umlcraft_model::Result<Vec<(Id, Report)>> {
+    let existing = imported(tx.model());
+    let mut kept: HashSet<String> = HashSet::new();
+    let mut made = Vec::new();
+    for b in built {
+        let (file, method) = &found.methods[b.method];
+        let (path, unit) = &found.files[*file];
+        let key = key(path, method);
+        kept.insert(key.clone());
+        let root = tx.model().root();
+        let operation = unit.and_then(|u| placed.operation(u, method.start..method.end));
+        let owner = match operation {
+            Some(op) => tx.model().element(op)?.owner().unwrap_or(root),
+            None => unit
+                .and_then(|u| placed.type_at(u, &method.class).or_else(|| placed.namespace(u)))
+                .unwrap_or(root),
+        };
+        let structogram = umlcraft_nsd::content::normalize(&b.diagram);
+        let id = match existing.get(&key) {
+            // Edited by hand: not offered, but listed as ticked.
+            Some(&(_, false)) => continue,
+            Some(&(id, true)) => {
+                tx.update(id, |data| {
+                    if let ElementKind::Structogram(p) = &mut data.kind {
+                        p.structogram = structogram;
+                        p.operation = operation;
+                    }
+                })?;
+                if tx.model().element(id)?.owner() != Some(owner) {
+                    let index = tx.model().children(owner).len();
+                    tx.move_element(id, owner, index)?;
+                }
+                id
+            }
+            None => {
+                let kind = ElementKind::Structogram(StructogramProps { operation, structogram });
+                let mut data = ElementData::new("", kind);
+                data.tagged_values = vec![
+                    TaggedValue { key: IMPORTED_TAG.to_owned(), value: "true".to_owned() },
+                    TaggedValue { key: METHOD_TAG.to_owned(), value: key },
+                ];
+                tx.create(owner, data)?
+            }
+        };
+        made.push((id, b.report));
+    }
+    // Untouched structograms of these files that were not built again.
+    let files: HashSet<String> = found.files.iter().map(|(p, _)| file_name(p) + ":").collect();
+    let stale: Vec<Id> = existing
+        .iter()
+        .filter(|(key, (_, untouched))| {
+            *untouched && !kept.contains(*key) && files.iter().any(|f| key.starts_with(f.as_str()))
+        })
+        .map(|(_, &(id, _))| id)
+        .collect();
+    tx.delete_many(&stale)?;
+    Ok(made)
 }
 
 /// The report in the UI's language, one line per note.
@@ -259,4 +388,110 @@ pub fn notes(report: &Report) -> Vec<String> {
             t!("nsd.note_line", line = n.line, what = what).to_string()
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    // No glob import: gpui_kit's `test` macro would shadow the built-in `#[test]`.
+    use std::path::{Path, PathBuf};
+
+    use umlcraft_model::{Document, ElementKind, IMPORTED_TAG, Id, Model};
+    use umlcraft_nsd::Diagram;
+    use umlcraft_nsd_code::{Made, Report, SourceLanguage};
+
+    use super::{METHOD_TAG, build, file_structograms, parse};
+
+    const MADE: Made = Made { author: "tester", date: "2026-10-30", origin: "test" };
+
+    /// A folder of its own for `name`'s files, emptied first.
+    fn folder(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("umlcraft-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Imports `file` with the structograms of the methods named `picked`.
+    fn import(doc: &mut Document, file: &Path, picked: &[&str]) -> Vec<(Id, Report)> {
+        let found = parse(SourceLanguage::Java, &[file.to_owned()]);
+        let picked: Vec<usize> = (0..found.methods.len())
+            .filter(|&i| picked.contains(&found.methods[i].1.name.as_str()))
+            .collect();
+        let built = build(&found, &picked, &MADE);
+        doc.edit("Import", |tx| {
+            let (_, placed) = umlcraft_reverse::apply_placed(tx, found.language, &found.parsed)?;
+            file_structograms(tx, &found, &placed, built)
+        })
+        .unwrap()
+    }
+
+    fn structogram_of<'m>(model: &'m Model, method: &str) -> Option<&'m umlcraft_model::Element> {
+        model.elements().find(|e| {
+            e.data().tagged_values.iter().any(|t| t.key == METHOD_TAG && t.value.contains(method))
+        })
+    }
+
+    #[test]
+    fn structograms_go_under_their_class_and_a_new_import_keeps_what_was_edited() {
+        let dir = folder("reimport");
+        let file = dir.join("Shop.java");
+        let first = "package shop;\nclass Cart {\n  int total(int a) { return a + 1; }\n  void clear() { total(0); }\n  void log() { }\n}\n";
+        std::fs::write(&file, first).unwrap();
+        let mut doc = Document::new(Model::new("t"));
+
+        let made = import(&mut doc, &file, &["total", "clear", "log"]);
+        assert_eq!(made.len(), 3);
+        let model = doc.model();
+        let total = structogram_of(model, "total(int a)").unwrap();
+        let cart = model.get(total.owner().unwrap()).unwrap();
+        assert_eq!(cart.name(), "Cart");
+        let ElementKind::Structogram(p) = total.kind() else { panic!() };
+        let operation = model.get(p.operation.unwrap()).unwrap();
+        assert_eq!((operation.name(), operation.owner()), ("total", Some(cart.id())));
+        assert!(total.data().tagged_values.iter().any(|t| t.key == IMPORTED_TAG));
+        model.check().unwrap();
+
+        // `total` edited by hand; `clear` left as imported; `log` gone from the source.
+        let (total, clear) = (total.id(), structogram_of(model, "clear()").unwrap().id());
+        let made = umlcraft_nsd::Provenance { author: "tester", date: "2026-10-30", origin: "t" };
+        let edited = Diagram::new(umlcraft_nsd::RootKind::Program, &["mine".into()], &made);
+        doc.edit("Edit", |tx| tx.set_structogram(total, &edited)).unwrap();
+        let tags = &doc.model().get(total).unwrap().data().tagged_values;
+        assert!(!tags.iter().any(|t| t.key == IMPORTED_TAG));
+        assert!(tags.iter().any(|t| t.key == METHOD_TAG));
+        let second = "package shop;\nclass Cart {\n  int total(int a) { return a + 2; }\n  void clear() { total(1); }\n}\n";
+        std::fs::write(&file, second).unwrap();
+
+        // Ticked again: `clear` is renewed in place, the edited `total` stays as it is.
+        let made = import(&mut doc, &file, &["total", "clear"]);
+        let model = doc.model();
+        assert_eq!(made.iter().map(|m| m.0).collect::<Vec<_>>(), vec![clear]);
+        assert!(structogram_of(model, "log()").is_none());
+        let ElementKind::Structogram(p) = model.get(total).unwrap().kind() else { panic!() };
+        assert_eq!(p.structogram.text(), vec!["mine".to_owned()]);
+
+        // Not ticked: the untouched one goes, the edited one stays.
+        import(&mut doc, &file, &[]);
+        let model = doc.model();
+        assert!(model.get(clear).is_none());
+        assert!(model.get(total).is_some());
+        model.check().unwrap();
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_file_the_class_import_cannot_read_still_offers_its_methods() {
+        let dir = folder("syntax");
+        let file = dir.join("Broken.java");
+        std::fs::write(&file, "class Broken {\n  void ok() { run(); }\n  void bad( { }\n").unwrap();
+        let found = parse(SourceLanguage::Java, std::slice::from_ref(&file));
+        assert_eq!(found.files[0].1, None);
+        assert_eq!(found.parsed.failed.len(), 1);
+        assert!(found.methods.iter().any(|(_, m)| m.name == "ok"));
+        let mut doc = Document::new(Model::new("t"));
+        let made = import(&mut doc, &file, &["ok"]);
+        let model = doc.model();
+        assert_eq!(model.get(made[0].0).unwrap().owner(), Some(model.root()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }

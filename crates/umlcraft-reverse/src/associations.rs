@@ -30,7 +30,7 @@ use crate::merge::Importer;
 use crate::resolve::is_type;
 
 /// Marks associations made from fields, which a new import may change or delete.
-pub const IMPORTED_TAG: &str = "umlcraft.imported";
+pub use umlcraft_model::IMPORTED_TAG;
 
 fn imported_tag() -> TaggedValue {
     TaggedValue { key: IMPORTED_TAG.to_owned(), value: "true".to_owned() }

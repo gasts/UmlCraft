@@ -4,6 +4,7 @@
 //! implicit modifiers) is already lowered.
 
 use std::fmt::{self, Write as _};
+use std::ops::Range;
 use std::path::PathBuf;
 
 use umlcraft_model::{ParameterDirection, Visibility};
@@ -178,6 +179,9 @@ pub struct Operation {
     pub template_parameters: Vec<TemplateParam>,
     pub tags: Vec<(String, String)>,
     pub documentation: String,
+    /// The bytes of the file its declaration (or definition) stands on: tells which method of
+    /// the file it is, for the structogram of its body ([`crate::Placed`]).
+    pub span: Range<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

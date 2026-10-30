@@ -410,6 +410,7 @@ impl<'a> Reader<'a> {
             template_parameters,
             tags: m.into_tags(),
             documentation,
+            span: node.byte_range(),
         })
     }
 

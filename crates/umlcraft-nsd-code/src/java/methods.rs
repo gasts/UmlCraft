@@ -56,6 +56,7 @@ fn method(node: Node, src: &str, class: &[String]) -> Option<MethodRef> {
         name,
         line: node.start_position().row + 1,
         start: node.start_byte(),
+        end: node.end_byte(),
     })
 }
 

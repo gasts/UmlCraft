@@ -21,6 +21,7 @@ use umlcraft_model::{
 };
 use umlcraft_notation::member::{template_parameters, type_text};
 
+use crate::Placed;
 use crate::ir::{
     self, Field, Import, Item, Literal, Member, Operation, Relation, Scope, TemplateParam,
     TypeDecl, TypeKind, TypeName,
@@ -40,6 +41,8 @@ pub(crate) struct Entry<'p> {
     pub imports: Rc<[&'p Import]>,
     /// The entry of the type this one is nested in.
     pub outer: Option<usize>,
+    /// The file it is declared in (index into the parsed units).
+    pub unit: usize,
 }
 
 /// A member defined outside its type (C++'s `void A::f() {}`) and where it stands.
@@ -48,6 +51,7 @@ pub(crate) struct Definition<'p> {
     pub member: &'p Member,
     pub namespace: Id,
     pub imports: Rc<[&'p Import]>,
+    pub unit: usize,
 }
 
 /// Where a name is resolved: in a type (its entry) and maybe in one of its operations.
@@ -87,6 +91,10 @@ pub(crate) struct Importer<'p> {
     /// Types this import created, so that one declared in parts or forward first counts once as
     /// created.
     pub created: HashSet<Id>,
+    /// The file whose scope is being declared.
+    pub unit: usize,
+    /// Where each file's declarations went.
+    pub placed: Placed,
 }
 
 impl<'p> Importer<'p> {
@@ -106,6 +114,8 @@ impl<'p> Importer<'p> {
             aliases: HashMap::new(),
             expanding: Vec::new(),
             created: HashSet::new(),
+            unit: 0,
+            placed: Placed::default(),
             implicit_imports: rules
                 .implicit_imports
                 .iter()
@@ -148,11 +158,15 @@ impl<'p> Importer<'p> {
                     member,
                     namespace,
                     imports: imports.clone(),
+                    unit: self.unit,
                 }),
                 Item::Alias { name, target } => {
                     self.aliases.entry(namespace).or_default().insert(name, target);
                 }
-                Item::Free(_) => *self.report.skipped.entry(Skip::FreeMember).or_default() += 1,
+                Item::Free(_) => {
+                    *self.report.skipped.entry(Skip::FreeMember).or_default() += 1;
+                    self.placed.free_namespace(self.unit, namespace);
+                }
             }
         }
         Ok(())
@@ -202,7 +216,8 @@ impl<'p> Importer<'p> {
         }
         self.placeholders.remove(&id);
         let index = self.entries.len();
-        self.entries.push(Entry { decl, id, namespace, imports: imports.clone(), outer });
+        let unit = self.unit;
+        self.entries.push(Entry { decl, id, namespace, imports: imports.clone(), outer, unit });
         for member in &decl.members {
             match member {
                 Member::Type(nested) => {
@@ -349,7 +364,7 @@ impl<'p> Importer<'p> {
                             .iter()
                             .filter(|i| !owner.imports.iter().any(|o| std::ptr::eq(*o, **i))),
                     );
-                    let entry = Entry { imports: imports.into(), ..*owner };
+                    let entry = Entry { imports: imports.into(), unit: d.unit, ..*owner };
                     self.entries.push(entry);
                     defined.entry(id).or_default().push((d.member, self.entries.len() - 1));
                 }
@@ -554,7 +569,8 @@ impl<'p> Importer<'p> {
             }
         }
         let mut field_definitions: Vec<&'p Field> = Vec::new();
-        let mut definitions: Vec<Option<&'p Operation>> = vec![None; operations.len()];
+        // With the entry each definition resolves in.
+        let mut definitions: Vec<Option<(&'p Operation, usize)>> = vec![None; operations.len()];
         let model = tx.model();
         for &(member, entry) in defined {
             match member {
@@ -564,7 +580,7 @@ impl<'p> Importer<'p> {
                     let declared = |(d, e): &(&Operation, usize)| self.signature(model, *e, d);
                     match operations.iter().position(|d| declared(d) == key) {
                         Some(i) => {
-                            definitions[i].get_or_insert(o);
+                            definitions[i].get_or_insert((o, entry));
                         }
                         None => {
                             operations.push((o, entry));
@@ -682,7 +698,11 @@ impl<'p> Importer<'p> {
                 )?,
             };
             let ctx = Ctx { entry: e, operation: Some(op) };
-            self.operation(tx, ctx, op, operation, definition)?;
+            self.placed.operations.push((self.entries[e].unit, operation.span.clone(), op));
+            if let Some((d, entry)) = definition {
+                self.placed.operations.push((self.entries[entry].unit, d.span.clone(), op));
+            }
+            self.operation(tx, ctx, op, operation, definition.map(|(d, _)| d))?;
             order.push(op);
         }
 

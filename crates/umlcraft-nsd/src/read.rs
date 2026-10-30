@@ -83,14 +83,14 @@ impl<'a> Parser<'a> {
                 Event::Empty(e) => return Ok(Next::Open(e, true)),
                 Event::End(_) => return Ok(Next::Close),
                 Event::Eof => return Ok(Next::End),
-                Event::Text(t) if t.iter().all(u8::is_ascii_whitespace) => {}
+                Event::Text(t) if t.bytes().all(|b| b.is_ascii_whitespace()) => {}
                 Event::Text(_) | Event::CData(_) => {
                     let (line, column) = self.position(self.at);
                     return Err(ReadError::UnexpectedText { line, column, parent: parent.into() });
                 }
                 Event::Decl(d) => {
                     if let Some(Ok(enc)) = d.encoding() {
-                        let enc = String::from_utf8_lossy(&enc).into_owned();
+                        let enc = enc.into_owned();
                         if !enc.eq_ignore_ascii_case("utf-8") {
                             return Err(ReadError::Encoding(enc));
                         }
@@ -101,14 +101,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn unexpected(&self, name: &[u8], parent: &str) -> ReadError {
+    fn unexpected(&self, name: &str, parent: &str) -> ReadError {
         let (line, column) = self.position(self.at);
-        ReadError::UnexpectedElement {
-            line,
-            column,
-            name: String::from_utf8_lossy(name).into(),
-            parent: parent.into(),
-        }
+        ReadError::UnexpectedElement { line, column, name: name.into(), parent: parent.into() }
     }
 
     /// An error in the attributes of the tag that starts at `self.at` (the reader does not
@@ -122,19 +117,15 @@ impl<'a> Parser<'a> {
         let mut attrs = Vec::new();
         for a in start.attributes() {
             let a = a.map_err(|e| self.attr_error(e))?;
-            let raw = std::str::from_utf8(&a.value).map_err(|e| self.attr_error(e))?;
-            let value = unescape(raw).map_err(|e| self.attr_error(e))?;
-            attrs.push(Attr {
-                name: String::from_utf8_lossy(a.key.as_ref()).into(),
-                value: Cow::into_owned(value),
-            });
+            let value = unescape(&a.value).map_err(|e| self.attr_error(e))?;
+            attrs.push(Attr { name: a.key.as_ref().to_owned(), value: Cow::into_owned(value) });
         }
         Ok(Attrs(attrs))
     }
 
     fn diagram(mut self) -> Result<Diagram, ReadError> {
         let (root, empty) = match self.next("")? {
-            Next::Open(e, empty) if e.name().as_ref() == b"root" => (e, empty),
+            Next::Open(e, empty) if e.name().as_ref() == "root" => (e, empty),
             _ => return Err(ReadError::NotStructorizer),
         };
         let attrs = self.attrs(&root)?;
@@ -143,7 +134,7 @@ impl<'a> Parser<'a> {
             loop {
                 match self.next("root")? {
                     Next::Open(e, empty)
-                        if e.name().as_ref() == b"children" && children.is_none() =>
+                        if e.name().as_ref() == "children" && children.is_none() =>
                     {
                         children = Some(self.sequence(&e, empty, "children")?);
                     }
@@ -170,9 +161,7 @@ impl<'a> Parser<'a> {
                 match self.next(tag)? {
                     Next::Open(e, empty) => {
                         let name = e.name();
-                        let kind = std::str::from_utf8(name.as_ref())
-                            .ok()
-                            .and_then(ElementKind::from_tag)
+                        let kind = ElementKind::from_tag(name.as_ref())
                             .ok_or_else(|| self.unexpected(name.as_ref(), tag))?;
                         elements.push(self.element(kind, &e, empty)?);
                     }
@@ -198,13 +187,13 @@ impl<'a> Parser<'a> {
             loop {
                 match self.next(kind.tag())? {
                     Next::Open(e, empty) => {
-                        let tag = String::from_utf8_lossy(e.name().as_ref()).into_owned();
+                        let tag = e.name().as_ref().to_owned();
                         let known = match kind.branches() {
                             Branches::Fixed(fixed) => fixed.contains(&tag.as_str()),
                             Branches::Repeated(t) => t == tag,
                         };
                         if !known {
-                            return Err(self.unexpected(tag.as_bytes(), kind.tag()));
+                            return Err(self.unexpected(&tag, kind.tag()));
                         }
                         branches.push(self.sequence(&e, empty, &tag)?);
                         tags.push(tag);

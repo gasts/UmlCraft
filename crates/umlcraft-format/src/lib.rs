@@ -4,7 +4,7 @@
 //! ```json
 //! {
 //!   "format": "umlcraft",
-//!   "formatVersion": 3,
+//!   "formatVersion": 4,
 //!   "root": "<id>",
 //!   "elements": [ { "id": "…", "name": "…", "type": "class", …, "children": ["…"] } ],
 //!   "views": { "<diagram id>": [ { "id": "…", "element": "…", "shape": "node", … } ] }
@@ -24,7 +24,7 @@ use serde_json::Value;
 use umlcraft_model::{ElementRecord, Id, Model, ModelError, ModelRecords, Presentation};
 
 pub const FORMAT_ID: &str = "umlcraft";
-pub const FORMAT_VERSION: u32 = 3;
+pub const FORMAT_VERSION: u32 = 4;
 pub const FILE_EXTENSION: &str = "ucraft";
 
 /// Upgrades a document from version `index + 1` to `index + 2`.
@@ -32,8 +32,9 @@ type Migration = fn(&mut Value) -> Result<(), FormatError>;
 /// Version 2 stores the geometry of sequence diagrams (lifelines, bars, messages and
 /// fragments as Astah keeps them). Version 1 sequence diagrams are still valid; the app lays
 /// them out once when opening them (`umlcraft_notation::sequence_edit::upgrade_document`).
-/// Version 3 keeps the tagged values of languages under UmlCraft's keys.
-const MIGRATIONS: &[Migration] = &[|_| Ok(()), rename_language_tags];
+/// Version 3 keeps the tagged values of languages under UmlCraft's keys. Version 4 adds
+/// structograms (elements of type `structogram`); older files have none.
+const MIGRATIONS: &[Migration] = &[|_| Ok(()), rename_language_tags, |_| Ok(())];
 // One migration per version step.
 const _: () = assert!(MIGRATIONS.len() == FORMAT_VERSION as usize - 1);
 

@@ -843,6 +843,7 @@ impl<'a> Reader<'a> {
             template_parameters: Vec::new(),
             tags: Vec::new(),
             documentation: String::new(),
+            span: function.byte_range(),
         })
     }
 

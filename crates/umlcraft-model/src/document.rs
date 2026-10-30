@@ -213,6 +213,19 @@ impl Tx<'_> {
         Ok(())
     }
 
+    /// Replaces the content of structogram `id` with `structogram` in its normal form. A
+    /// structogram changed this way is someone's own: it loses [`crate::IMPORTED_TAG`], so that
+    /// a new source import leaves it alone.
+    pub fn set_structogram(&mut self, id: Id, structogram: &umlcraft_nsd::Diagram) -> Result<()> {
+        let structogram = umlcraft_nsd::content::normalize(structogram);
+        self.update(id, |data| {
+            if let crate::ElementKind::Structogram(p) = &mut data.kind {
+                p.structogram = structogram;
+            }
+            data.tagged_values.retain(|t| t.key != crate::IMPORTED_TAG);
+        })
+    }
+
     pub fn rename(&mut self, id: Id, name: impl Into<String>) -> Result<()> {
         let name = name.into();
         self.update(id, |data| data.name = name)
