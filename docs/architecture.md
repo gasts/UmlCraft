@@ -223,24 +223,34 @@ documentation, but no method bodies and no diagrams. It reads Java, C#, C++ and 
 front-end per language lowers its syntax to a language-neutral IR (`ir`), and one
 mapping for all languages puts the IR into the model.
 
-- **Front-ends** (`lang::Frontend`) parse with tree-sitter. They resolve nothing; they lower
-  language sugar instead (Java's implicit `public abstract` in interfaces, records; C#'s
-  properties, which become attributes or accessor operations as .NET names them, `get_Count`).
-  C++ adds members defined outside their class (`ir::Item::Definition`, `void A::f() {}`) and
-  typedefs (`ir::Item::Alias`, `ir::Member::Alias`), which the mapping resolves. A Python file
-  is a module: `parse` gets its module path (`source::python_module`, from the folders with an
-  `__init__.py`), and what has no annotation gets the type `ir::TypeName::Unwritten`, which the
-  mapping leaves without type and association. What they
-  leave out (method bodies, local and anonymous classes, C# attributes, events, C++ macros,
-  specializations, friends …) is counted (`lang::Skip`). A file with a syntax error is reported
-  with line and column and left out; the others are imported. `source` collects files
-  (recursively, sorted) and decodes them: a byte order mark, else UTF-8, else Windows-1252,
-  which the report mentions. The C# and C++
-  front-ends read only the first branch of `#if`/`#ifdef`/`#ifndef` … `#else`
-  (`preprocessor`): the other branches are blanked out before parsing, keeping every byte's
-  place, so conditionals that cut a declaration apart still parse. Macros are not expanded, so
-  a C++ file that uses one in a declaration (`class API Name`, `int x GUARDED_BY(mu);`) fails
-  to parse and is reported.
+- **Reading and parsing** is the base the structograms from source code share (see "From
+  source code" below), so that a file is read and parsed once, the same way, for both.
+  `SourceLanguage` names the languages and their file extensions (`SourceLanguage::of`; C and
+  headers count as C++). `source` collects files (recursively, sorted) and reads them
+  (`source::read`): none larger than `MAX_FILE_SIZE`, and decoded by a byte order mark, else as
+  UTF-8, else as Windows-1252, which the report mentions (`Decoded::guessed`). `parse_tree`
+  runs tree-sitter and returns a `SourceTree`: the tree, the text as parsed and the text as
+  written. C# and C++ are parsed as the first branch of each `#if`/`#ifdef`/`#ifndef` …
+  `#else` reads them (`preprocessor`): the other branches are blanked out before parsing,
+  keeping every byte's place, so conditionals that cut a declaration apart still parse, and
+  the text as written still finds the left-out lines. Macros are not expanded, so a C++ file
+  that uses one in a declaration (`class API Name`, `int x GUARDED_BY(mu);`) fails to parse and
+  is reported. `comment` holds each language's documentation rules (`comment::documentation`:
+  the Java block comment before a declaration, runs of `///` and `//!` in C# and C++, Python
+  docstrings cleaned like `inspect.cleandoc`), which give an operation and a structogram of the
+  same method the same text.
+- **Front-ends** (`lang::Frontend`) lower a `SourceTree` without syntax errors (`lower`; a file
+  with one is reported with line and column and left out, the others are imported). They
+  resolve nothing; they lower language sugar instead (Java's implicit `public abstract` in
+  interfaces, records; C#'s properties, which become attributes or accessor operations as .NET
+  names them, `get_Count`). C++ adds members defined outside their class
+  (`ir::Item::Definition`, `void A::f() {}`) and typedefs (`ir::Item::Alias`,
+  `ir::Member::Alias`), which the mapping resolves. A Python file is a module: `lower` gets its
+  module path (`source::python_module`, from the folders with an `__init__.py`), and what has
+  no annotation gets the type `ir::TypeName::Unwritten`, which the mapping leaves without type
+  and association. What they leave out (method bodies, local and anonymous classes, C#
+  attributes, events, C++ macros, specializations, friends, the left-out branches of `#if` …)
+  is counted (`lang::Skip`).
 - **Rules** (`lang::Rules`) are what the mapping needs to know about a language: built-in
   types, implicit imports, value types, how to split a qualified name, and the standard
   library (`lang::Library`, read from a table by `library::TableLibrary`). For Java that is a
@@ -516,9 +526,14 @@ writes, and none of its code is used.
   Structorizer; a new element is only inserted when its dialog is confirmed. The diagram stays
   a white sheet in the dark theme; the area around it follows the theme. The window has
   toolbars instead of menus, because on macOS the menu bar belongs to the whole app.
-- **From source code** (`umlcraft-nsd-code`; `java`, `csharp`, `python`, `cpp`): tree-sitter
-  reads a Java, C#, Python or C++ file (C and headers with the C++ grammar; C# and C++ with only
-  the first branch of each `#if`, as the class import reads them); `Source::methods` lists
+- **From source code** (`umlcraft-nsd-code`; `java`, `csharp`, `python`, `cpp`): a Java, C#,
+  Python or C++ file is read and parsed by the base of the class import (see "Source import":
+  `SourceLanguage`, `source::read`, `parse_tree`; C and headers with the C++ grammar, C# and C++
+  with only the first branch of each `#if`). A `Source` holds that `SourceTree`
+  (`Source::new`, `Source::parse` as a shortcut, `Source::tree` for `umlcraft_reverse::lower`),
+  so one parse can give a file's classes and its methods' structograms; a method's
+  documentation is the diagram's comment, found and cleaned by `comment::documentation` (or the
+  docstring) as for its operation. `Source::methods` lists
   methods and constructors with a body (nested types included, not classes inside methods) with
   their signatures as written, in C# also finalizers, operators (`op_Addition`), the accessors
   of properties, indexers and events as .NET names them (`get_Count`, `set_Item`) and the
