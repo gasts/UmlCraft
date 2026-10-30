@@ -243,7 +243,7 @@ mod tests {
     fn first(body: &str) -> Vec<String> {
         let source = Source::parse(
             SourceLanguage::Java,
-            &format!("class A {{ void f(int n) {{ {body} }} }}"),
+            format!("class A {{ void f(int n) {{ {body} }} }}"),
         );
         let m = &source.methods()[0];
         let made = crate::Made { author: "t", date: "2026-10-30", origin: "test" };
