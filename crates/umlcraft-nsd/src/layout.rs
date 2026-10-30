@@ -168,7 +168,8 @@ impl Layout {
     }
 
     /// Where something dropped at a point goes: before an element when the point is in its
-    /// upper half (outside its branches), after it in the lower half, into an empty branch.
+    /// upper half (outside its branches), after it in the lower half, into an empty branch,
+    /// into a try's missing `finally` in its bottom band.
     pub fn slot_at(&self, x: i32, y: i32) -> Option<Slot> {
         fn find(seq: &SeqBox, path: Path, x: i32, y: i32) -> Option<Slot> {
             if seq.elements.is_empty() {
@@ -179,6 +180,11 @@ impl Layout {
                 .iter()
                 .enumerate()
                 .find_map(|(b, s)| find(s, branch_path(&e.path, b), x, y))
+                .or_else(|| {
+                    finally_band(e)
+                        .filter(|band| band.contains(x, y))
+                        .map(|_| Slot { seq: branch_path(&e.path, 2), index: 0 })
+                })
                 .or_else(|| {
                     let after = y >= e.rect.y + e.rect.h / 2;
                     Some(Slot { seq: path, index: i + usize::from(after) })
@@ -215,6 +221,30 @@ impl Layout {
             None => Some(&self.body),
             Some((b, e)) => self.element(e)?.branches.get(*b),
         }
+    }
+
+    /// Where the empty `finally` at `seq` (`[.., try, 2]`) would go, which is not drawn, as
+    /// in Structorizer: the bottom band of its try element.
+    pub fn hidden_finally(&self, seq: &[usize]) -> Option<Rect> {
+        let (&branch, owner) = seq.split_last()?;
+        if branch != 2 {
+            return None;
+        }
+        finally_band(self.element(owner)?)
+    }
+}
+
+/// The bottom band of a try element without a `finally`, between its side lines: where a
+/// selected empty `finally` shows and where dropped elements go into it.
+fn finally_band(e: &ElementBox) -> Option<Rect> {
+    match e.shape {
+        Shape::Try { band, .. } if e.branches.len() == 2 => Some(Rect::new(
+            e.rect.x + TRY_INDENT,
+            band,
+            e.rect.w - 2 * TRY_INDENT,
+            e.rect.bottom() - band,
+        )),
+        _ => None,
     }
 }
 
@@ -618,6 +648,27 @@ mod tests {
         assert_eq!(l.slot_at(x.x + 2, x.bottom() - 2), Some(Slot { seq: vec![1, 0], index: 1 }));
         assert_eq!(l.slot_at(f.x + 2, f.y + 2), Some(Slot { seq: vec![1, 1], index: 0 }));
         assert_eq!(l.slot_at(2, l.size.1 - 2), Some(Slot { seq: vec![], index: 2 }));
+    }
+
+    #[test]
+    fn an_empty_finally_lies_in_the_bottom_band() {
+        let mut t = Element::try_block("ex");
+        t.branches[0] = Sequence::new(vec![Element::instruction(&lines(&["x"]))]);
+        let l = Layout::of(&diagram(vec![t]), Metrics::linux());
+        let e = l.element(&[0]).unwrap().rect;
+        let band = l.hidden_finally(&[0, 2]).unwrap();
+        assert_eq!((band.x, band.right(), band.bottom()), (e.x + 20, e.right() - 20, e.bottom()));
+        assert!(band.h > 0);
+        assert_eq!(l.slot_at(band.x + 2, band.y + 2), Some(Slot { seq: vec![0, 2], index: 0 }));
+        // Outside the band the try's own places stay.
+        assert_eq!(l.slot_at(e.x + 2, e.bottom() - 2), Some(Slot { seq: vec![], index: 1 }));
+        assert_eq!(l.hidden_finally(&[0, 1]), None);
+        // A finally with elements is drawn and has its own box.
+        let mut t = Element::try_block("ex");
+        t.branches[2] = Sequence::new(vec![Element::instruction(&lines(&["y"]))]);
+        let l = Layout::of(&diagram(vec![t]), Metrics::linux());
+        assert_eq!(l.hidden_finally(&[0, 2]), None);
+        assert!(l.sequence(&[0, 2]).is_some());
     }
 
     #[test]

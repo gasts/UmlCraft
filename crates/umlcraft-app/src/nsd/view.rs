@@ -1032,9 +1032,13 @@ impl NsdView {
         let boxes = match self.editor.selection() {
             Selection::Nothing => Vec::new(),
             Selection::Root => vec![[0, 0, l.size.0, l.size.1]],
-            Selection::Empty(seq) => {
-                l.sequence(seq).map(|s| vec![rect(s.rect)]).unwrap_or_default()
-            }
+            // A try's empty `finally` is not drawn; it shows where it would go.
+            Selection::Empty(seq) => l
+                .sequence(seq)
+                .map(|s| s.rect)
+                .or_else(|| l.hidden_finally(seq))
+                .map(|r| vec![rect(r)])
+                .unwrap_or_default(),
             Selection::Elements(span) => {
                 let first = l.element(&span.first());
                 let last = l.element(&span.element(span.end - 1));
@@ -1047,8 +1051,9 @@ impl NsdView {
             }
         };
         let drop = match &self.drag {
-            Some(Drag::Elements { moving: true, slot: Some(slot), .. }) => {
-                l.sequence(&slot.seq).map(|s| match s.elements.get(slot.index) {
+            Some(Drag::Elements { moving: true, slot: Some(slot), .. }) => l
+                .sequence(&slot.seq)
+                .map(|s| match s.elements.get(slot.index) {
                     _ if s.elements.is_empty() => rect(s.rect),
                     Some(e) => [s.rect.x, e.rect.y - 1, s.rect.w, 3],
                     None => {
@@ -1056,7 +1061,7 @@ impl NsdView {
                         [s.rect.x, bottom - 1, s.rect.w, 3]
                     }
                 })
-            }
+                .or_else(|| l.hidden_finally(&slot.seq).map(rect)),
             _ => None,
         };
         (boxes, drop)
