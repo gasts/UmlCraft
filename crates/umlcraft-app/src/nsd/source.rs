@@ -84,7 +84,7 @@ fn offer(
         return;
     }
     let search = cx.new(|cx| InputState::new(window, cx).placeholder(t!("nsd.source_search")));
-    search.update(cx, |s, cx| s.focus(window, cx));
+    let first_search = search.clone();
     let chosen: Rc<RefCell<BTreeSet<usize>>> = Rc::default();
     let methods = Rc::new(methods);
     let file_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -186,6 +186,9 @@ fn offer(
                     ),
             )
     });
+    // Only now: closing gives the focus back to what had it on opening, which must not be
+    // the search field.
+    first_search.update(cx, |s, cx| s.focus(window, cx));
 }
 
 /// Opens the methods `picked` (at most [`MAX_WINDOWS`]) and closes the dialog.
