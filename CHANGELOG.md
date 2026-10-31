@@ -3,7 +3,7 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
-## Unreleased
+## 0.12.0 – 2026-10-31
 
 - **AI assistants (MCP)**: the new `umlcraft-cli mcp` is an MCP server with which AI clients
   such as Claude Code, Claude Desktop or Cursor read and draw UML models: diagrams, elements,
