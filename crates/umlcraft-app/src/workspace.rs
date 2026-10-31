@@ -1,14 +1,15 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use rust_i18n::t;
 use umlcraft_model::{
     Aggregation, DiagramKind, Document, EdgeLabels, ElementData, ElementKind, Id, LineShape, Model,
-    ModelError, Multiplicity, Navigability, Point, Presentation, Rect, Shape, Size,
-    StructogramProps, Style, TemplateParameterProps, Tx, TypeRef, Visibility,
+    ModelError, Multiplicity, Navigability, Point, Presentation, Rect, Shape, StructogramProps,
+    Style, TemplateParameterProps, Tx, TypeRef, Visibility,
 };
 use umlcraft_notation::autoroute;
 use umlcraft_notation::clipboard::{self, Clip};
+use umlcraft_notation::edit;
 use umlcraft_notation::layout;
 use umlcraft_notation::member;
 use umlcraft_notation::object;
@@ -36,30 +37,6 @@ pub struct Workspace {
     pub message: Option<String>,
     /// Measures texts for boxes sized to their content.
     pub measure: Box<dyn TextMeasure>,
-}
-
-/// An automatically sized box: where it is, its bounds, the size its content needs, and the
-/// content.
-struct FittedBox {
-    diagram: Id,
-    presentation: Id,
-    bounds: Rect,
-    size: Size,
-    content: String,
-}
-
-/// All automatically sized boxes of all diagrams.
-fn fitted_boxes(model: &Model, measure: &dyn TextMeasure) -> Vec<FittedBox> {
-    model
-        .views()
-        .flat_map(|(diagram, view)| {
-            view.presentations().iter().filter_map(move |p| {
-                let bounds = p.bounds()?;
-                let (size, content) = scene::fitted_box(model, p, measure)?;
-                Some(FittedBox { diagram, presentation: p.id, bounds, size, content })
-            })
-        })
-        .collect()
 }
 
 impl Workspace {
@@ -175,36 +152,14 @@ impl Workspace {
         self.selection.retain(|&p| view.is_some_and(|v| v.get(p).is_some()));
     }
 
-    /// One undo step. Afterwards, as in Astah, boxes sized to their content whose content the
-    /// edit changed take the size it now needs (a new box always does). Others keep their size,
-    /// even if Astah stored one that does not fit. Then lines that the router keeps are routed
-    /// again where their nodes moved or something moved into their way.
+    /// One undo step, with boxes fitted to their content and kept lines routed again
+    /// afterwards ([`edit::apply`]).
     fn edit<R>(
         &mut self,
         label: String,
         f: impl FnOnce(&mut Tx<'_>) -> Result<R, ModelError>,
     ) -> Result<R, ModelError> {
-        let measure = &*self.measure;
-        let before: HashMap<Id, String> = fitted_boxes(self.doc.model(), measure)
-            .into_iter()
-            .map(|b| (b.presentation, b.content))
-            .collect();
-        let routes = autoroute::snapshots(self.doc.model());
-        self.doc.edit(label, |tx| {
-            let result = f(tx)?;
-            let close = |a: Size, b: Size| {
-                (a.width - b.width).abs() < 0.01 && (a.height - b.height).abs() < 0.01
-            };
-            for b in fitted_boxes(tx.model(), measure) {
-                let unchanged = before.get(&b.presentation) == Some(&b.content);
-                if !unchanged && !close(b.bounds.size(), b.size) {
-                    let rect = Rect::from_origin_size(b.bounds.origin(), b.size);
-                    tx.set_bounds(b.diagram, b.presentation, rect)?;
-                }
-            }
-            autoroute::follow(tx, &routes)?;
-            Ok(result)
-        })
+        edit::apply(&mut self.doc, label, &*self.measure, f)
     }
 
     fn report<T>(&mut self, result: Result<T, ModelError>) -> Option<T> {
@@ -948,7 +903,7 @@ impl NewItem {
             Self::TemplateParameter => {
                 kind.can_own(&ElementKind::TemplateParameter(TemplateParameterProps::default()))
             }
-            Self::Diagram(d) => match behavior_of(d) {
+            Self::Diagram(d) => match edit::behavior_of(d) {
                 Some(behavior) => kind.can_own(&behavior),
                 None => kind.can_own(&ElementKind::diagram(d)),
             },
@@ -974,20 +929,6 @@ impl NewItem {
             Self::Diagram(DiagramKind::Deployment) => "diagram.deployment".into(),
             Self::Structogram => "kind.structogram".into(),
         }
-    }
-}
-
-/// The behavior a new diagram of `kind` brings along and lives in: sequence diagrams an
-/// interaction, activity diagrams an activity, state machine diagrams a state machine.
-fn behavior_of(kind: DiagramKind) -> Option<ElementKind> {
-    match kind {
-        DiagramKind::Sequence => Some(ElementKind::Interaction),
-        DiagramKind::Activity => Some(ElementKind::Activity),
-        DiagramKind::StateMachine => Some(ElementKind::StateMachine),
-        DiagramKind::Class
-        | DiagramKind::UseCase
-        | DiagramKind::Component
-        | DiagramKind::Deployment => None,
     }
 }
 
@@ -1032,16 +973,7 @@ impl Workspace {
                     let kind = ElementKind::TemplateParameter(TemplateParameterProps::default());
                     tx.create(owner, ElementData::new(name, kind))
                 }
-                NewItem::Diagram(kind) => {
-                    let diagram = ElementData::new(name.clone(), ElementKind::diagram(kind));
-                    match behavior_of(kind) {
-                        Some(behavior) => {
-                            let behavior = tx.create(owner, ElementData::new(name, behavior))?;
-                            tx.create(behavior, diagram)
-                        }
-                        None => tx.create(owner, diagram),
-                    }
-                }
+                NewItem::Diagram(kind) => edit::create_diagram(tx, owner, kind, &name),
                 NewItem::Structogram => {
                     let text = free_structogram_text(tx.model(), owner, &base);
                     let made = umlcraft_nsd::Provenance { author: "", date: "", origin: "" };

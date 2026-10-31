@@ -56,6 +56,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#Source}\umlcraft.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Source}\umlcraft-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Source}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Source}\LICENSE-MIT"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Source}\LICENSE-APACHE"; DestDir: "{app}"; Flags: ignoreversion

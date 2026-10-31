@@ -91,6 +91,8 @@ pub struct MainView {
     structogram_notes: HashMap<Id, Vec<String>>,
     /// The diagram or structogram shown last, to focus a structogram once it shows.
     shown: Option<Id>,
+    /// Where `umlcraft-cli mcp` reaches the open project; announced while it lives.
+    _live: Option<umlcraft_mcp::live::LiveServer>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -135,6 +137,18 @@ impl MainView {
         window.on_window_should_close(cx, move |window, cx| {
             weak.update(cx, |this, cx| this.should_close(window, cx)).unwrap_or(true)
         });
+        // Calls of the MCP server, one after the other on the main thread.
+        let live = crate::live::start().map(|(server, calls)| {
+            cx.spawn_in(window, async move |this, cx| {
+                while let Ok(request) = calls.recv().await {
+                    if this.update(cx, |this, cx| this.serve_mcp(request, cx)).is_err() {
+                        break;
+                    }
+                }
+            })
+            .detach();
+            server
+        });
         let mut view = Self {
             workspace,
             canvas,
@@ -159,6 +173,7 @@ impl MainView {
             structograms: HashMap::new(),
             structogram_notes: HashMap::new(),
             shown: None,
+            _live: live,
             _subscriptions: subscriptions,
         };
         if !crate::canvas::choose_diagram_font(cx) {
@@ -335,6 +350,33 @@ impl MainView {
             .ok();
         })
         .detach();
+    }
+
+    /// Runs a call of the MCP server against the open project and answers it.
+    fn serve_mcp(&mut self, request: umlcraft_mcp::live::Request, cx: &mut Context<Self>) {
+        let mut effects = crate::live::Effects::default();
+        let reply = self.workspace.update(cx, |ws, cx| {
+            let mut host = crate::live::AppHost { ws, effects: &mut effects };
+            let reply = umlcraft_mcp::tools::call(
+                &mut host,
+                &request.access,
+                &request.name,
+                &request.arguments,
+            );
+            ws.validate();
+            cx.notify();
+            reply
+        });
+        if let Some((doc, path)) = effects.replace {
+            if let Some(path) = &path {
+                self.remember(path, cx);
+            }
+            self.replace_document(doc, path, cx);
+        }
+        if let Some(path) = effects.saved {
+            self.remember(&path, cx);
+        }
+        request.answer(reply);
     }
 
     fn replace_document(&mut self, doc: Document, path: Option<PathBuf>, cx: &mut Context<Self>) {

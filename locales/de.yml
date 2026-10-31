@@ -423,6 +423,7 @@ edit:
   align: Ausrichten
   delete: Löschen
   structogram: Struktogramm ändern
+  mcp: "KI: %{tool}"
   remove_from_diagram: Aus Diagramm entfernen
   properties: Eigenschaften ändern
   waypoints: Linienverlauf ändern

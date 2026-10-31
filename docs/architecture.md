@@ -681,3 +681,74 @@ exports made on Windows (`windows/…`, 187). Differences we understand are list
 reason in `tests/structorizer_deviations.txt`. Snapshots of the fixtures' layout and of one
 SVG (`tests/drawing.rs`) guard the rest. `cargo run -p umlcraft-nsd --example nsd-svg --
 FILE.nsd` draws a file.
+
+## MCP server
+
+AI clients (Claude Code, Claude Desktop, Cursor) read and edit UML models through the Model
+Context Protocol. `umlcraft-cli mcp` is the server they start; it speaks JSON-RPC 2.0 on stdin
+and stdout, one message per line (`umlcraft_mcp::protocol::serve`: `initialize`, `ping`,
+`tools/list`, `tools/call`; protocol versions 2025-06-18, 2025-03-26 and 2024-11-05).
+
+### Tools and hosts
+
+`umlcraft_mcp::tools` lists 24 tools and runs them against a `Host`, which hands out the
+`Document`, a `TextMeasure`, the path and, in the app, the active diagram and the selection:
+
+- reading: `get_document`, `list_elements`, `get_element`, `get_diagram`, `render_diagram` (a PNG
+  through resvg, as MCP image content, so the client sees what it drew);
+- editing: `create_diagram`, `create_element`, `create_model_element`, `show_element`,
+  `connect`, `add_member`, `update_element`, `move_node`, `arrange_diagram`, `route_lines`,
+  `delete_element`, `remove_from_diagram`, `undo`, `redo`;
+- the project: `open_diagram`, `new_document`, `open_file`, `save_file`, `export_image`.
+
+Every editing tool is one undo step made the way the app makes it:
+`umlcraft_notation::edit::apply` fits auto-sized boxes and lets routed lines follow, the same
+function `Workspace::edit` uses; diagrams come from `edit::create_diagram`, nodes and lines
+from the palettes (`palette::create_node`, `palette::connect`), members from
+`member::apply_member_text`. A tool that fails rolls back and answers with the error, which
+for an unknown tool key lists the valid ones. Ids are UUID strings; kinds are the element
+kinds' `type_name`s. A node without a position goes to a free place right of the drawing
+(`free_origin`).
+
+Two hosts exist. `Headless` holds a project of its own, measured with `ApproxMeasure`; in the
+app `AppHost` (`crates/umlcraft-app/src/live.rs`) wraps the `Workspace`, labels each step
+"AI: tool" and leaves opening another file or a new project to the window, which refuses it
+while the open project has unsaved changes.
+
+### The live bridge
+
+When the app runs, the server forwards every call to it, so the user watches each change and
+undoes it with Ctrl+Z. The app listens on a free port of 127.0.0.1 (`live::LiveServer`) and
+writes `live-<pid>.json` with port, token (two random UUIDs), pid and version into
+`live::control_dir()`, and removes it when it closes; on start it also removes the files of
+apps that were killed and no longer answer. The folder is `~/.umlcraft/control` on Windows
+(not `%LOCALAPPDATA%`: clients installed as MSIX packages, and the servers they start, see a
+private copy of that), `~/Library/Application Support/UmlCraft/control` on macOS and
+`$XDG_RUNTIME_DIR/umlcraft/control` on Linux (else the state folder), readable by the user
+alone (0700 and 0600 on Unix). A request is a line `{token, name, arguments, access}`, the
+answer an MCP tool result; a wrong token closes the connection. The connection's thread hands
+the call over an `async-channel` to `MainView::serve_mcp`, which runs it on the main thread
+inside `Workspace::update` and so never races a user edit. `_ping` is answered on the server
+thread, and a call the app has not answered after 120 s (a modal dialog) comes back as an
+error.
+
+`backend::Auto` picks per call: the app when one answers (`LiveClient::discover`, newest file
+first), otherwise the headless project. Once the headless project was changed or a file
+opened in it, the server stays headless, so a model is never split between two places; a lost
+connection to the app gives one error and the next call looks for the app again.
+`--headless`, `--in FILE` and `--connect PORT --token T` fix the choice.
+
+### Files
+
+The server opens and saves projects and writes images only in the folders it was allowed:
+`--allow-path DIR` (several times), `--allow-any-path`, and the folder of `--in`. `Access`
+travels with each live call, so the app keeps to the folders of the server that asked.
+Paths are canonicalized before the check; saving to the open project's own path is always
+allowed. `umlcraft-cli mcp setup` registers the server with each client it finds (Claude
+Code through `claude mcp add --scope user`, Claude Desktop's `claude_desktop_config.json`,
+Cursor's `~/.cursor/mcp.json`, merged into what is there) and allows the Documents folder
+unless told otherwise; `--dry-run` shows what it would do.
+
+`umlcraft-cli` ships in the Windows zip and installer, the Linux tarball, `.deb` and `.rpm`
+and inside the macOS app (`UmlCraft.app/Contents/MacOS/umlcraft-cli`). Flatpak, Snap and
+AppImage carry none: a client outside their sandbox could not start it.

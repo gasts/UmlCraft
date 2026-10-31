@@ -5,6 +5,7 @@ mod demo;
 mod errors;
 mod icons;
 mod labels;
+mod live;
 mod main_view;
 mod nsd;
 mod png;

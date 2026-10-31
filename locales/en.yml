@@ -423,6 +423,7 @@ edit:
   align: Align
   delete: Delete
   structogram: Change structogram
+  mcp: "AI: %{tool}"
   remove_from_diagram: Remove from diagram
   properties: Change properties
   waypoints: Change line route

@@ -105,7 +105,7 @@ jobs:
         run: |
           IFS=, read -ra targets <<< "${{ matrix.targets }}"
           for target in "${targets[@]}"; do
-            cargo build --release --locked -p umlcraft-app --target "$target"
+            cargo build --release --locked -p umlcraft-app -p umlcraft-cli --target "$target"
           done
 
       - name: Package for Windows
@@ -113,7 +113,8 @@ jobs:
         run: |
           name="UmlCraft-$VERSION-windows-x64"
           mkdir -p "dist/$name"
-          cp target/x86_64-pc-windows-msvc/release/umlcraft.exe "dist/$name/"
+          cp target/x86_64-pc-windows-msvc/release/umlcraft.exe \
+            target/x86_64-pc-windows-msvc/release/umlcraft-cli.exe "dist/$name/"
           cp README.md LICENSE-MIT LICENSE-APACHE THIRD-PARTY-LICENSES.html "dist/$name/"
           (cd dist && 7z a -tzip "$name.zip" "$name")
 
@@ -145,6 +146,7 @@ jobs:
             '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER'
           $dir = "$env:LOCALAPPDATA\Programs\UmlCraft"
           if (-not (Test-Path "$dir\umlcraft.exe")) { throw "umlcraft.exe is not in $dir" }
+          if (-not (Test-Path "$dir\umlcraft-cli.exe")) { throw "umlcraft-cli.exe is not in $dir" }
           $open = 'HKCU:\Software\Classes\UmlCraft.Project\shell\open\command'
           $command = (Get-Item $open).GetValue('')
           if ($command -ne "`"$dir\umlcraft.exe`" `"%1`"") { throw "Unexpected command: $command" }
@@ -165,7 +167,8 @@ jobs:
         run: |
           name="UmlCraft-$VERSION-linux-x64"
           mkdir -p "dist/$name"
-          cp target/x86_64-unknown-linux-gnu/release/umlcraft "dist/$name/"
+          cp target/x86_64-unknown-linux-gnu/release/umlcraft \
+            target/x86_64-unknown-linux-gnu/release/umlcraft-cli "dist/$name/"
           cp README.md LICENSE-MIT LICENSE-APACHE THIRD-PARTY-LICENSES.html "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
 
@@ -174,7 +177,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-binary
-          path: target/x86_64-unknown-linux-gnu/release/umlcraft
+          path: |
+            target/x86_64-unknown-linux-gnu/release/umlcraft
+            target/x86_64-unknown-linux-gnu/release/umlcraft-cli
           if-no-files-found: error
 
       - name: Package for macOS
@@ -185,10 +190,15 @@ jobs:
           lipo -create -output "$app/Contents/MacOS/umlcraft" \
             target/aarch64-apple-darwin/release/umlcraft \
             target/x86_64-apple-darwin/release/umlcraft
+          lipo -create -output "$app/Contents/MacOS/umlcraft-cli" \
+            target/aarch64-apple-darwin/release/umlcraft-cli \
+            target/x86_64-apple-darwin/release/umlcraft-cli
           sed "s/@VERSION@/$VERSION/g" packaging/macos/Info.plist > "$app/Contents/Info.plist"
           cp packaging/macos/UmlCraft.icns LICENSE-MIT LICENSE-APACHE THIRD-PARTY-LICENSES.html \
             "$app/Contents/Resources/"
           # Ad-hoc signature: not a Developer ID, but Apple Silicon refuses unsigned code.
+          # The MCP server inside first, as the bundle's signature covers it.
+          codesign --force --sign - "$app/Contents/MacOS/umlcraft-cli"
           codesign --force --sign - "$app"
           ln -s /Applications dist/dmg/Applications
           # hdiutil sizes the image from the folder and now and then too small ("No space left
@@ -250,7 +260,8 @@ jobs:
 
       - name: Package deb and rpm
         run: |
-          bash packaging/linux/install-desktop-files.sh dist/binary/umlcraft dist/linux/usr
+          bash packaging/linux/install-desktop-files.sh dist/binary/umlcraft dist/linux/usr \
+            dist/binary/umlcraft-cli
           for format in deb rpm; do
             nfpm package -f packaging/linux/nfpm.yaml -p "$format" \
               -t "dist/UmlCraft-$VERSION-linux-x64.$format"

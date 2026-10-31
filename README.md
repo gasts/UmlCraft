@@ -124,6 +124,27 @@ English. Members show their visibility right before the name (`- name`); UmlCraf
 visibility column lines up all names of a compartment instead. Theme, language and the column
 are chosen in the settings (the gear in the title bar, or Ctrl+,).
 
+## AI assistants (MCP)
+
+`umlcraft-cli`, installed next to UmlCraft, is an MCP server: AI clients such as Claude Code,
+Claude Desktop or Cursor use it to read and draw UML models. Register it once with the clients
+installed:
+
+```bash
+umlcraft-cli mcp setup
+```
+
+It may open and save projects and images in the Documents folder; `--allow-path DIR` (more
+than once) names other folders instead, `--dry-run` shows the changes first. On macOS the
+program is `/Applications/UmlCraft.app/Contents/MacOS/umlcraft-cli`.
+
+While UmlCraft runs, the assistant works in the open project: every change shows up at once,
+named "AI: …" in the undo history, and Ctrl+Z takes it back. Without the app it works on a
+project of its own, which it can save. It creates diagrams, elements, lines and members,
+renames, moves and deletes, arranges diagrams, renders them as images to look at, and exports
+PNG and SVG. The app accepts connections from this computer only, with a token only the user
+can read. The Flatpak, Snap and AppImage packages contain no `umlcraft-cli`.
+
 ## Not yet supported
 
 - Composite structure diagrams (ports, parts, connectors)
@@ -191,6 +212,8 @@ keeps them as workflow artifacts.
 | `crates/umlcraft-nsd` | Structorizer's `.nsd` structograms: model, reading and writing, layout, drawing, SVG, editing |
 | `crates/umlcraft-nsd-code` | Methods of source files as structograms (Java, C#, Python, C++; tree-sitter) |
 | `tools/nsd-metrics` | The Java tool that writes the text metrics `umlcraft-nsd` lays structograms out with |
+| `crates/umlcraft-mcp` | MCP server: tools on a project, the protocol, the bridge to the running app |
+| `crates/umlcraft-cli` | `umlcraft-cli`: the MCP server for AI clients and its setup |
 | `crates/umlcraft-app` | GPUI application (`gpui-kit` 0.8) |
 
 Details: [docs/architecture.md](docs/architecture.md). Commands and project rules for

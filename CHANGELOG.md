@@ -3,6 +3,17 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
+## Unreleased
+
+- **AI assistants (MCP)**: the new `umlcraft-cli mcp` is an MCP server with which AI clients
+  such as Claude Code, Claude Desktop or Cursor read and draw UML models: diagrams, elements,
+  lines and members, moving, arranging and deleting, rendering a diagram as an image, opening,
+  saving and exporting. While UmlCraft runs they work in its open project, every change one
+  undo step ("AI: …"); otherwise in a project of their own. `umlcraft-cli mcp setup` registers
+  the server with the installed clients. Files only in allowed folders (Documents unless
+  `--allow-path` names others). `umlcraft-cli` comes with the Windows, `.deb`, `.rpm`, tarball
+  and macOS packages.
+
 ## 0.11.2 – 2026-10-31
 
 - **Automatic layout**: new lines are routed around the nodes at right angles and are routed

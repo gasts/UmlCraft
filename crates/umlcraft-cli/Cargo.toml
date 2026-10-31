@@ -1,0 +1,19 @@
+[package]
+name = "umlcraft-cli"
+description = "UmlCraft on the command line: the MCP server for AI clients"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "umlcraft-cli"
+path = "src/main.rs"
+
+[dependencies]
+umlcraft-mcp.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

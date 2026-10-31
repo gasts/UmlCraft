@@ -11,6 +11,7 @@
 pub mod autoroute;
 pub mod clipboard;
 pub mod draw;
+pub mod edit;
 pub mod layout;
 pub mod member;
 pub mod metrics;
