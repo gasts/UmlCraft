@@ -3,7 +3,7 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
-## Unreleased
+## 0.11.2 – 2026-10-31
 
 - **Automatic layout**: new lines are routed around the nodes at right angles and are routed
   again when their nodes move or something is moved into their way, until their route is
