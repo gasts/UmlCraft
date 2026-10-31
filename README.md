@@ -195,7 +195,10 @@ On Debian/Ubuntu, GPUI needs some system libraries first:
 4. Review the draft on GitHub, put a "What's new" section in front of its text and publish it.
 
 Running the workflow by hand (Actions › Release › Run workflow) only builds the packages and
-keeps them as workflow artifacts.
+keeps them as workflow artifacts. The builds take their compiled dependencies from a cache of
+`main`, which [release-cache.yml](.github/workflows/release-cache.yml) fills every night and by
+hand (Actions › Release cache › Run workflow); a tag's run cannot keep a cache for the next
+one.
 
 ## Structure
 

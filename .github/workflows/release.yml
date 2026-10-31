@@ -61,9 +61,10 @@ jobs:
     name: Checks
     uses: ./.github/workflows/ci.yml
 
+  # The builds start beside the checks instead of after them; `publish` waits for both.
   build:
     name: Package (${{ matrix.name }})
-    needs: [version, licenses, checks]
+    needs: [version, licenses]
     strategy:
       fail-fast: false
       matrix:
@@ -71,10 +72,6 @@ jobs:
           - name: Windows x64
             os: windows-latest
             targets: x86_64-pc-windows-msvc
-          # The oldest available Ubuntu keeps the glibc requirement low.
-          - name: Linux x64
-            os: ubuntu-22.04
-            targets: x86_64-unknown-linux-gnu
           - name: macOS universal
             os: macos-latest
             targets: aarch64-apple-darwin,x86_64-apple-darwin
@@ -87,16 +84,17 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install GPUI build dependencies
-        if: runner.os == 'Linux'
-        run: bash packaging/linux/install-build-deps.sh
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
           targets: ${{ matrix.targets }}
-      # Its automatic key tells the runners apart; `targets` cannot be part of it, since keys
-      # must not contain the commas of the macOS entry.
+      # A tag's run cannot restore what another tag's run saved, only caches of main: the
+      # dependencies come from the cache that release-cache.yml keeps there. Its key tells the
+      # runners apart by their Rust environment.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: licenses
@@ -162,26 +160,6 @@ jobs:
             throw 'Uninstalling left the file type behind'
           }
 
-      - name: Package for Linux
-        if: runner.os == 'Linux'
-        run: |
-          name="UmlCraft-$VERSION-linux-x64"
-          mkdir -p "dist/$name"
-          cp target/x86_64-unknown-linux-gnu/release/umlcraft \
-            target/x86_64-unknown-linux-gnu/release/umlcraft-cli "dist/$name/"
-          cp README.md LICENSE-MIT LICENSE-APACHE THIRD-PARTY-LICENSES.html "dist/$name/"
-          tar -C dist -czf "dist/$name.tar.gz" "$name"
-
-      - name: Keep the Linux binary for the Linux packages
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: linux-binary
-          path: |
-            target/x86_64-unknown-linux-gnu/release/umlcraft
-            target/x86_64-unknown-linux-gnu/release/umlcraft-cli
-          if-no-files-found: error
-
       - name: Package for macOS
         if: runner.os == 'macOS'
         run: |
@@ -213,14 +191,67 @@ jobs:
           path: |
             dist/*.zip
             dist/*-setup.exe
-            dist/*.tar.gz
             dist/*.dmg
+          if-no-files-found: error
+
+  # A job of its own, so that the Linux packages start while Windows still builds.
+  build-linux:
+    name: Package (Linux x64)
+    needs: [version, licenses]
+    # The oldest available Ubuntu keeps the glibc requirement low.
+    runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install GPUI build dependencies
+        run: bash packaging/linux/install-build-deps.sh
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-gnu
+      # See `build`.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: licenses
+
+      - name: Build
+        run: >-
+          cargo build --release --locked -p umlcraft-app -p umlcraft-cli
+          --target x86_64-unknown-linux-gnu
+
+      - name: Package for Linux
+        run: |
+          name="UmlCraft-$VERSION-linux-x64"
+          mkdir -p "dist/$name"
+          cp target/x86_64-unknown-linux-gnu/release/umlcraft \
+            target/x86_64-unknown-linux-gnu/release/umlcraft-cli "dist/$name/"
+          cp README.md LICENSE-MIT LICENSE-APACHE THIRD-PARTY-LICENSES.html "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+
+      - name: Keep the Linux binary for the Linux packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-binary
+          path: |
+            target/x86_64-unknown-linux-gnu/release/umlcraft
+            target/x86_64-unknown-linux-gnu/release/umlcraft-cli
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: package-Linux
+          path: dist/*.tar.gz
           if-no-files-found: error
 
   # Packs the Linux binary from the build job, so every package runs the same program.
   linux-packages:
     name: Package (Linux deb, rpm, AppImage)
-    needs: [version, build]
+    needs: [version, build-linux]
     runs-on: ubuntu-22.04
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -283,7 +314,7 @@ jobs:
 
   flatpak:
     name: Package (Linux Flatpak)
-    needs: [version, build]
+    needs: [version, build-linux]
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
@@ -316,7 +347,7 @@ jobs:
 
   snap:
     name: Package (Linux Snap)
-    needs: [version, build]
+    needs: [version, build-linux]
     runs-on: ubuntu-24.04
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -359,7 +390,7 @@ jobs:
   publish:
     name: Draft release
     if: github.ref_type == 'tag'
-    needs: [version, build, linux-packages, flatpak, snap]
+    needs: [version, checks, build, build-linux, linux-packages, flatpak, snap]
     runs-on: ubuntu-latest
     permissions:
       contents: write

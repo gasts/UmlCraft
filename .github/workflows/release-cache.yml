@@ -1,0 +1,62 @@
+# Keeps the compiled dependencies of the release builds in a cache of main. A release runs on
+# a tag, and a tag's run can restore only caches of its own tag or of main; so without this
+# every release built GPUI and the rest from scratch. Its builds match those of release.yml
+# (toolchain, targets, environment, `shared-key`), else their keys would differ.
+
+name: Release cache
+
+on:
+  schedule:
+    # Daily, so that a new stable Rust, which changes the key, is soon in the cache again.
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Release build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            targets: x86_64-pc-windows-msvc
+          - name: Linux x64
+            os: ubuntu-22.04
+            targets: x86_64-unknown-linux-gnu
+          - name: macOS universal
+            os: macos-latest
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install GPUI build dependencies
+        if: runner.os == 'Linux'
+        run: bash packaging/linux/install-build-deps.sh
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.targets }}
+      - id: cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: release
+      # With the key's cache already there, rust-cache would not save anew anyway.
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          IFS=, read -ra targets <<< "${{ matrix.targets }}"
+          for target in "${targets[@]}"; do
+            cargo build --release --locked -p umlcraft-app -p umlcraft-cli --target "$target"
+          done
