@@ -61,7 +61,7 @@ that a diff shows which element changed.
 
 ## User interface
 
-`umlcraft-app` uses `gpui-kit` 0.8, which brings the matching GPUI release (`gpui-pre` 0.3.9) and
+`umlcraft-app` uses `gpui-kit` 0.8, which brings the matching GPUI release (`gpui-pre` 0.3.10) and
 `gpui-component`:
 
 - `Workspace` (a GPUI entity) holds the document, file path, open diagrams (tabs), selection and
@@ -106,6 +106,9 @@ that a diff shows which element changed.
   (`gpui-component`'s `Dialog`), which applies each change at once through `MainView`; for the
   column it sets the canvas's flag and gives the workspace a new measure.
 - Texts come from `locales/{de,en}.yml` (rust-i18n). Without a setting, the system language is used.
+- Shortcuts are bound through `key` in `main.rs`, which resolves `secondary-` (Cmd on macOS,
+  Ctrl elsewhere) with `KeyBinding::load`; since `gpui-pre` 0.3.10 `KeyBinding::new` no longer
+  does and panics on it.
 
 ## Notation
 
@@ -288,7 +291,14 @@ mapping for all languages puts the IR into the model.
   the library's turn, so whether a placeholder exists yet does not decide between two
   packages. With `Rules::reexports` (Python), a package re-exports what its own scope imports:
   `shop.Order` is `shop.orders.Order` after `from .orders import Order` in `shop/__init__.py`.
-  An import of a module alone (`import numpy as np`) makes no placeholder. A typedef is
+  A re-export of a name under its module's own name (`from .repair import repair`) does not
+  apply to the other names of that module (`shop.repair.Setting`), and one being followed is
+  not followed again, against cycles. An import of a module alone (`import numpy as np`) makes
+  no placeholder. The qualified path of a single import is resolved without the imports
+  (`resolve_import`): after `from socket import AddressFamily, socket`, `socket.AddressFamily`
+  stays itself instead of becoming `socket.socket.AddressFamily`. A qualified name ends at a
+  type, never at a package, so a module written as a type (`x: os.path`) links a placeholder
+  class. With these rules the CPython 3.14 standard library imports as a whole. A typedef is
   replaced by its target where it is used (`Ptr*` is
   `shared_ptr<Order>*`); the model has no element for it.
 - **Merging** (`merge`) finds packages and types by name or creates them. Members are matched

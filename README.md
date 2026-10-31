@@ -97,12 +97,14 @@ without `self`, docstrings, and template parameters from `Generic[T]` or `class 
 `@staticmethod`, `@classmethod`, `@abstractmethod` and `@final` set their flags, and all
 decorators are kept as a tagged value. What has no annotation gets no type and no association;
 `list[Line]`, `dict[str, Line]`, `Optional[Line]` and `Line | None` make associations. Names
-resolve through imports, relative imports and what a package's `__init__.py` imports.
+resolve through imports, relative imports and what a package's `__init__.py` imports; the
+whole CPython standard library imports in one go.
 
 ## Editing
 
 The window has its own title bar (File menu, Save, Undo, Redo, Settings) and a ribbon with the
-tabs Home (clipboard, delete, align, line style), the open diagram's kind (its tools), View
+tabs Home (clipboard, delete, align, line style), the open diagram's kind (its tools; for a
+structogram its elements and the `.nsd` export), View
 (zoom, theme, language) and Tools (source import, exchange with `.asta` files, images). Model
 tree, diagram and properties are cards beside each other. A double click on a ribbon tab folds
 the ribbon to its tabs; in a narrow window its buttons show icons only.
@@ -128,11 +130,13 @@ are chosen in the settings (the gear in the title bar, or Ctrl+,).
   has no editors for them
 - Containment lines in the `.asta` export, which the API cannot draw (they are imported)
 - In the Python import: attributes assigned outside `__init__`, `@property` as an attribute,
-  functions and variables outside classes
+  functions and variables outside classes (functions get structograms, but no element of the
+  model)
 - In the C# import: modifiers such as `virtual`, `override` or `async` as tagged values,
   attributes, events and delegates
 - In the C++ import: `virtual`, `override`, `inline` and the access of base classes as tagged
-  values, macros, and functions and variables outside classes
+  values, macros, and functions and variables outside classes (functions get structograms,
+  but no element of the model)
 - Code generation
 - Signed builds
 
