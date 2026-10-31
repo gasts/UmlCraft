@@ -5,6 +5,15 @@ today.
 
 ## Unreleased
 
+- **Sample project** (File › Open sample project) is back on Windows and Linux, where the menu
+  item had gone with the platform menu bar. It is now Velo, a city's bike sharing, with fuller
+  diagrams of every kind: a domain model with a qualified composition, derived and static
+  attributes; an object and a package diagram; use cases with a system boundary, include,
+  extend and extension points; a sequence diagram with alt and loop, a create message and
+  replies; an activity with partitions, fork, join, decision, an object node and a flow final;
+  a state machine with an orthogonal state, a deep history and a choice; components with
+  provided and required interfaces; a deployment with nested nodes and artifacts; and
+  structograms of three operations.
 - **Python import** of the whole standard library works: a class imported under its module's
   name (`from socket import socket`), a package that re-exports a name of one of its modules
   under the module's name (`from .repair import repair`), and a module written as a type no

@@ -18,7 +18,6 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use rust_i18n::t;
 use umlcraft_format::FILE_EXTENSION;
-use umlcraft_model::sample::order_system;
 use umlcraft_model::{DiagramKind, Document, ElementData, ElementKind, Id, Model};
 use umlcraft_notation::clipboard::Clip;
 use umlcraft_notation::palette::{NodeTool, Tool};
@@ -367,7 +366,10 @@ impl MainView {
         self.confirm_discard(
             window,
             cx,
-            Box::new(|this, _, cx| this.replace_document(order_system().0, None, cx)),
+            Box::new(|this, _, cx| {
+                let measure = AppMeasure::new(cx, this.settings.visibility_column);
+                this.replace_document(crate::demo::velo(&measure), None, cx)
+            }),
         );
     }
 
@@ -1995,6 +1997,7 @@ fn file_menu(
         }
         menu
     });
+    menu = item(menu, "menu.open_sample", Box::new(OpenSample));
     menu = item(menu, "menu.import_astah", Box::new(ImportAstah));
     menu = item(menu, "menu.import_structogram", Box::new(ImportStructogram));
     menu = menu.submenu(t!("menu.export"), window, cx, move |menu, _, _| {

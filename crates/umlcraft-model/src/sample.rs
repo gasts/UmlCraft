@@ -1,5 +1,6 @@
 //! A small example project with one diagram of each supported kind.
-//! Used by tests, the format round trip and the app's "open sample" command.
+//! Used by tests and the format round trip; the app's sample project is its own
+//! (`umlcraft-app/src/demo.rs`).
 
 use crate::diagram::{DiagramKind, Presentation};
 use crate::document::Document;
