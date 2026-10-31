@@ -3,6 +3,13 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
+## Unreleased
+
+- **Python import** of the whole standard library works: a class imported under its module's
+  name (`from socket import socket`), a package that re-exports a name of one of its modules
+  under the module's name (`from .repair import repair`), and a module written as a type no
+  longer stop the import.
+
 ## 0.11.0 – 2026-10-30
 
 - **Windows installer**: `UmlCraft-*-windows-x64-setup.exe` installs UmlCraft for the current

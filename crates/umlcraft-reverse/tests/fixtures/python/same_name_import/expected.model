@@ -1,0 +1,13 @@
+package events
+  class Events Public
+    operation + listen(sock : socket, family : AddressFamily)
+package secure
+  class SecureSocket Public
+    generalization -> socket.socket
+package wrapper
+  class Wrapper Public
+    attribute # _sock = sock
+    operation + __init__(sock : socket)
+package socket
+  class AddressFamily Public
+  class socket Public

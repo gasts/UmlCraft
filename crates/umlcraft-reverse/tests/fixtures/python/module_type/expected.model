@@ -1,0 +1,10 @@
+package shelf
+  class Shelf Public
+    association shelf.Shelf NonNavigable -- store.items Navigable module Public = None
+      @umlcraft.imported = "true"
+    association shelf.Shelf NonNavigable -- store.items.Item Navigable item Public = None
+      @umlcraft.imported = "true"
+package store
+  package items
+    class Item Public
+  class items Public
