@@ -103,7 +103,7 @@ whole CPython standard library imports in one go.
 ## Editing
 
 The window has its own title bar (File menu, Save, Undo, Redo, Settings) and a ribbon with the
-tabs Home (clipboard, delete, align, line style), the open diagram's kind (its tools; for a
+tabs Home (clipboard, delete, align, line style, layout), the open diagram's kind (its tools; for a
 structogram its elements and the `.nsd` export), View
 (zoom, theme, language) and Tools (source import, exchange with `.asta` files, images). Model
 tree, diagram and properties are cards beside each other. A double click on a ribbon tab folds
@@ -113,6 +113,11 @@ Inline editing by double-click with a parser for `+ name : Type [0..*] = init` a
 `+ op(p : T) : R`; a properties panel for everything else. Undo and redo for every change, copy,
 cut and paste (as a copy or as the same elements), rubber-band and multiple selection, alignment,
 waypoints, zoom to fit, drag and drop within the model tree and from the tree onto the canvas.
+Automatic layout: new lines are routed around the nodes at right angles and follow when their
+nodes move, until their route is edited by hand; Route lines (Ctrl+Shift+R) does that for the
+selected lines or the whole diagram. Arrange automatically (Ctrl+Shift+L) lays out class,
+component and deployment diagrams in layers, top to bottom or left to right, generals above
+their specifics; with a selection only that, pushing other nodes aside.
 Free texts and lines on every diagram (Text and Line tools): texts edited in place, lines
 dashed or with arrowheads, their ends dragged one by one. Light and dark theme, German and
 English. Members show their visibility right before the name (`- name`); UmlCraft's

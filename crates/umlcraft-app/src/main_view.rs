@@ -2207,6 +2207,13 @@ impl Render for MainView {
             .on_action(move |a: &SetLineShape, _, cx| {
                 c4.update(cx, |c, cx| c.set_line_shape(a.shape, cx))
             })
+            .on_action(cx.listener(|this, a: &Arrange, _, cx| {
+                let direction = a.direction;
+                this.with_workspace(cx, move |ws| ws.arrange(direction))
+            }))
+            .on_action(cx.listener(|this, _: &RouteLines, _, cx| {
+                this.with_workspace(cx, Workspace::route_lines)
+            }))
             .on_action(cx.listener(move |this, _: &ZoomToFit, _, cx| {
                 match this.active_structogram(cx) {
                     Some(view) => view.update(cx, |v, cx| v.zoom_to_fit(cx)),

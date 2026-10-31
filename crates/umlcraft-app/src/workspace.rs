@@ -7,7 +7,9 @@ use umlcraft_model::{
     ModelError, Multiplicity, Navigability, Point, Presentation, Rect, Shape, Size,
     StructogramProps, Style, TemplateParameterProps, Tx, TypeRef, Visibility,
 };
+use umlcraft_notation::autoroute;
 use umlcraft_notation::clipboard::{self, Clip};
+use umlcraft_notation::layout;
 use umlcraft_notation::member;
 use umlcraft_notation::object;
 use umlcraft_notation::palette::{self, EdgeTool, NodeTool, Tool};
@@ -175,7 +177,8 @@ impl Workspace {
 
     /// One undo step. Afterwards, as in Astah, boxes sized to their content whose content the
     /// edit changed take the size it now needs (a new box always does). Others keep their size,
-    /// even if Astah stored one that does not fit.
+    /// even if Astah stored one that does not fit. Then lines that the router keeps are routed
+    /// again where their nodes moved or something moved into their way.
     fn edit<R>(
         &mut self,
         label: String,
@@ -186,6 +189,7 @@ impl Workspace {
             .into_iter()
             .map(|b| (b.presentation, b.content))
             .collect();
+        let routes = autoroute::snapshots(self.doc.model());
         self.doc.edit(label, |tx| {
             let result = f(tx)?;
             let close = |a: Size, b: Size| {
@@ -198,6 +202,7 @@ impl Workspace {
                     tx.set_bounds(b.diagram, b.presentation, rect)?;
                 }
             }
+            autoroute::follow(tx, &routes)?;
             Ok(result)
         })
     }
@@ -324,10 +329,18 @@ impl Workspace {
         self.report(result);
     }
 
+    /// Draws a line with `tool` and selects it. Lines but note anchors are routed around the
+    /// nodes and kept routed (see [`autoroute`]).
     pub fn connect(&mut self, tool: EdgeTool, source: Id, target: Id) {
         let Some(diagram) = self.active_diagram else { return };
         let label = t!("edit.connect").to_string();
-        let result = self.edit(label, |tx| palette::connect(tx, diagram, tool, source, target));
+        let result = self.edit(label, |tx| {
+            let edge = palette::connect(tx, diagram, tool, source, target)?;
+            if tool != EdgeTool::NoteAnchor {
+                autoroute::route_lines(tx, diagram, &[edge])?;
+            }
+            Ok(edge)
+        });
         if let Some(edge) = self.report(result) {
             self.select(vec![edge]);
         }
@@ -531,15 +544,19 @@ impl Workspace {
         self.message = Some(message.into());
     }
 
+    /// Gives an edge a route drawn by hand; the router leaves it alone from then on.
     pub fn set_route(&mut self, edge: Id, route: Route) {
         let Some(diagram) = self.active_diagram else { return };
         let label = t!("edit.waypoints").to_string();
         let anchors = (route.source_anchor, route.target_anchor);
-        let result = self.edit(label, |tx| tx.set_route(diagram, edge, route.waypoints, anchors));
+        let result = self.edit(label, |tx| {
+            tx.set_route(diagram, edge, route.waypoints, anchors)?;
+            tx.update_presentation(diagram, edge, |p| p.style.auto_route = false)
+        });
         self.report(result);
     }
 
-    /// Lets the given edges aim at the centers of their nodes again.
+    /// Lets the given edges aim at the centers of their nodes again, without the router.
     pub fn reset_line_ends(&mut self, edges: &[Id]) {
         let Some(diagram) = self.active_diagram else { return };
         let label = t!("edit.line_ends").to_string();
@@ -549,9 +566,50 @@ impl Workspace {
                     if let Shape::Edge { source_anchor, target_anchor, .. } = &mut p.shape {
                         (*source_anchor, *target_anchor) = (None, None);
                     }
+                    p.style.auto_route = false;
                 })
             })
         });
+        self.report(result);
+    }
+
+    /// Routes the selected lines of the active diagram around the nodes, or without a selected
+    /// line all of them, and keeps them routed. Note anchors, which have no element, stay
+    /// straight.
+    pub fn route_lines(&mut self) {
+        let Some(diagram) = self.active_diagram else { return };
+        let Some(view) = self.doc.model().view(diagram) else { return };
+        let lines =
+            |p: &&Presentation| matches!(p.shape, Shape::Edge { .. }) && p.element.is_some();
+        let mut edges: Vec<Id> = self
+            .selection
+            .iter()
+            .filter_map(|&id| view.get(id))
+            .filter(lines)
+            .map(|p| p.id)
+            .collect();
+        if edges.is_empty() {
+            edges = view.presentations().iter().filter(lines).map(|p| p.id).collect();
+        }
+        if edges.is_empty() {
+            return;
+        }
+        let label = t!("edit.route_lines").to_string();
+        let result = self.edit(label, |tx| autoroute::route_lines(tx, diagram, &edges));
+        self.report(result);
+    }
+
+    /// Arranges the active diagram, or with a selection only that, and routes its lines.
+    /// Nodes in the way of the arranged selection move aside.
+    pub fn arrange(&mut self, direction: layout::Direction) {
+        let Some(diagram) = self.active_diagram else { return };
+        let selected: Vec<Id> = self.selected_nodes().into_iter().map(|(id, _)| id).collect();
+        let scope = (!selected.is_empty()).then_some(&selected[..]);
+        let label = t!("edit.arrange").to_string();
+        let measure = &*self.measure;
+        let result = self
+            .doc
+            .edit(label, |tx| layout::arrange(tx, diagram, scope, direction, measure).map(|_| ()));
         self.report(result);
     }
 
@@ -599,7 +657,10 @@ impl Workspace {
             edges.into_iter().try_for_each(|(edge, route)| {
                 let anchors = (route.source_anchor, route.target_anchor);
                 tx.set_route(diagram, edge, route.waypoints, anchors)?;
-                tx.update_presentation(diagram, edge, |p| p.style.line_shape = shape)
+                tx.update_presentation(diagram, edge, |p| {
+                    p.style.line_shape = shape;
+                    p.style.auto_route = false;
+                })
             })
         });
         self.report(result);
@@ -680,7 +741,24 @@ impl Workspace {
     pub fn show_element(&mut self, element: Id, at: Point) {
         let Some(diagram) = self.active_diagram else { return };
         let label = t!("edit.show").to_string();
-        let result = self.edit(label, |tx| palette::show_element(tx, diagram, element, at));
+        let result = self.edit(label, |tx| {
+            // Lines to what the diagram shows already come along, and are routed.
+            let edges = |tx: &Tx<'_>| -> HashSet<Id> {
+                tx.model().view(diagram).map_or_else(HashSet::new, |v| {
+                    v.presentations()
+                        .iter()
+                        .filter(|p| matches!(p.shape, Shape::Edge { .. }) && p.element.is_some())
+                        .map(|p| p.id)
+                        .collect()
+                })
+            };
+            let before = edges(tx);
+            let node = palette::show_element(tx, diagram, element, at)?;
+            let mut new: Vec<Id> = edges(tx).difference(&before).copied().collect();
+            new.sort();
+            autoroute::route_lines(tx, diagram, &new)?;
+            Ok(node)
+        });
         if let Some(node) = self.report(result) {
             self.select(vec![node]);
         }

@@ -22,6 +22,7 @@ use std::time::Duration;
 
 use gpui_kit::*;
 use umlcraft_model::{Id, LineShape};
+use umlcraft_notation::layout::Direction;
 use umlcraft_reverse::SourceLanguage;
 
 use crate::workspace::{EndChange, NewItem};
@@ -69,6 +70,8 @@ actions!(
         WrapInFragment,
         ResetLineEnds,
         ResetLabels,
+        // Routes the selected lines, or all of the diagram, around the nodes.
+        RouteLines,
         AddExtensionPoint,
         // Folds the ribbon to its tabs, or unfolds it.
         ToggleRibbon,
@@ -96,6 +99,13 @@ pub struct OpenRecent {
 #[action(namespace = umlcraft, no_json)]
 pub struct SetLineShape {
     pub shape: LineShape,
+}
+
+/// Arranges the active diagram, or the selection on it, in layers.
+#[derive(Clone, PartialEq, Debug, Action)]
+#[action(namespace = umlcraft, no_json)]
+pub struct Arrange {
+    pub direction: Direction,
 }
 
 /// Imports source files, or a folder of them, into the open project (Tools menu).
@@ -198,6 +208,8 @@ fn main() {
             // Astah's shortcuts for the line styles.
             key(cx, "secondary-l", SetLineShape { shape: LineShape::Line }, Some("Canvas")),
             key(cx, "secondary-e", SetLineShape { shape: LineShape::RightAngle }, Some("Canvas")),
+            key(cx, "secondary-shift-l", Arrange { direction: Direction::Down }, Some("Canvas")),
+            key(cx, "secondary-shift-r", RouteLines, Some("Canvas")),
             key(cx, "secondary-0", ResetZoom, None),
             key(cx, "secondary-=", ZoomIn, None),
             key(cx, "secondary--", ZoomOut, None),

@@ -407,6 +407,10 @@ pub struct Style {
     /// Edges: how the line runs through its waypoints.
     #[serde(default, skip_serializing_if = "LineShape::is_line")]
     pub line_shape: LineShape,
+    /// Edges: laid out by the router (`umlcraft_notation::autoroute`), right-angled around the
+    /// nodes, and laid out again when its nodes move. Editing the route by hand turns it off.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_route: bool,
 }
 
 impl Style {

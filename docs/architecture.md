@@ -130,6 +130,27 @@ that a diff shows which element changed.
   what gets dragged (a segment moves across, the end segments slide their anchor inside the
   node) and exported. Changing the style changes the route (`scene::restyle`):
   "line" drops the waypoints, right angles turn them into corners.
+- `autoroute` routes edges around the nodes, orthogonally, after Wybrow, Marriott and Stuckey
+  (2009): a grid of the padded node sides, their centers and the middles of the gaps between
+  them; A* over (grid point, direction) with costs for length, bends and stretches other lines
+  use already; Z-shaped routes with a short middle stretch are straightened where the boxes
+  overlap; then lines on one stretch are spread apart within their channel, and end stretches
+  slide their port along the node side. Generalizations and realizations join the sides the
+  boxes turn to each other, so they form trees. Boxes around an end (packages, components,
+  nodes) can be crossed, swimlanes are ignored, sequence diagrams are left alone. A routed
+  edge is a right-angled line with `Style::auto_route` set; `Workspace::edit` takes
+  `autoroute::snapshots` before every edit and routes such edges again afterwards where their
+  nodes moved or a node moved onto them (`autoroute::follow`). Editing the route by hand
+  (waypoints, line style, line ends) clears the flag. New lines but note anchors are routed
+  when drawn.
+- `layout` arranges class, component and deployment diagrams in layers, after Sugiyama:
+  generals above their specifics, suppliers above clients and wholes above their parts (other
+  edges give way where they would close a cycle); then barycenter sweeps for few crossings, and
+  places along each layer by isotonic regression toward the middle of the neighbors, ending
+  bottom up so that generals are centered over theirs. Parts nothing connects are packed into
+  rows, larger ones first. Containers are laid out inside out and sized around what they
+  hold. Arranging a selection keeps its top left corner; nodes it grows into move right or
+  down. All its lines are routed afterwards.
 - `member` produces and parses the text form of attributes and operations and writes it back to
   the model; known classifiers become real type references.
 - `object` derives an object's slots from its classifier: one per attribute, inherited ones

@@ -26,6 +26,7 @@ icons are embedded.
 | Paste, cut, copy | `ic_fluent_clipboard_paste_…`, `ic_fluent_cut_…`, `ic_fluent_copy_…` |
 | Delete, remove from diagram, select all | `ic_fluent_delete_…`, `ic_fluent_dismiss_…`, `ic_fluent_select_all_on_…` |
 | Line style, wrap in fragment | `ic_fluent_line_style_…`, `ic_fluent_group_…` |
+| Arrange automatically, route lines | `ic_fluent_flowchart_…`, `ic_fluent_arrow_routing_…` |
 | 100 %, light, dark, language, settings | `ic_fluent_ratio_one_to_one_…`, `ic_fluent_weather_sunny_…`, `ic_fluent_weather_moon_…`, `ic_fluent_local_language_…`, `ic_fluent_settings_…` |
 | Source import, Astah import and export, image export | `ic_fluent_code_…`, `ic_fluent_arrow_import_…`, `ic_fluent_arrow_export_ltr_…`, `ic_fluent_image_arrow_forward_…` |
 | New diagram (no diagram open) | `ic_fluent_document_add_24_regular.svg` |

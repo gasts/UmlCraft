@@ -18,6 +18,7 @@ ribbon:
     clipboard: Zwischenablage
     edit: Bearbeiten
     arrange: Anordnen
+    layout: Layout
     select: Auswahl
     elements: Elemente
     relations: Beziehungen
@@ -39,6 +40,8 @@ ribbon:
   remove: Aus Diagramm entfernen
   select_all: Alles auswählen
   wrap_in_fragment: In Fragment
+  auto_arrange: Automatisch anordnen
+  route_lines: Linien führen
   light: Hell
   dark: Dunkel
   files: Dateien …
@@ -87,6 +90,8 @@ menu:
   line_curve_right_angle: Kurve (rechtwinklig)
   reset_line_ends: Linienenden auf die Mitte setzen
   reset_labels: Beschriftungen zurücksetzen
+  arrange_down: Von oben nach unten
+  arrange_right: Von links nach rechts
   add_extension_point: Erweiterungspunkt hinzufügen
   navigability: Navigierbarkeit
   aggregation: Aggregation
@@ -431,6 +436,8 @@ edit:
   wrap_in_fragment: Mit Fragment umschließen
   import_source: Quellcode importieren
   text: Text ändern
+  arrange: Automatisch anordnen
+  route_lines: Linien führen
 skipped:
   method_body: Methodenrümpfe
   initializer: Initialisierungsblöcke

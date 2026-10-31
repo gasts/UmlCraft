@@ -8,8 +8,10 @@
 //! - [`route`] runs edges as straight lines, at right angles or as curves (Astah's line styles).
 //! - [`draw`] turns a scene's figures into drawing primitives; [`svg`] writes them as an image.
 
+pub mod autoroute;
 pub mod clipboard;
 pub mod draw;
+pub mod layout;
 pub mod member;
 pub mod metrics;
 pub mod object;

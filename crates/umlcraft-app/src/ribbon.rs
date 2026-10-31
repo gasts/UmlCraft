@@ -14,6 +14,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use rust_i18n::t;
 use umlcraft_model::DiagramKind;
+use umlcraft_notation::layout::{self, Direction};
 use umlcraft_notation::palette::{self, EdgeTool, NodeTool, Tool};
 use umlcraft_reverse::SourceLanguage;
 
@@ -224,6 +225,20 @@ fn home(state: &State) -> Vec<Group> {
                         .enabled(state.can_wrap),
                 ])
                 .collect(),
+        ),
+        group(
+            "layout",
+            vec![
+                Item::new("auto-arrange", fluent("flowchart"), t!("ribbon.auto_arrange"))
+                    .action(Arrange { direction: Direction::Down })
+                    .menu_entry(t!("menu.arrange_down"), Arrange { direction: Direction::Down })
+                    .menu_entry(t!("menu.arrange_right"), Arrange { direction: Direction::Right })
+                    .enabled(state.diagram.is_some_and(layout::can_arrange)),
+                Item::new("route-lines", fluent("arrow_routing"), t!("ribbon.route_lines"))
+                    .action(RouteLines)
+                    .size(Size::Small)
+                    .enabled(state.diagram.is_some_and(|k| k != DiagramKind::Sequence)),
+            ],
         ),
     ]
 }
