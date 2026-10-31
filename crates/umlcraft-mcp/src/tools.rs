@@ -1248,6 +1248,9 @@ mod tests {
         let dir = std::env::temp_dir().join("umlcraft-mcp-files");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
+        // The server keeps canonical paths: on CI runners the temporary folder is a short
+        // name (Windows) or a symbolic link (macOS).
+        let dir = crate::host::absolute(&dir);
         let access = Access { folders: vec![dir.clone()], any: false };
         let mut host = Headless::new();
         let file = dir.join("shop");

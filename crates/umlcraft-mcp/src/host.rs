@@ -81,7 +81,7 @@ impl Access {
 
 /// `path` absolute and without `.` and `..`, also for files that do not exist yet: the
 /// existing part is canonicalized (links resolved), the rest appended.
-fn absolute(path: &Path) -> PathBuf {
+pub(crate) fn absolute(path: &Path) -> PathBuf {
     let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
     let mut existing = path.as_path();
     let mut rest = Vec::new();
