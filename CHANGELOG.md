@@ -3,6 +3,24 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
+## Unreleased
+
+- **Automatic layout**: new lines are routed around the nodes at right angles and are routed
+  again when their nodes move or something is moved into their way, until their route is
+  edited by hand. Home › Layout › Route lines (Ctrl+Shift+R) does that for the selected lines,
+  or all of the diagram. Arrange automatically (Ctrl+Shift+L) lays out class, component and
+  deployment diagrams in layers, top to bottom or left to right: generals above their
+  specifics, wholes above their parts, few crossings, containers around what they hold, parts
+  nothing connects packed into rows. With a selection only that is arranged, in its place, and
+  the nodes in its way move aside.
+- **Sequence diagrams**: a message, reply included, can be drawn from and to an activation
+  bar; it goes between the bars' lifelines. Before, only the lifeline itself took it. A reply
+  now always returns into the bar its call was sent from, which grows to take it; before, it
+  could arrive below the caller's bar.
+- **Sample project**: the domain model uses Java's types (`int`, `boolean`, `double`,
+  `BigDecimal`, `LocalDateTime`) and private references; in the sequence diagram the service
+  handles the rental in one activation, numbered 2.1 to 2.6.
+
 ## 0.11.1 – 2026-10-31
 
 - **Sample project** (File › Open sample project) is back on Windows and Linux, where the menu

@@ -6,7 +6,7 @@ use umlcraft_model::{
     DirectedProps, ElementData, ElementKind, ExtendProps, Id, IncludeProps, InstanceKind,
     InstanceProps, InteractionOperandProps, InteractionOperator, InteractionUseProps,
     LifelineProps, MessageGate, MessageSort, Model, ModelError, Point, PseudostateKind, Rect,
-    Result, Size, StateProps, Tx, TypeRef, Visibility,
+    Result, Shape, Size, StateProps, Tx, TypeRef, View, Visibility,
 };
 
 use crate::sequence::{self, Slot};
@@ -891,7 +891,8 @@ fn slot_or_end(model: &Model, diagram: Id, slot: Option<Slot>) -> Result<(Id, us
 }
 
 /// Draws a message from one lifeline of a sequence diagram to another (or the same) at the
-/// height of `slot`, or below everything. Returns the new message presentation.
+/// height of `slot`, or below everything. An activation bar stands for its lifeline. Returns
+/// the new message presentation.
 pub fn connect_message(
     tx: &mut Tx<'_>,
     diagram: Id,
@@ -902,6 +903,7 @@ pub fn connect_message(
 ) -> Result<Id> {
     let model = tx.model();
     let view = model.view(diagram).ok_or(ModelError::NotADiagram(diagram))?;
+    let (source, target) = (lifeline_of(view, source), lifeline_of(view, target));
     let element_of = |p: Id| -> Result<Id> {
         view.get(p).ok_or(ModelError::NotFound(p))?.element.ok_or(ModelError::NotFound(p))
     };
@@ -920,6 +922,14 @@ pub fn connect_message(
     let (owner, index) = slot_or_end(model, diagram, slot)?;
     let message = tx.create_at(owner, index, ElementData::new("", kind))?;
     sequence_edit::add_message(tx, diagram, message, source, target, y)
+}
+
+/// The lifeline an activation bar `presentation` lies on, else `presentation` itself.
+pub fn lifeline_of(view: &View, presentation: Id) -> Id {
+    match view.get(presentation).map(|p| &p.shape) {
+        Some(Shape::Activation { lifeline, .. }) => *lifeline,
+        _ => presentation,
+    }
 }
 
 /// Puts a new combined fragment with one empty operand, or an interaction use (`tool`), at the

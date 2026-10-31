@@ -18,7 +18,7 @@ use umlcraft_model::{
 use umlcraft_notation::draw::{self, Paint, Primitive};
 use umlcraft_notation::member::member_text;
 use umlcraft_notation::object;
-use umlcraft_notation::palette::{EdgeTool, NodeTool, Tool};
+use umlcraft_notation::palette::{self, EdgeTool, NodeTool, Tool};
 use umlcraft_notation::route::{self, Route};
 use umlcraft_notation::scene::{
     self, EdgeHandle, EdgeShape, FONT_SIZE, Figure, Handle, LabelAlign, LineStyle, NodeShape,
@@ -571,17 +571,16 @@ impl DiagramCanvas {
     }
 
     /// What a line drawn with `tool` connects to at `p`: a node, or for note anchors also a
-    /// relationship's line (not another anchor), as in Astah.
+    /// relationship's line (not another anchor), as in Astah. An activation bar stands for its
+    /// lifeline.
     fn connect_target(&self, tool: EdgeTool, p: MPoint, cx: &App) -> Option<Id> {
+        let ws = self.workspace.read(cx);
+        let view = ws.active_diagram.and_then(|d| ws.doc.model().view(d))?;
         let line = (tool == EdgeTool::NoteAnchor)
             .then(|| scene::edge_at(&self.scene, p, self.hit_tolerance()))
             .flatten()
-            .filter(|&edge| {
-                let ws = self.workspace.read(cx);
-                let view = ws.active_diagram.and_then(|d| ws.doc.model().view(d));
-                view.and_then(|v| v.get(edge)).is_some_and(|p| p.element.is_some())
-            });
-        line.or_else(|| self.node_at(p))
+            .filter(|&edge| view.get(edge).is_some_and(|p| p.element.is_some()));
+        line.or_else(|| self.node_at(p)).map(|id| palette::lifeline_of(view, id))
     }
 
     /// The message behind a message edge, if `presentation` is one: messages move up and down

@@ -266,6 +266,10 @@ impl Builder<'_, '_> {
     ) -> Result<Id> {
         let mut kind = ElementKind::association(a, b);
         if let ElementKind::Association(p) = &mut kind {
+            // References are private fields, as in Java.
+            for end in &mut p.ends {
+                end.visibility = Visibility::Private;
+            }
             f(p);
         }
         self.create(owner, "", kind)
@@ -283,11 +287,11 @@ impl Builder<'_, '_> {
     }
 
     fn domain(&mut self, fleet: Id, rental: Id, d: Id) -> Result<Domain> {
-        let (string, integer) = (|| text("String"), || text("Integer"));
+        let (string, integer) = (|| text("String"), || text("int"));
 
         let geo = self.create(fleet, "GeoPoint", ElementKind::DataType(classifier()))?;
-        self.field(geo, "latitude", text("Real"))?;
-        self.field(geo, "longitude", text("Real"))?;
+        self.field(geo, "latitude", text("double"))?;
+        self.field(geo, "longitude", text("double"))?;
         let states = self.create(fleet, "VehicleState", ElementKind::Enumeration(classifier()))?;
         self.literals(states, &["Available", "Reserved", "Rented", "InRepair", "Retired"])?;
 
@@ -300,15 +304,15 @@ impl Builder<'_, '_> {
 
         let dock = self.create(fleet, "Dock", ElementKind::class())?;
         self.field(dock, "number", integer())?;
-        let release = self.method(dock, "release", &[], text("Boolean"))?;
-        self.operation(dock, "isEmpty", &[], text("Boolean"), |p| p.is_query = true)?;
+        let release = self.method(dock, "release", &[], text("boolean"))?;
+        self.operation(dock, "isEmpty", &[], text("boolean"), |p| p.is_query = true)?;
 
         let abstract_class = ClassifierProps { is_abstract: true, ..classifier() };
         let vehicle = self.create(fleet, "Vehicle", ElementKind::Class(abstract_class))?;
         self.field(vehicle, "id", string())?;
         self.field(vehicle, "state", of(states))?;
         self.attribute(vehicle, "kilometres", integer(), |a| a.default_value = "0".into())?;
-        self.method(vehicle, "unlock", &[], text("Boolean"))?;
+        self.method(vehicle, "unlock", &[], text("boolean"))?;
         self.method(vehicle, "lock", &[("dock", of(dock))], None)?;
 
         let bike = self.create(fleet, "Bike", ElementKind::class())?;
@@ -318,10 +322,10 @@ impl Builder<'_, '_> {
             a.multiplicity = Some(Multiplicity::ONE);
             a.default_value = "100".into();
         })?;
-        self.operation(ebike, "range", &[], text("Distance"), |p| p.is_query = true)?;
+        self.operation(ebike, "range", &[], text("double"), |p| p.is_query = true)?;
 
         let money = self.create(rental, "Money", ElementKind::DataType(classifier()))?;
-        self.field(money, "amount", text("Decimal"))?;
+        self.field(money, "amount", text("BigDecimal"))?;
         self.field(money, "currency", string())?;
         let membership =
             self.create(rental, "Membership", ElementKind::Enumeration(classifier()))?;
@@ -334,8 +338,8 @@ impl Builder<'_, '_> {
         self.method(rider, "rent", &[("vehicle", of(vehicle))], None)?;
 
         let rental_class = self.create(rental, "Rental", ElementKind::class())?;
-        self.field(rental_class, "start", text("DateTime"))?;
-        self.attribute(rental_class, "end", text("DateTime"), |a| {
+        self.field(rental_class, "start", text("LocalDateTime"))?;
+        self.attribute(rental_class, "end", text("LocalDateTime"), |a| {
             a.multiplicity = Some(Multiplicity::OPTIONAL)
         })?;
         self.attribute(rental_class, "duration", text("Duration"), |a| a.is_derived = true)?;
@@ -430,7 +434,7 @@ impl Builder<'_, '_> {
 
         self.structogram(price, &["price(rental: Rental): Money"], price_body())?;
         self.structogram(rebalance, &["rebalance()"], rebalance_body())?;
-        self.structogram(release, &["release(): Boolean"], release_body())?;
+        self.structogram(release, &["release(): boolean"], release_body())?;
 
         Ok(Domain {
             station,
@@ -775,7 +779,8 @@ impl Builder<'_, '_> {
         // The diagram comes first: what it does not show stays before what it shows.
         let d = self.diagram(interaction, "Rent a bike", DiagramKind::Sequence)?;
         let mut lanes = Vec::new();
-        for (lifeline, x) in lifelines.iter().zip([40.0, 200.0, 380.0, 590.0, 760.0, 920.0]) {
+        // The rental right of the dock, so that the call to the dock and its label run free.
+        for (lifeline, x) in lifelines.iter().zip([40.0, 200.0, 380.0, 760.0, 590.0, 920.0]) {
             let lane = sequence_edit::add_lifeline(self.tx, d, *lifeline, x, 50.0)?;
             // Heads as wide as `name : Type`.
             let model = self.tx.model();
@@ -854,6 +859,26 @@ impl Builder<'_, '_> {
             }
             let message = self.create(interaction, name, kind)?;
             sequence_edit::add_message(self.tx, d, message, lane(from), lane(to), y)?;
+            // The service works on the rental until it answers the app, in one activation:
+            // what it sends meanwhile starts inside that bar.
+            if name == "startRental" {
+                let view = self.tx.model().view(d).ok_or(ModelError::NotADiagram(d))?;
+                let bar = view.presentations().iter().find_map(|p| match p.shape {
+                    Shape::Activation { lifeline, top, .. }
+                        if lifeline == lane(service) && (top - y).abs() < 0.5 =>
+                    {
+                        Some(p.id)
+                    }
+                    _ => None,
+                });
+                if let Some(bar) = bar {
+                    self.tx.update_presentation(d, bar, |p| {
+                        if let Shape::Activation { height, .. } = &mut p.shape {
+                            *height = 545.0 - y;
+                        }
+                    })?;
+                }
+            }
         }
         // All lifelines run down to the same height.
         let view = self.tx.model().view(d).ok_or(ModelError::NotADiagram(d))?;
@@ -1193,7 +1218,7 @@ fn release_body() -> Vec<Block> {
 #[cfg(test)]
 mod tests {
     // No glob import: gpui_kit's `test` macro would shadow the built-in `#[test]`.
-    use umlcraft_model::{DiagramKind, ElementKind};
+    use umlcraft_model::{DiagramKind, Document, ElementKind, Id, Shape};
     use umlcraft_notation::scene::{self, ApproxMeasure};
 
     use super::velo;
@@ -1242,14 +1267,52 @@ mod tests {
     #[ignore]
     fn sample_png() {
         let Ok(dir) = std::env::var("UMLCRAFT_SAMPLE_PNG") else { return };
-        let doc = velo(&ApproxMeasure);
+        write_pngs(&velo(&ApproxMeasure), std::path::Path::new(&dir), "");
+    }
+
+    /// Like `sample_png`, after arranging every diagram that can be and routing the lines of
+    /// the others, with `arranged_` before the names.
+    #[test]
+    #[ignore]
+    fn sample_arranged_png() {
+        use umlcraft_notation::{autoroute, layout};
+        let Ok(dir) = std::env::var("UMLCRAFT_SAMPLE_PNG") else { return };
+        let mut doc = velo(&ApproxMeasure);
+        let diagrams: Vec<(Id, DiagramKind)> = doc
+            .model()
+            .views()
+            .filter_map(|(d, _)| Some((d, doc.model().get(d)?.kind().as_diagram()?)))
+            .collect();
+        for (diagram, kind) in diagrams {
+            doc.edit("layout", |tx| {
+                if layout::can_arrange(kind) {
+                    let down = layout::Direction::Down;
+                    layout::arrange(tx, diagram, None, down, &ApproxMeasure).map(|_| ())
+                } else {
+                    let view = tx.model().view(diagram).unwrap();
+                    let edges: Vec<Id> = view
+                        .presentations()
+                        .iter()
+                        .filter(|p| matches!(p.shape, Shape::Edge { .. }) && p.element.is_some())
+                        .map(|p| p.id)
+                        .collect();
+                    autoroute::route_lines(tx, diagram, &edges).map(|_| ())
+                }
+            })
+            .unwrap();
+        }
+        doc.model().check().unwrap();
+        write_pngs(&doc, std::path::Path::new(&dir), "arranged_");
+    }
+
+    fn write_pngs(doc: &Document, dir: &std::path::Path, prefix: &str) {
         let model = doc.model();
         for (diagram, _) in model.views() {
             let scene = scene::build(model, diagram, &scene::Preview::default(), &ApproxMeasure);
             let svg = umlcraft_notation::svg::render(&scene, &ApproxMeasure);
             let png = crate::png::from_svg(&svg, 1.0).unwrap();
             let name = model.element(diagram).unwrap().name().replace([',', ':', ' '], "_");
-            std::fs::write(std::path::Path::new(&dir).join(format!("{name}.png")), png).unwrap();
+            std::fs::write(dir.join(format!("{prefix}{name}.png")), png).unwrap();
         }
     }
 }

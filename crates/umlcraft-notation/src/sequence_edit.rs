@@ -728,6 +728,19 @@ fn fit_bars(tx: &mut Tx<'_>, diagram: Id) -> Result<()> {
                 {
                     need = need.max(m.y.max(m.end()) + BAR_MARGIN);
                 }
+                // A reply returns into the bar its call was sent from, however far below.
+                if m.sort == MessageSort::Reply && m.target == bar.lane && m.end() > bar.bottom {
+                    let call = g
+                        .messages
+                        .iter()
+                        .filter(|c| c.sort != MessageSort::Reply && c.y < m.y)
+                        .filter(|c| c.source == m.target && c.target == m.source)
+                        .max_by(|a, b| a.y.total_cmp(&b.y));
+                    if call.is_some_and(|c| g.bar_at(bar.lane, c.y).is_some_and(|b| b.id == bar.id))
+                    {
+                        need = need.max(m.end() + BAR_MARGIN);
+                    }
+                }
             }
             if need > bar.bottom + 0.01 {
                 grown.push((bar.id, need - bar.top));
@@ -1379,6 +1392,51 @@ mod tests {
         // Numbered by the bars they are sent from.
         let numbers: Vec<String> = labels(&scene_of(&doc, d));
         assert_eq!(numbers[..2], ["1: ".to_owned(), "1.1: ".to_owned()]);
+        doc.model().check().unwrap();
+    }
+
+    #[test]
+    fn a_reply_returns_into_the_bar_its_call_left() {
+        let (mut doc, d, a, b) = two_lifelines();
+        draw(&mut doc, d, EdgeTool::Message, a, b, 120.0);
+        // The called side works longer than the caller's bar reaches.
+        draw(&mut doc, d, EdgeTool::Message, b, b, 130.0);
+        draw(&mut doc, d, EdgeTool::Message, b, b, 160.0);
+        let reply = draw(&mut doc, d, EdgeTool::Reply, b, a, 200.0);
+        let Shape::Message { y, .. } = message(&doc, d, reply) else { unreachable!() };
+        let view = doc.model().view(d).unwrap();
+        let caller = view
+            .presentations()
+            .iter()
+            .find_map(|p| match p.shape {
+                Shape::Activation { lifeline, top, height, .. } if lifeline == a => {
+                    Some((top, top + height))
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert!(caller.0 <= 120.0 && y < caller.1, "reply at {y}, caller's bar {caller:?}");
+        doc.model().check().unwrap();
+    }
+
+    #[test]
+    fn a_message_drawn_between_bars_goes_between_their_lifelines() {
+        let (mut doc, d, a, b) = two_lifelines();
+        draw(&mut doc, d, EdgeTool::Message, a, b, 120.0);
+        let view = doc.model().view(d).unwrap();
+        let bar_on = |lifeline: Id| {
+            view.presentations()
+                .iter()
+                .find(|p| matches!(p.shape, Shape::Activation { lifeline: l, .. } if l == lifeline))
+                .unwrap()
+                .id
+        };
+        let (caller, called) = (bar_on(a), bar_on(b));
+        let reply = draw(&mut doc, d, EdgeTool::Reply, called, caller, 130.0);
+        assert!(matches!(
+            message(&doc, d, reply),
+            Shape::Message { source, target, .. } if source == b && target == a
+        ));
         doc.model().check().unwrap();
     }
 
