@@ -3,7 +3,7 @@
 What changed from release to release. The [README](README.md) describes what UmlCraft can do
 today.
 
-## Unreleased
+## 0.11.1 – 2026-10-31
 
 - **Sample project** (File › Open sample project) is back on Windows and Linux, where the menu
   item had gone with the platform menu bar. It is now Velo, a city's bike sharing, with fuller
